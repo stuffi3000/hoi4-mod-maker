@@ -17,6 +17,25 @@ from data.constants import (
 )
 
 
+_VANILLA_REFERENCE_RELPATHS = (
+    ("map", "provinces.bmp"),
+    ("map", "terrain", "colormap_rgb_cityemissivemask_a.dds"),
+)
+
+
+def _find_vanilla_reference(game_dir: str | None) -> str | None:
+    """Return the first usable vanilla reference image in *game_dir*."""
+    if not game_dir:
+        return None
+    import os
+
+    for parts in _VANILLA_REFERENCE_RELPATHS:
+        path = os.path.join(game_dir, *parts)
+        if os.path.isfile(path):
+            return path
+    return None
+
+
 def _populate_imported_data(project, result: dict) -> None:
     """把导入的 states 和 strategic regions 数据填充到 project 的 manager 里。"""
     from domain.managers.state import StateData
@@ -295,24 +314,62 @@ class MainWindowFileOpsMixin:
 
     # ═══════════════════════ 参考图/导入 ═══════════════════════
 
-    def _on_load_vanilla_ref(self) -> None:
-        from data.constants import DEFAULT_HOI4_PATH
+    def _choose_hoi4_install_dir(self) -> str | None:
+        """Prompt for and persist a valid Hearts of Iron IV installation."""
         import os
-        candidates = [
-            os.path.join(DEFAULT_HOI4_PATH, "map", "provinces.bmp"),
-            os.path.join(DEFAULT_HOI4_PATH, "map", "terrain",
-                         "colormap_rgb_cityemissivemask_a.dds"),
-        ]
-        for path in candidates:
-            if os.path.exists(path):
-                if self._canvas.load_vanilla_reference(path):
-                    self._status_info.setText(
-                        tr("file_ops_vanilla_loaded", os.path.basename(path))
-                    )
-                    return
+        from services.game_assets import (
+            TERRAIN_DEF_RELPATH,
+            find_hoi4_install,
+            set_default_install_dir,
+        )
+
+        current_dir = find_hoi4_install() or ""
+        path = QFileDialog.getExistingDirectory(
+            self,
+            tr("preview_choose_dir_title"),
+            current_dir,
+        )
+        if not path:
+            return None
+        if not os.path.isfile(os.path.join(path, TERRAIN_DEF_RELPATH)):
+            QMessageBox.warning(
+                self, tr("dlg_error"), tr("preview_game_dir_invalid")
+            )
+            return None
+
+        set_default_install_dir(path)
+        from features.map.preview import renderer as preview_renderer
+        preview_renderer.invalidate_cache(self._canvas)
+        return path
+
+    def _on_choose_hoi4_install_dir(self) -> None:
+        path = self._choose_hoi4_install_dir()
+        if path:
+            self._status_info.setText(
+                tr("preview_game_dir_found").format(path=path)
+            )
+
+    def _on_load_vanilla_ref(self) -> None:
+        import os
+        from services.game_assets import find_hoi4_install
+
+        game_dir = find_hoi4_install()
+        reference_path = _find_vanilla_reference(game_dir)
+        if reference_path is None:
+            game_dir = self._choose_hoi4_install_dir()
+            if game_dir is None:
+                return
+            reference_path = _find_vanilla_reference(game_dir)
+
+        if reference_path and self._canvas.load_vanilla_reference(reference_path):
+            self._status_info.setText(
+                tr("file_ops_vanilla_loaded", os.path.basename(reference_path))
+            )
+            return
+
         QMessageBox.warning(
             self, tr("dlg_error"),
-            tr("file_ops_vanilla_not_found", DEFAULT_HOI4_PATH),
+            tr("file_ops_vanilla_not_found", game_dir or ""),
         )
 
     def _on_import_image(self) -> None:

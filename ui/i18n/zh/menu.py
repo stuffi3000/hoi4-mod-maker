@@ -10,6 +10,7 @@ STRINGS: dict[str, str] = {
     "action_export_mod": "导出 MOD",
     "action_generate_heightmap": "生成高度图",
     "action_generate_provinces": "生成省份",
+    "action_game_install_dir": "《钢铁雄心4》安装目录...",
     "action_guide": "新手引导",
     "action_import_image": "导入参考图片",
     "action_import_landmask": "从图片提取陆海...",

@@ -254,6 +254,11 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
 
         # 设置
         settings_menu = menubar.addMenu(tr("menu_settings"))
+        self._add_action(
+            settings_menu,
+            tr("action_game_install_dir"),
+            self._on_choose_hoi4_install_dir,
+        )
         self._add_action(settings_menu, tr("action_language"), self._on_toggle_language)
         self._add_action(settings_menu, tr("action_shortcut_settings"), self._on_shortcut_settings)
 

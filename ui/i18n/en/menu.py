@@ -10,6 +10,7 @@ STRINGS: dict[str, str] = {
     "action_export_mod": "Export MOD",
     "action_generate_heightmap": "Generate Heightmap",
     "action_generate_provinces": "Generate Provinces",
+    "action_game_install_dir": "Hearts of Iron IV Folder...",
     "action_quick_init": "Quick Init (State + Region + Country)",
     "action_guide": "Getting Started Guide",
     "action_import_image": "Import Reference Image",

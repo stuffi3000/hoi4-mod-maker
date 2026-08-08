@@ -8,6 +8,7 @@ STRINGS: dict[str, str] = {
     "action_export_mod": "Экспорт МОДа",
     "action_generate_heightmap": "Сгенерировать карту высот",
     "action_generate_provinces": "Сгенерировать провинции",
+    "action_game_install_dir": "Папка Hearts of Iron IV...",
     "action_quick_init": "Быстрая инициализация (регион + зона + страна)",
     "action_guide": "Руководство для начинающих",
     "action_import_image": "Импорт референсного изображения",
