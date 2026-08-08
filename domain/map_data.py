@@ -235,7 +235,7 @@ class MapData:
         # 构建映射 {old: new}
         if len(old_unique) != len(new_unique):
             # 不应该发生（compact 是稳定排序）
-            raise RuntimeError("compact_province_ids 产生了不一致的 ID 列表")
+            raise RuntimeError("compact_province_ids produced an inconsistent ID list")
         mapping = dict(zip(old_unique, new_unique))
 
         # 更新 state_mgr

@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-from ui.i18n import tr
+from ui.i18n import tr, tr_pair
 
 if TYPE_CHECKING:
     from model.project import Project
@@ -77,12 +77,16 @@ class ApplicationController:
     # ═══════════════════════ 模式切换 ═══════════════════════
 
     # 模式名称映射
-    _MODE_NAMES = {
-        "land": "大陆", "province": "省份", "terrain": "地形",
-        "height": "高度", "state": "State", "country": "国家",
-        "river": "河流", "continent": "大洲", "logistics": "后勤",
-        "strategic_region": "战略区", "colormap": "总览贴图",
-        "default_map": "地图配置", "preview": "预览",
+    _MODE_KEYS = {
+        "land": "mode_land", "province": "mode_province",
+        "terrain": "mode_terrain", "height": "mode_height",
+        "state": "mode_state", "country": "mode_country",
+        "river": "mode_river", "continent": "mode_continent",
+        "logistics": "mode_logistics",
+        "strategic_region": "mode_strategic_region",
+        "colormap": "mode_colormap", "default_map": "mode_default_map",
+        "density": "mode_density", "province_terrain": "tab_province_terrain",
+        "preview": "nav_preview",
     }
 
     def on_mode_changed(self, mode: str) -> str:
@@ -112,7 +116,7 @@ class ApplicationController:
             if self._current_controller is not None:
                 self._current_controller.density_mode = True
                 self._current_controller.activate()
-                self._current_controller._emit_status("密度画笔模式")
+                self._current_controller._emit_status("密度画笔模式", "Province density brush mode")
         else:
             # 切到其他模式时，确保 land controller 退出密度模式，隐藏密度遮罩
             self._canvas.set_density_overlay_visible(False)
@@ -149,7 +153,8 @@ class ApplicationController:
         if mode != "strategic_region":
             self._canvas.show_state_borders(False)
 
-        return self._MODE_NAMES.get(mode, mode)
+        key = self._MODE_KEYS.get(mode)
+        return tr(key) if key else mode
 
     @property
     def current_controller(self):
@@ -181,11 +186,11 @@ class ApplicationController:
         sea_n = int(np.sum(tiles == TILE_SEA))
         lake_n = int(np.sum(tiles == TILE_LAKE))
         if sea_n >= land_n and sea_n >= lake_n:
-            ptype = "海洋"
+            ptype = tr("tile_sea")
         elif lake_n >= land_n:
-            ptype = "湖泊"
+            ptype = tr("tile_lake")
         else:
-            ptype = "陆地"
+            ptype = tr("tile_land")
 
         # 沿海检查
         _adj = False
@@ -195,7 +200,7 @@ class ApplicationController:
             if np.any(tm[ny, nx] == TILE_SEA):
                 _adj = True
                 break
-        coastal = _adj and ptype == "陆地"
+        coastal = _adj and land_n > sea_n and land_n > lake_n
 
         # 优先读 provincial_terrain dict（属性层 = gameplay 真值）
         # 没有时才退回 terrain.bmp 多数像素（视觉层推断）
@@ -401,7 +406,10 @@ class ApplicationController:
         if gap_ids:
             self._event_bus.emit(
                 "status_message",
-                text=f"缺失省份 ID: {len(gap_ids)} 个（切割可自动补回）",
+                text=tr_pair(
+                    f"缺失省份 ID: {len(gap_ids)} 个（切割可自动补回）",
+                    f"Missing province IDs: {len(gap_ids)} (splitting can restore them automatically)",
+                ),
             )
 
     def _on_state_changed(self, event) -> None:
@@ -468,7 +476,9 @@ class ApplicationController:
     def _update_country_info_panel(self, tag: str) -> None:
         country = self._project.country_mgr.get_country(tag)
         if country:
-            capital_name = f"省份 {country.capital}" if country.capital > 0 else ""
+            capital_name = tr_pair(
+                f"省份 {country.capital}", f"Province {country.capital}",
+            ) if country.capital > 0 else ""
             self._panel.update_country_info(
                 country.tag, country.name, country.ruling_party,
                 country.color, capital_name,
@@ -553,7 +563,7 @@ class ApplicationController:
         if BrushStrokeCommand.has_changes(self._stroke_before, arrays):
             after = BrushStrokeCommand.snapshot_arrays(arrays)
             mode = self._canvas.display_mode
-            cmd = BrushStrokeCommand(f"{mode} 绘制", self._stroke_before, after)
+            cmd = BrushStrokeCommand(tr_pair(f"{mode} 绘制", f"Paint {mode}"), self._stroke_before, after)
             cmd.set_target_arrays(self._get_all_arrays())
             # 直接推入栈，不调 execute（因为画笔已经绘制完了）
             self._cmd_history._undo_stack.append(cmd)
@@ -579,14 +589,14 @@ class ApplicationController:
             self.on_stroke_ended()
 
         if not self._cmd_history.can_undo:
-            return "没有可撤销的操作"
+            return tr_pair("没有可撤销的操作", "Nothing to undo")
 
         # 确保 BrushStrokeCommand（含 composite 内的）有最新数组引用
         self._refresh_brush_targets(self._cmd_history._undo_stack[-1])
 
         self._cmd_history.undo()
         self._post_undo_redo_refresh()
-        return "已撤销"
+        return tr_pair("已撤销", "Undone")
 
     def redo(self) -> str:
         """执行重做。返回状态消息。"""
@@ -594,13 +604,13 @@ class ApplicationController:
             self.on_stroke_ended()
 
         if not self._cmd_history.can_redo:
-            return "没有可重做的操作"
+            return tr_pair("没有可重做的操作", "Nothing to redo")
 
         self._refresh_brush_targets(self._cmd_history._redo_stack[-1])
 
         self._cmd_history.redo()
         self._post_undo_redo_refresh()
-        return "已重做"
+        return tr_pair("已重做", "Redone")
 
     def _post_undo_redo_refresh(self) -> None:
         """撤销/重做后刷新画布 + 按模式重建颜色图 + 通知所有 list 刷新。"""

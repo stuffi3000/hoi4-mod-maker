@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from ui.i18n import tr_pair
+
 if TYPE_CHECKING:
     from model.project import Project
     from model.events import EventBus
@@ -49,8 +51,10 @@ class BaseController:
         """右键点击省份。"""
         pass
 
-    def _emit_status(self, text: str) -> None:
+    def _emit_status(self, text: str, english: str | None = None) -> None:
         """发送状态栏消息。"""
+        if english is not None:
+            text = tr_pair(text, english)
         self.event_bus.emit("status_message", text=text)
 
     def _emit_render(self, full: bool = False, bbox: tuple | None = None) -> None:

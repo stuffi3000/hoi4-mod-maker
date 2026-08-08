@@ -10,7 +10,7 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtGui import QColor
 
-from ui.i18n import tr
+from ui.i18n import tr, tr_pair
 from data.constants import (
     TILE_SEA, TILE_LAND,
     DEFAULT_MOD_OUTPUT_PATH,
@@ -157,13 +157,15 @@ class MainWindowFileOpsMixin:
         if reply != QMessageBox.StandardButton.Yes:
             return
 
-        from data.constants import MAP_SIZE_PRESETS, set_map_size
-        presets = list(MAP_SIZE_PRESETS.keys())
+        from data.constants import set_map_size
+        preset_items = [
+            (tr_pair("小 (2048×1024)", "Small (2048×1024)"), (2048, 1024)),
+            (tr_pair("中 (3072×1536)", "Medium (3072×1536)"), (3072, 1536)),
+            (tr_pair("大 (4096×2048)", "Large (4096×2048)"), (4096, 2048)),
+            (tr_pair("原版 (5632×2048)", "Vanilla (5632×2048)"), (5632, 2048)),
+        ]
+        presets = [label for label, _ in preset_items]
         default_idx = len(presets) - 1
-        for i, name in enumerate(presets):
-            if "原版" in name:
-                default_idx = i
-                break
 
         chosen, ok = QInputDialog.getItem(
             self, tr("file_ops_map_size_title"), tr("file_ops_map_size_prompt"),
@@ -172,7 +174,8 @@ class MainWindowFileOpsMixin:
         if not ok:
             return
 
-        new_w, new_h = MAP_SIZE_PRESETS[chosen]
+        size_by_label = dict(preset_items)
+        new_w, new_h = size_by_label[chosen]
         set_map_size(new_w, new_h)
 
         from domain.map_data import MapData
@@ -370,7 +373,7 @@ class MainWindowFileOpsMixin:
 
         # 提交撤销命令
         after = BrushStrokeCommand.snapshot_arrays({"tile_map": self._canvas.tile_map})
-        cmd = BrushStrokeCommand("从图片提取陆海", before, after)
+        cmd = BrushStrokeCommand(tr_pair("从图片提取陆海", "Extract land and sea from image"), before, after)
         cmd.set_target_arrays({"tile_map": self._canvas.tile_map})
         self._cmd_history._undo_stack.append(cmd)
         self._cmd_history._redo_stack.clear()

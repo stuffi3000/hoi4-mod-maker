@@ -1,6 +1,8 @@
 """Preview feature translations — English"""
 
 STRINGS = {
+    "preview_night_label": "Night View (City Lights)",
+    "preview_night_hint": "Simulates nighttime in-game: the whole map darkens and areas painted with urban terrain light up. The light locations match their exported in-game positions.",
     "nav_preview": "Preview",
     "nav_tooltip_preview": "See how the map actually looks in the game (rendered with the game's own terrain textures — no export, no game launch needed)",
     "preview_page_title": "In-Game Look Preview",

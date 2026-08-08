@@ -10,7 +10,7 @@ from PyQt5.QtWidgets import (
     QListWidget, QComboBox, QScrollArea, QCheckBox,
 )
 
-from domain.managers.strategic_region import PRESET_LABELS
+from domain.managers.strategic_region import PRESET_LABELS, weather_preset_display_name
 
 from ui.i18n import tr
 from ui.styles import (
@@ -155,8 +155,8 @@ class StrategicRegionPage(QWidget):
         weather_row.addWidget(weather_lbl)
         self._sr_weather_combo = QComboBox()
         self._sr_weather_combo.setStyleSheet(_COMBOBOX_STYLE)
-        for key, label in PRESET_LABELS.items():
-            self._sr_weather_combo.addItem(label, key)
+        for key in PRESET_LABELS:
+            self._sr_weather_combo.addItem(weather_preset_display_name(key), key)
         self._sr_weather_combo.currentIndexChanged.connect(
             lambda idx: self.strategic_region_weather_changed.emit(
                 self._sr_weather_combo.currentData() or "temperate"

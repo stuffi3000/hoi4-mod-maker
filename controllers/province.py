@@ -32,7 +32,7 @@ class ProvinceController(BaseController):
         self.merge_mode = False
         self.merge_first_pid = 0
         self.expand_mode = False
-        self._emit_status("省份编辑模式")
+        self._emit_status("省份编辑模式", "Province editing mode")
 
     def deactivate(self) -> None:
         """离开省份模式，清理状态。"""
@@ -58,9 +58,9 @@ class ProvinceController(BaseController):
         self.merge_first_pid = 0
         if on:
             self.expand_mode = False
-            self._emit_status("合并模式：点第一个省份，再点第二个")
+            self._emit_status("合并模式：点第一个省份，再点第二个", "Merge mode: click the first province, then the second")
         else:
-            self._emit_status("回到查看模式")
+            self._emit_status("回到查看模式", "Back to view mode")
 
     def set_expand_mode(self, on: bool) -> None:
         """开关扩张模式。"""
@@ -68,9 +68,9 @@ class ProvinceController(BaseController):
         if on:
             self.merge_mode = False
             self.merge_first_pid = 0
-            self._emit_status("扩张模式：点击省份后拖动扩张")
+            self._emit_status("扩张模式：点击省份后拖动扩张", "Expand mode: click a province, then drag to expand it")
         else:
-            self._emit_status("回到查看模式")
+            self._emit_status("回到查看模式", "Back to view mode")
 
     def split_selected(self, axis: str = "horizontal") -> bool:
         """切割当前选中的省份。
@@ -81,7 +81,7 @@ class ProvinceController(BaseController):
 
         pid = self.selected_province_id
         if pid <= 0:
-            self._emit_status("请先点击选中一个省份")
+            self._emit_status("请先点击选中一个省份", "Click a province to select it first")
             return False
 
         map_data = self.project.map_data
@@ -90,7 +90,7 @@ class ProvinceController(BaseController):
         mask = province_map == pid
         pixels = int(np.sum(mask))
         if pixels < 16:
-            self._emit_status("切割失败（省份太小，需至少16像素）")
+            self._emit_status("切割失败（省份太小，需至少16像素）", "Split failed (province is too small; at least 16 pixels required)")
             return False
 
         ys, xs = np.where(mask)
@@ -117,7 +117,7 @@ class ProvinceController(BaseController):
         self.history.execute(cmd)
 
         self.project.mark_dirty()
-        self._emit_status(f"省份 {pid} 已切割，新省份 ID: {new_pid}")
+        self._emit_status(f"省份 {pid} 已切割，新省份 ID: {new_pid}", f"Province {pid} split; new province ID: {new_pid}")
         self._emit_render(full=True)
 
         max_id = int(province_map.max())
@@ -142,7 +142,7 @@ class ProvinceController(BaseController):
         mask = province_map == pid
         pixels = int(np.sum(mask))
         if pixels < 16:
-            self._emit_status("切割失败（省份太小）")
+            self._emit_status("切割失败（省份太小）", "Split failed (province is too small)")
             return False
 
         # 优先使用空洞 ID
@@ -177,7 +177,7 @@ class ProvinceController(BaseController):
         count_keep = len(ys) - count_split
 
         if count_split < 4 or count_keep < 4:
-            self._emit_status("切割线没有将省份分成有效的两部分")
+            self._emit_status("切割线没有将省份分成有效的两部分", "The split line did not divide the province into two valid parts")
             return False
 
         split_mask_arr = np.zeros_like(province_map, dtype=bool)
@@ -188,7 +188,7 @@ class ProvinceController(BaseController):
         self.history.execute(cmd)
 
         self.project.mark_dirty()
-        self._emit_status(f"省份 {pid} 已切割，新省份 ID: {new_pid}")
+        self._emit_status(f"省份 {pid} 已切割，新省份 ID: {new_pid}", f"Province {pid} split; new province ID: {new_pid}")
         self._emit_render(full=True)
 
         max_id = int(province_map.max())
@@ -202,10 +202,10 @@ class ProvinceController(BaseController):
         """合并模式下点击省份。"""
         if self.merge_first_pid == 0:
             self.merge_first_pid = pid
-            self._emit_status(f"已选中省份 {pid}，点击要合并的目标省份")
+            self._emit_status(f"已选中省份 {pid}，点击要合并的目标省份", f"Province {pid} selected; click the province to merge into it")
         elif self.merge_first_pid == pid:
             self.merge_first_pid = 0
-            self._emit_status("取消选择，仍在合并模式")
+            self._emit_status("取消选择，仍在合并模式", "Selection cleared; merge mode remains active")
         else:
             # 执行合并
             cmd = MergeProvincesCommand(
@@ -229,9 +229,9 @@ class ProvinceController(BaseController):
             self.event_bus.emit("province_gaps_changed", gap_ids=gap_ids)
             self.event_bus.emit("province_count_changed", count=max_id)
             if gap_ids:
-                self._emit_status(f"已合并 {pid} → {self.merge_first_pid}，缺失ID: {gap_ids[:5]}...")
+                self._emit_status(f"已合并 {pid} → {self.merge_first_pid}，缺失ID: {gap_ids[:5]}...", f"Merged {pid} → {self.merge_first_pid}; missing IDs: {gap_ids[:5]}...")
             else:
-                self._emit_status(f"已合并 {pid} → {self.merge_first_pid}（ID 无空洞）")
+                self._emit_status(f"已合并 {pid} → {self.merge_first_pid}（ID 无空洞）", f"Merged {pid} → {self.merge_first_pid} (no ID gaps)")
             self._emit_render(full=True)
 
             # 不退出合并模式，重置等待下一对

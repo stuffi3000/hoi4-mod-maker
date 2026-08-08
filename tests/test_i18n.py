@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import importlib
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -35,6 +36,15 @@ def test_all_languages_load(i18n):
     for lang in ("en", "ru"):
         orphans = set(i18n._languages[lang]) - zh_keys
         assert not orphans, f"{lang} 有中文没有的孤儿键: {sorted(orphans)[:5]}"
+
+
+def test_english_catalog_contains_no_chinese_text(i18n):
+    chinese = re.compile(r"[\u4e00-\u9fff]")
+    offenders = {
+        key: value for key, value in i18n._languages["en"].items()
+        if chinese.search(value)
+    }
+    assert not offenders, f"English translations still contain Chinese: {offenders}"
 
 
 def test_placeholder_consistency_zh_en_ru(i18n):
@@ -75,6 +85,15 @@ def test_tr_missing_key_returns_key(i18n):
     """缺失 key 时返回 key 本身, 不崩."""
     result = i18n.tr("__nonexistent_key__")
     assert result == "__nonexistent_key__"
+
+
+def test_tr_pair_uses_english_fallback_outside_chinese(i18n):
+    i18n.set_language("en")
+    assert i18n.tr_pair("省份 {0}", "Province {0}", 42) == "Province 42"
+    i18n.set_language("ru")
+    assert i18n.tr_pair("省份 {0}", "Province {0}", 42) == "Province 42"
+    i18n.set_language("zh")
+    assert i18n.tr_pair("省份 {0}", "Province {0}", 42) == "省份 42"
 
 
 def test_tr_fallback_chain(i18n):

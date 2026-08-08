@@ -32,7 +32,7 @@ class TerrainController(BaseController):
         """进入地形模式。"""
         self._stroke_changes.clear()
         self._is_painting = False
-        self._emit_status("地形编辑模式")
+        self._emit_status("地形编辑模式", "Terrain editing mode")
 
     def deactivate(self) -> None:
         """离开地形模式，结束未完成笔触。"""
@@ -87,8 +87,10 @@ class TerrainController(BaseController):
         self._emit_render(full=True)
         from data.terrain_types import PALETTE_TO_TYPE, TERRAIN_TYPES
         tkey = PALETTE_TO_TYPE.get(self.current_terrain_index)
-        tname = TERRAIN_TYPES[tkey].name_cn if tkey in TERRAIN_TYPES else "未知"
-        self._emit_status(f"省份 {pid} 地形已设为 {tname}")
+        terrain = TERRAIN_TYPES.get(tkey)
+        tname = terrain.name_cn if terrain else "未知"
+        tname_en = terrain.name_en if terrain else "Unknown"
+        self._emit_status(f"省份 {pid} 地形已设为 {tname}", f"Province {pid} terrain set to {tname_en}")
 
     def on_press(self, x: int, y: int, pid: int, button: str, modifiers: set) -> bool:
         """画笔模式下鼠标按下。"""

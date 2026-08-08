@@ -5,6 +5,8 @@ country — en 翻译
 """
 
 STRINGS: dict[str, str] = {
+    "country_assign_mode_btn": "Assign Territory Mode",
+    "country_assign_mode_tip": "When enabled: click a state on the map to assign it to the selected country (Ctrl+Z restores the previous owner).\nWhen disabled (information mode): clicking the map only shows country information and does not change ownership.",
     "country_capital_label": "Capital:",
     "country_capital_unset": "Not Set",
     "country_color_label": "Color:",

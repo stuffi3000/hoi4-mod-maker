@@ -124,7 +124,8 @@ class Project:
         """保存项目到文件。"""
         save_path = path or self._path
         if not save_path:
-            raise ValueError("没有指定保存路径")
+            from ui.i18n import tr_pair
+            raise ValueError(tr_pair("没有指定保存路径", "No save path was specified"))
         from domain.project_io import save_project
 
         save_project(
@@ -270,7 +271,8 @@ class Project:
                 autosave_path = self._path + ".autosave"
                 self.save(autosave_path)
                 self._path = self._path.replace(".autosave", "")  # restore original path
-                self.event_bus.emit("status_message", text="自动保存完成")
+                from ui.i18n import tr_pair
+                self.event_bus.emit("status_message", text=tr_pair("自动保存完成", "Autosave complete"))
             except Exception:
                 pass  # autosave failure is silent
         # Reschedule

@@ -21,7 +21,7 @@ def _write_crash_log(tb_text: str) -> str:
     ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     path = log_dir / f"crash_{ts}.log"
     with open(path, "w", encoding="utf-8") as f:
-        f.write(f"# 崩溃时间: {datetime.datetime.now().isoformat()}\n")
+        f.write(f"# Crash time: {datetime.datetime.now().isoformat()}\n")
         f.write(f"# Python: {sys.version}\n")
         f.write(f"# Platform: {sys.platform}\n\n")
         f.write(tb_text)

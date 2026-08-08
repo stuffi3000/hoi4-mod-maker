@@ -21,6 +21,7 @@ STRINGS: dict[str, str] = {
     "action_redo": "Повторить",
     "action_reset_hints": "Сбросить подсказки режимов",
     "action_save": "Сохранить проект",
+    "action_save_as": "Сохранить проект как...",
     "action_shortcut_settings": "Настройки горячих клавиш...",
     "action_show_grid": "Показать сетку",
     "action_show_ref": "Показать референсное изображение",

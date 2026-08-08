@@ -13,9 +13,9 @@ class ToolRegistry:
     @classmethod
     def register(cls, tool: Tool) -> None:
         if not tool.name:
-            raise ValueError(f"Tool {tool.__class__.__name__} 必须设置 name 属性")
+            raise ValueError(f"Tool {tool.__class__.__name__} must define a name attribute")
         if tool.name in cls._tools:
-            raise ValueError(f"Tool '{tool.name}' 已注册")
+            raise ValueError(f"Tool '{tool.name}' is already registered")
         cls._tools[tool.name] = tool
 
     @classmethod

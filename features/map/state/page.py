@@ -9,7 +9,7 @@ from PyQt5.QtWidgets import (
 
 from domain.managers.state import StateManager
 
-from ui.i18n import tr
+from ui.i18n import tr, tr_pair
 from ui.styles import (
     make_section as _make_section,
     _DIM, _SECTION_STYLE, _LABEL_STYLE, _DIM_LABEL_STYLE,
@@ -86,7 +86,7 @@ class StatePage(QWidget):
 
         self._assign_chk = QCheckBox(tr("state_assign_drag_label"))
         self._assign_chk.setChecked(False)
-        self._assign_chk.setToolTip(tr("state_assign_drag_label") + " — 再次点击退出")
+        self._assign_chk.setToolTip(tr("state_assign_drag_label") + tr_pair(" — 再次点击退出", " — click again to exit"))
         self._assign_chk.setStyleSheet(
             "QCheckBox { color: #e8eaed; font-size: 13px; font-weight: 600; padding: 6px; }"
             "QCheckBox:checked { color: #86efac; }"
@@ -98,7 +98,7 @@ class StatePage(QWidget):
         self._batch_btn = QPushButton(tr("state_batch_select_btn_short"))
         self._batch_btn.setCheckable(True)
         self._batch_btn.setStyleSheet(_PRIMARY_BTN_STYLE)
-        self._batch_btn.setToolTip(tr("state_batch_select_tip") + "（再次点击退出）")
+        self._batch_btn.setToolTip(tr("state_batch_select_tip") + tr_pair("（再次点击退出）", " (click again to exit)"))
         self._batch_btn.toggled.connect(self._on_batch_toggled)
         batch_row.addWidget(self._batch_btn)
 

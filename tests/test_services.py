@@ -6,6 +6,18 @@ import numpy as np
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def _isolate_language():
+    """Service-message assertions must not depend on another test's locale."""
+    from ui.i18n import get_language, set_language
+    previous = get_language()
+    set_language("zh")
+    try:
+        yield
+    finally:
+        set_language(previous)
+
+
 def test_terrain_service_auto_terrain():
     from services.terrain_service import auto_terrain
     from data.constants import TILE_LAND, TILE_SEA, TILE_LAKE
@@ -49,6 +61,20 @@ def test_export_service_validate_empty_map():
 
     warnings = validate_before_export(_FakeCanvas(), StateManager(), CountryManager())
     assert any("省份" in w for w in warnings)
+
+
+def test_export_service_validate_empty_map_in_english():
+    from services.export_service import validate_before_export
+    from domain.managers.state import StateManager
+    from domain.managers.country import CountryManager
+    from ui.i18n import set_language
+
+    class _FakeCanvas:
+        province_map = np.zeros((10, 10), dtype=np.int32)
+
+    set_language("en")
+    warnings = validate_before_export(_FakeCanvas(), StateManager(), CountryManager())
+    assert warnings == ["No province data; generate provinces first"]
 
 
 def test_export_service_validate_missing_owner():

@@ -37,7 +37,7 @@ class SupplyNodeManager:
     def add(self, province_id: int, level: int = 1) -> None:
         """添加或更新一个 supply node."""
         if level < 1:
-            raise ValueError(f"level 必须 >= 1, 传入 {level}")
+            raise ValueError(f"level must be at least 1; received {level}")
         self._nodes[province_id] = SupplyNode(province_id=province_id, level=level)
 
     def remove(self, province_id: int) -> bool:

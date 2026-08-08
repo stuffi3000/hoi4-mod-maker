@@ -235,7 +235,7 @@ def write_countries_from_mgr(country_mgr, output_dir, states):
             prov_to_state[p] = sid
     if not states:
         raise ValueError(
-            "无法导出国家：没有生成任何 State。请先生成省份和 State 数据。"
+            "Cannot export countries: no states have been generated. Generate province and state data first."
         )
     fallback_state = min(states.keys())
 
@@ -443,4 +443,3 @@ def write_bookmark(mod_name, country_tags, output_dir):
         f.write('\t\t}\n')
         f.write("\t}\n")
         f.write("}\n")
-

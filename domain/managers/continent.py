@@ -47,7 +47,7 @@ class ContinentManager:
         """添加大陆, 返回其 0-based 索引. 重名则返回现有索引."""
         name = name.strip()
         if not name:
-            raise ValueError("大陆名不能为空")
+            raise ValueError("Continent name cannot be empty")
         if name in self._names:
             return self._names.index(name)
         self._names.append(name)
@@ -56,19 +56,19 @@ class ContinentManager:
     def rename_continent(self, index: int, new_name: str) -> None:
         new_name = new_name.strip()
         if not new_name:
-            raise ValueError("大陆名不能为空")
+            raise ValueError("Continent name cannot be empty")
         if not (0 <= index < len(self._names)):
-            raise IndexError(f"大陆索引越界: {index}")
+            raise IndexError(f"Continent index out of range: {index}")
         if new_name in self._names and self._names.index(new_name) != index:
-            raise ValueError(f"大陆名已存在: {new_name}")
+            raise ValueError(f"Continent name already exists: {new_name}")
         self._names[index] = new_name
 
     def remove_continent(self, index: int) -> None:
         """删除大陆. 必须至少保留 1 个. 指向该大陆的省份改指向 0."""
         if len(self._names) <= 1:
-            raise ValueError("必须至少保留 1 个大陆")
+            raise ValueError("At least one continent must remain")
         if not (0 <= index < len(self._names)):
-            raise IndexError(f"大陆索引越界: {index}")
+            raise IndexError(f"Continent index out of range: {index}")
         self._names.pop(index)
         # 重新映射省份: 被删的 → 0, 后面的 → 前移 1
         new_map: dict[int, int] = {}
@@ -85,7 +85,7 @@ class ContinentManager:
 
     def assign_province(self, pid: int, continent_index: int) -> None:
         if not (0 <= continent_index < len(self._names)):
-            raise IndexError(f"大陆索引越界: {continent_index}")
+            raise IndexError(f"Continent index out of range: {continent_index}")
         self._province_continent[pid] = continent_index
 
     def assign_provinces(self, pids: list[int], continent_index: int) -> None:

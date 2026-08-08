@@ -28,7 +28,7 @@ class RiverController(BaseController):
         """进入河流模式。"""
         self._stroke_changes.clear()
         self._is_painting = False
-        self._emit_status("河流编辑模式")
+        self._emit_status("河流编辑模式", "River editing mode")
 
     def deactivate(self) -> None:
         """离开河流模式，结束未完成笔触。"""

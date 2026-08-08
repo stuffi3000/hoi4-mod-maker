@@ -39,16 +39,16 @@ def _load_language_dir(lang: str) -> dict[str, str]:
         try:
             mod = importlib.import_module(module_name)
         except Exception as exc:
-            logger.exception("加载翻译文件失败: %s (%s)", module_name, exc)
+            logger.exception("Failed to load translation file: %s (%s)", module_name, exc)
             continue
         strings = getattr(mod, "STRINGS", None)
         if not isinstance(strings, dict):
-            logger.warning("%s 缺少 STRINGS dict，跳过", module_name)
+            logger.warning("%s has no STRINGS dictionary; skipping", module_name)
             continue
         overlap = merged.keys() & strings.keys()
         if overlap:
             raise ImportError(
-                f"翻译 key 重复定义: {sorted(overlap)} 在 {lang}/{py_file.name}"
+                f"Duplicate translation keys: {sorted(overlap)} in {lang}/{py_file.name}"
             )
         merged.update(strings)
     return merged
@@ -115,7 +115,7 @@ def set_language(lang: str) -> None:
     """切换语言并持久化到 QSettings。"""
     global _current_lang
     if lang not in _languages:
-        logger.warning("语言 %s 未加载，忽略切换", lang)
+        logger.warning("Language %s is not loaded; ignoring switch", lang)
         return
     _current_lang = lang
     try:
@@ -157,6 +157,26 @@ def tr(key: str, *args: object, **kwargs: object) -> str:
             )
             return text
     return key
+
+
+def tr_pair(zh: str, en: str, *args: object, **kwargs: object) -> str:
+    """Return Chinese text in Chinese mode and English everywhere else.
+
+    This is intended for dynamic messages whose values contain runtime IDs,
+    paths, or counts and would otherwise bypass the translation catalogs.
+    """
+    text = zh if _current_lang == "zh" else en
+    if not args and not kwargs:
+        return text
+    try:
+        return text.format(*args, **kwargs)
+    except (IndexError, KeyError) as exc:
+        logger.warning(
+            "i18n placeholder mismatch: pair lang=%s args=%r kwargs=%r "
+            "template=%r error=%s",
+            _current_lang, args, kwargs, text, exc,
+        )
+        return text
 
 
 def reload_translations() -> None:

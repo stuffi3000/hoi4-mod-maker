@@ -23,6 +23,7 @@ import re
 import numpy as np
 
 from data.constants import DEFAULT_HOI4_PATH
+from ui.i18n import tr_pair
 
 # atlas 图集固定为 4×4 瓦片网格
 ATLAS_GRID = 4
@@ -185,7 +186,7 @@ class GameAssets:
                 with open(path, "r", encoding="utf-8", errors="replace") as f:
                     return parse_water_palette_indices(f.read())
             except OSError as e:
-                self.last_error = f"读取 {path} 失败: {e}"
+                self.last_error = tr_pair(f"读取 {path} 失败: {e}", f"Failed to read {path}: {e}")
                 return None
         return self._cached("water_palette_indices", _load)
 
@@ -209,11 +210,11 @@ class GameAssets:
 
     def _abs(self, relpath: str) -> str | None:
         if self.install_dir is None:
-            self.last_error = "未找到 HOI4 安装目录"
+            self.last_error = tr_pair("未找到 HOI4 安装目录", "HOI4 installation directory was not found")
             return None
         path = os.path.join(self.install_dir, relpath)
         if not os.path.isfile(path):
-            self.last_error = f"游戏文件不存在: {path}"
+            self.last_error = tr_pair(f"游戏文件不存在: {path}", f"Game file does not exist: {path}")
             return None
         return path
 
@@ -225,10 +226,10 @@ class GameAssets:
             with open(path, "r", encoding="utf-8", errors="replace") as f:
                 mapping = parse_terrain_to_texture(f.read())
         except OSError as e:
-            self.last_error = f"读取 {path} 失败: {e}"
+            self.last_error = tr_pair(f"读取 {path} 失败: {e}", f"Failed to read {path}: {e}")
             return None
         if not mapping:
-            self.last_error = f"{path} 中未找到图形地形定义"
+            self.last_error = tr_pair(f"{path} 中未找到图形地形定义", f"No graphical terrain definitions were found in {path}")
             return None
         return mapping
 
@@ -242,7 +243,7 @@ class GameAssets:
             with Image.open(path) as im:
                 return np.asarray(im.convert("RGBA"))
         except Exception as e:  # PIL 解码失败种类繁多, 统一降级
-            self.last_error = f"解码 {path} 失败: {e}"
+            self.last_error = tr_pair(f"解码 {path} 失败: {e}", f"Failed to decode {path}: {e}")
             return None
 
     def _load_dds_tiles(self, relpath: str) -> np.ndarray | None:
@@ -250,7 +251,7 @@ class GameAssets:
         if arr is None:
             return None
         if arr.shape[0] % ATLAS_GRID or arr.shape[1] % ATLAS_GRID:
-            self.last_error = f"{relpath} 尺寸 {arr.shape} 不是 {ATLAS_GRID}×{ATLAS_GRID} 网格"
+            self.last_error = tr_pair(f"{relpath} 尺寸 {arr.shape} 不是 {ATLAS_GRID}×{ATLAS_GRID} 网格", f"{relpath} size {arr.shape} is not a {ATLAS_GRID}×{ATLAS_GRID} grid")
             return None
         return slice_atlas(arr)
 

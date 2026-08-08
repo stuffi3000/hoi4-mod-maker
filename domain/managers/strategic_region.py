@@ -104,6 +104,19 @@ PRESET_LABELS = {
     "polar": "极地", "cold": "寒带", "temperate": "温带",
     "tropical": "热带", "desert": "沙漠",
 }
+PRESET_LABELS_EN = {
+    "polar": "Polar", "cold": "Cold", "temperate": "Temperate",
+    "tropical": "Tropical", "desert": "Desert",
+}
+
+
+def weather_preset_display_name(preset: str) -> str:
+    """Return a localized label for a strategic-region weather preset."""
+    from ui.i18n import tr_pair
+    return tr_pair(
+        PRESET_LABELS.get(preset, preset),
+        PRESET_LABELS_EN.get(preset, preset),
+    )
 
 
 def _split_connected(province_map: np.ndarray, pids: set[int]) -> list[list[int]]:

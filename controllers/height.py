@@ -25,7 +25,7 @@ class HeightController(BaseController):
 
     def activate(self) -> None:
         """进入高度模式。"""
-        self._emit_status("高度编辑模式")
+        self._emit_status("高度编辑模式", "Height editing mode")
 
     def on_province_clicked(self, pid: int) -> None:
         """点击省份设置高度值。"""
@@ -49,4 +49,4 @@ class HeightController(BaseController):
             "map/terrain/fow_rgb_waterspec_a.dds",
         )
         self._emit_render(full=True)
-        self._emit_status(f"省份 {pid} 高度已设为 {self.current_height_value}")
+        self._emit_status(f"省份 {pid} 高度已设为 {self.current_height_value}", f"Province {pid} height set to {self.current_height_value}")

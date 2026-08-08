@@ -39,7 +39,8 @@ def main():
     QApplication.setAttribute(Qt.ApplicationAttribute.AA_UseHighDpiPixmaps, True)
 
     app = QApplication(sys.argv)
-    app.setApplicationName("HOI4 MOD 制作工具")
+    from ui.i18n import tr, tr_pair
+    app.setApplicationName(tr("app_title"))
     app.setOrganizationName("HOI4ModTools")
 
     # 全局基础字体: 必须在 stylesheet 前设置, 作为所有 widget 的 fallback.
@@ -77,7 +78,7 @@ QStatusBar, QHeaderView, QScrollBar, QToolTip {
         app.setStyleSheet(_qss + _FONT_OVERRIDE_CSS)
     except Exception as e:
         # qdarktheme 缺失或资源加载失败 -> 退回 ui/styles.py 自带暗色主题
-        print(f"[warn] qdarktheme 不可用, 退回内置主题: {e}", file=sys.stderr)
+        print(tr_pair(f"[warn] qdarktheme 不可用, 退回内置主题: {e}", f"[warn] qdarktheme unavailable; using the built-in theme: {e}"), file=sys.stderr)
         from ui.styles import DARK_STYLESHEET
         app.setStyleSheet(DARK_STYLESHEET + _FONT_OVERRIDE_CSS)
 

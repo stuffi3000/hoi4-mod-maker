@@ -48,9 +48,9 @@ class RailwayManager:
     def add(self, level: int, province_ids: list[int]) -> int:
         """添加一条铁路, 返回索引."""
         if not (1 <= level <= self.MAX_LEVEL):
-            raise ValueError(f"level 必须在 1-{self.MAX_LEVEL}, 传入 {level}")
+            raise ValueError(f"level must be between 1 and {self.MAX_LEVEL}; received {level}")
         if len(province_ids) < 2:
-            raise ValueError(f"铁路至少经过 2 个省份, 传入 {len(province_ids)}")
+            raise ValueError(f"A railway must pass through at least 2 provinces; received {len(province_ids)}")
         self._entries.append(RailwayEntry(level=level, province_ids=list(province_ids)))
         return len(self._entries) - 1
 
@@ -62,7 +62,7 @@ class RailwayManager:
 
     def update_level(self, index: int, level: int) -> None:
         if not (1 <= level <= self.MAX_LEVEL):
-            raise ValueError(f"level 必须在 1-{self.MAX_LEVEL}")
+            raise ValueError(f"level must be between 1 and {self.MAX_LEVEL}")
         if 0 <= index < len(self._entries):
             self._entries[index].level = level
 

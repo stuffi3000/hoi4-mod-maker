@@ -54,7 +54,7 @@ def export_full_mod(
     if dirty_assets is None:
         dirty_assets = set()
     if int(province_map.max()) == 0:
-        raise ValueError("没有省份数据，请先生成省份")
+        raise ValueError("No province data; generate provinces first")
 
     # 防御性刷新全局尺寸：用户可能加载了非默认尺寸项目但没触发 set_map_size,
     # 或某些 writer 在文件顶部 import MAP_* 已绑定旧值（lazy import 的会刷新）
@@ -280,7 +280,7 @@ def export_full_mod(
                 states[best_sid].append(orphan)
                 if state_mgr.get_state(best_sid):
                     state_mgr.get_state(best_sid).provinces.append(orphan)
-            print(f"  [orphan adoption] 领养了 {len(orphans)} 个孤儿陆地省份")
+            print(f"  [orphan adoption] Assigned {len(orphans)} orphaned land provinces")
     else:
         states = None  # 稍后用 region 拆 state
 
@@ -300,7 +300,7 @@ def export_full_mod(
             land_ids = [p for p in land_ids if p not in orphan_coastal]
             sea_ids = sorted(set(sea_ids) | orphan_coastal)
             coastal_set -= orphan_coastal
-            print(f"  [coastal] 转换 {len(orphan_coastal)} 个无 state 的 coastal 省份为 sea 类型")
+            print(f"  [coastal] Converted {len(orphan_coastal)} coastal provinces without a state to sea")
         land_to_sea = {p: s for p, s in land_to_sea.items() if p in coastal_set}
 
     # definition.csv 延后到 buildings 之后写（需要 buildings 的坐标验证结果）
@@ -357,7 +357,7 @@ def export_full_mod(
             coastal_set -= failed_coastal
             land_ids = [p for p in land_ids if p not in failed_coastal]
             sea_ids = sorted(set(sea_ids) | failed_coastal)
-            print(f"  [coastal] 转换 {len(failed_coastal)} 个坐标不可靠的 coastal 省份为 sea 类型")
+            print(f"  [coastal] Converted {len(failed_coastal)} coastal provinces with unreliable coordinates to sea")
 
         _write_definition_csv(province_count, colors, province_map, tile_map, output_dir,
                               land_ids, sea_ids, lake_ids, continent_mgr=continent_mgr,
@@ -441,7 +441,7 @@ def _verify_non_empty(output_dir, scope=None):
             missing.append(rel)
     if missing:
         raise RuntimeError(
-            "MOD 导出后校验失败：下列关键文件缺失或为空（会导致 HOI4 崩溃）：\n  - "
+            "Post-export validation failed: the following critical files are missing or empty (HOI4 may crash):\n  - "
             + "\n  - ".join(missing)
         )
 
@@ -450,12 +450,12 @@ def _verify_non_empty(output_dir, scope=None):
     if not os.path.isdir(sr_dir) or not any(
         f.endswith(".txt") for f in os.listdir(sr_dir)
     ):
-        raise RuntimeError("map/strategicregions/ 为空 — 至少需要一个战略区域")
+        raise RuntimeError("map/strategicregions/ is empty — at least one strategic region is required")
     st_dir = os.path.join(output_dir, "history", "states")
     if not os.path.isdir(st_dir) or not any(
         f.endswith(".txt") for f in os.listdir(st_dir)
     ):
-        raise RuntimeError("history/states/ 为空 — 至少需要一个 State")
+        raise RuntimeError("history/states/ is empty — at least one state is required")
 
 
 def _compute_coastal_province_level(province_map, land_ids, sea_ids):
@@ -1111,21 +1111,21 @@ def _sync_terrain_with_tile(terrain_map: np.ndarray, tile_map: np.ndarray) -> No
     count_land = int(np.sum(land_bad))
     if count_land > 0:
         terrain_map[land_bad] = plains_idx
-        print(f"  [terrain sync] {count_land:,} 个陆地像素的地形从 ocean 改为 plains")
+        print(f"  [terrain sync] Changed {count_land:,} land pixels from ocean terrain to plains")
 
     # 海洋上不应有陆地地形
     sea_bad = (tile_map == TILE_SEA) & (terrain_map != ocean_idx)
     count_sea = int(np.sum(sea_bad))
     if count_sea > 0:
         terrain_map[sea_bad] = ocean_idx
-        print(f"  [terrain sync] {count_sea:,} 个海洋像素的地形改为 ocean")
+        print(f"  [terrain sync] Changed {count_sea:,} sea pixels to ocean terrain")
 
     # 湖泊上地形应为 lakes
     lake_bad = (tile_map == TILE_LAKE) & (terrain_map != lakes_idx)
     count_lake = int(np.sum(lake_bad))
     if count_lake > 0:
         terrain_map[lake_bad] = lakes_idx
-        print(f"  [terrain sync] {count_lake:,} 个湖泊像素的地形改为 lakes")
+        print(f"  [terrain sync] Changed {count_lake:,} lake pixels to lakes terrain")
 
 
 def _gen_heightmap(tm):

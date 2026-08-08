@@ -48,7 +48,7 @@ def generate_provinces(
     total_pixels = land_pixels + sea_pixels + lake_pixels
 
     if total_pixels == 0:
-        raise ValueError("地图上没有任何有效地块（陆地/海洋/湖泊）")
+        raise ValueError("The map contains no valid tiles (land, sea, or lake)")
 
     # 计算各区域省份数量 — 海洋用 sea_scale 压低
     land_weight = land_pixels * land_density_ratio

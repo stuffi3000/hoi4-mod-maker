@@ -15,7 +15,7 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
 from PyQt5.QtGui import QColor
 
-from ui.i18n import tr, set_language, get_language, available_languages
+from ui.i18n import tr, tr_pair, set_language, get_language, available_languages
 from views.main_window_file_ops import MainWindowFileOpsMixin
 
 if TYPE_CHECKING:
@@ -94,17 +94,19 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
         existing = len(self._project.state_mgr.states)
         if existing > 0:
             reply = QMessageBox.question(
-                self, "确认自动分组",
-                f"当前已有 {existing} 个州。\n"
-                f"自动分组将清空所有现有州数据，重新按每州 {per_state} 个省份分组。\n\n"
-                f"是否继续？",
+                self,
+                tr_pair("确认自动分组", "Confirm Automatic State Grouping"),
+                tr_pair(
+                    f"当前已有 {existing} 个州。\n自动分组将清空所有现有州数据，重新按每州 {per_state} 个省份分组。\n\n是否继续？",
+                    f"There are currently {existing} states.\nAutomatic grouping will clear all existing state data and regroup provinces at {per_state} provinces per state.\n\nContinue?",
+                ),
             )
             if reply != QMessageBox.StandardButton.Yes:
                 return
         # 撤销快照：state_mgr 内部字段
         state_mgr = self._project.state_mgr
         snap_fields = [f for f in ("_states", "_next_id") if hasattr(state_mgr, f)]
-        cmd = ManagerSnapshotCommand("自动分组州", state_mgr, snap_fields)
+        cmd = ManagerSnapshotCommand(tr_pair("自动分组州", "Automatically group states"), state_mgr, snap_fields)
         self._controllers["state"].auto_states(per_state)
         cmd.capture_after()
         self._cmd_history._undo_stack.append(cmd)
@@ -119,16 +121,19 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
         existing = self._project.strategic_region_mgr.count()
         if existing > 0:
             reply = QMessageBox.question(
-                self, "确认自动生成",
-                f"当前已有 {existing} 个战略区域。\n"
-                f"自动生成将清空所有现有战略区域数据。\n\n是否继续？",
+                self,
+                tr_pair("确认自动生成", "Confirm Automatic Generation"),
+                tr_pair(
+                    f"当前已有 {existing} 个战略区域。\n自动生成将清空所有现有战略区域数据。\n\n是否继续？",
+                    f"There are currently {existing} strategic regions.\nAutomatic generation will clear all existing strategic-region data.\n\nContinue?",
+                ),
             )
             if reply != QMessageBox.StandardButton.Yes:
                 return
         # 撤销快照：strategic_region_mgr 内部字段
         sr_mgr = self._project.strategic_region_mgr
         snap_fields = [f for f in ("_regions", "_next_id") if hasattr(sr_mgr, f)]
-        cmd = ManagerSnapshotCommand("自动生成战略区", sr_mgr, snap_fields)
+        cmd = ManagerSnapshotCommand(tr_pair("自动生成战略区", "Automatically generate strategic regions"), sr_mgr, snap_fields)
         self._controllers["strategic_region"].auto_generate()
         cmd.capture_after()
         self._cmd_history._undo_stack.append(cmd)
@@ -239,12 +244,12 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
             consumed = self._cleanup_consumed_provinces(province_map)
             assigned = self._auto_assign_new_provinces(province_map)
             msg = tr("status_gen_done").format(count=count)
-            msg += f" ({assigned} 个新省份已自动分配)"
+            msg += tr_pair(f" ({assigned} 个新省份已自动分配)", f" ({assigned} new provinces assigned automatically)")
             if consumed:
                 ids_str = ", ".join(str(i) for i in sorted(consumed)[:10])
                 if len(consumed) > 10:
-                    ids_str += f" ... 共 {len(consumed)} 个"
-                msg += f"\n⚠ 被完全吞并的省份: {ids_str}"
+                    ids_str += tr_pair(f" ... 共 {len(consumed)} 个", f" ... {len(consumed)} total")
+                msg += tr_pair(f"\n⚠ 被完全吞并的省份: {ids_str}", f"\n⚠ Fully absorbed provinces: {ids_str}")
             self._status_info.setText(msg)
         else:
             self._status_info.setText(tr("status_gen_done").format(count=count))
@@ -454,7 +459,7 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
         # 撤销快照：操作后 + 入栈
         if BrushStrokeCommand.has_changes(before, snap_arrays):
             after = BrushStrokeCommand.snapshot_arrays(snap_arrays)
-            cmd = BrushStrokeCommand("平滑海岸线", before, after)
+            cmd = BrushStrokeCommand(tr_pair("平滑海岸线", "Smooth coastline"), before, after)
             cmd.set_target_arrays(self._app._get_all_arrays())
             self._cmd_history._undo_stack.append(cmd)
             self._cmd_history._redo_stack.clear()
@@ -672,7 +677,7 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
         from commands.map.manager_snapshot import ManagerSnapshotCommand
         cm = self._project.country_mgr
         cmd = ManagerSnapshotCommand(
-            f"修改 {tag} {prop}", cm,
+            tr_pair(f"修改 {tag} {prop}", f"Change {tag} {prop}"), cm,
             [f for f in ("_countries",) if hasattr(cm, f)],
         )
         self._controllers["country"].change_property(tag, prop, val)
@@ -693,7 +698,7 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
             return
         cm = self._project.country_mgr
         cmd = ManagerSnapshotCommand(
-            f"修改 {tag} 颜色", cm,
+            tr_pair(f"修改 {tag} 颜色", f"Change {tag} color"), cm,
             [f for f in ("_countries",) if hasattr(cm, f)],
         )
         ctrl: CountryController = self._controllers["country"]
@@ -990,7 +995,7 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
         # 撤销快照：操作后 + 入栈
         if BrushStrokeCommand.has_changes(before, snap_arrays):
             after = BrushStrokeCommand.snapshot_arrays(snap_arrays)
-            cmd = BrushStrokeCommand("自动生成高度图", before, after)
+            cmd = BrushStrokeCommand(tr_pair("自动生成高度图", "Automatically generate heightmap"), before, after)
             cmd.set_target_arrays(self._app._get_all_arrays())
             self._cmd_history._undo_stack.append(cmd)
             self._cmd_history._redo_stack.clear()
@@ -1206,7 +1211,7 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
         ctrl: ContinentController = self._controllers["continent"]
         cm = self._project.continent_mgr
         cmd = ManagerSnapshotCommand(
-            "添加大洲", cm,
+            tr_pair("添加大洲", "Add continent"), cm,
             [f for f in ("_names", "_province_continent") if hasattr(cm, f)],
         )
         if ctrl.add_continent(name):
@@ -1225,7 +1230,7 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
         ctrl: ContinentController = self._controllers["continent"]
         cm = self._project.continent_mgr
         cmd = ManagerSnapshotCommand(
-            "重命名大洲", cm,
+            tr_pair("重命名大洲", "Rename continent"), cm,
             [f for f in ("_names",) if hasattr(cm, f)],
         )
         if ctrl.rename_continent(index, name):
@@ -1244,7 +1249,7 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
         ctrl: ContinentController = self._controllers["continent"]
         cm = self._project.continent_mgr
         cmd = ManagerSnapshotCommand(
-            "删除大洲", cm,
+            tr_pair("删除大洲", "Delete continent"), cm,
             [f for f in ("_names", "_province_continent") if hasattr(cm, f)],
         )
         if ctrl.remove_continent(index):
@@ -1300,7 +1305,7 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
 
     def _on_sr_new(self) -> None:
         """新建战略区。可撤销 (Ctrl+Z)。"""
-        cmd = self._track_sr_op("新建战略区")
+        cmd = self._track_sr_op(tr_pair("新建战略区", "Create strategic region"))
         self._controllers["strategic_region"].create_region()
         self._commit_cmd(cmd)
         self._refresh_sr_list()
@@ -1312,7 +1317,7 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
         if item is None:
             return
         rid = int(item.data(Qt.UserRole) or 0)
-        cmd = self._track_sr_op(f"删除战略区 #{rid}")
+        cmd = self._track_sr_op(tr_pair(f"删除战略区 #{rid}", f"Delete strategic region #{rid}"))
         self._controllers["strategic_region"].delete_region(rid)
         self._commit_cmd(cmd)
         self._refresh_sr_list()
@@ -1359,7 +1364,7 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
         rid = self._get_sr_current_rid()
         if rid <= 0:
             return
-        cmd = self._track_sr_op(f"改战略区 #{rid} 名称")
+        cmd = self._track_sr_op(tr_pair(f"改战略区 #{rid} 名称", f"Change strategic region #{rid} name"))
         self._controllers["strategic_region"].set_name(rid, name)
         self._commit_cmd(cmd)
         self._refresh_sr_list()
@@ -1372,7 +1377,7 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
         r = self._project.strategic_region_mgr.get(rid)
         if r is None:
             return
-        cmd = self._track_sr_op(f"改战略区 #{rid} 英文名")
+        cmd = self._track_sr_op(tr_pair(f"改战略区 #{rid} 英文名", f"Change strategic region #{rid} English name"))
         r.name_en = name_en
         self._commit_cmd(cmd)
 
@@ -1381,7 +1386,7 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
         rid = self._get_sr_current_rid()
         if rid <= 0:
             return
-        cmd = self._track_sr_op(f"改战略区 #{rid} 天气")
+        cmd = self._track_sr_op(tr_pair(f"改战略区 #{rid} 天气", f"Change strategic region #{rid} weather"))
         self._controllers["strategic_region"].set_weather(rid, preset)
         self._commit_cmd(cmd)
 
@@ -1390,19 +1395,19 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
         rid = self._get_sr_current_rid()
         if rid <= 0:
             return
-        cmd = self._track_sr_op(f"改战略区 #{rid} 海军地形")
+        cmd = self._track_sr_op(tr_pair(f"改战略区 #{rid} 海军地形", f"Change strategic region #{rid} naval terrain"))
         self._controllers["strategic_region"].set_naval(rid, naval)
         self._commit_cmd(cmd)
 
     def _refresh_sr_list(self) -> None:
         from PyQt5.QtWidgets import QListWidgetItem
-        from domain.managers.strategic_region import PRESET_LABELS
+        from domain.managers.strategic_region import weather_preset_display_name
         lst = self._tool_panel._sr_list
         lst.clear()
         for r in sorted(self._project.strategic_region_mgr.regions.values(), key=lambda x: x.id):
             label = (
                 f"#{r.id} {r.name}  ({len(r.province_ids)}{tr('unit_provinces')}, "
-                f"{PRESET_LABELS.get(r.weather_preset, r.weather_preset)})"
+                f"{weather_preset_display_name(r.weather_preset)})"
             )
             item = QListWidgetItem(label)
             item.setData(Qt.UserRole, r.id)

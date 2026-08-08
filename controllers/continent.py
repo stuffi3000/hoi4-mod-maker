@@ -33,7 +33,7 @@ class ContinentController(BaseController):
         """进入大陆模式。"""
         self.pick_on = False
         self.pick_index = -1
-        self._emit_status("大陆分区编辑模式")
+        self._emit_status("大陆分区编辑模式", "Continent editing mode")
 
     def deactivate(self) -> None:
         """离开大陆模式。"""
@@ -45,9 +45,9 @@ class ContinentController(BaseController):
         self.pick_on = on
         self.pick_index = index if on else -1
         if on and index >= 0:
-            self._emit_status(f"大洲指派: 点击陆地省份")
+            self._emit_status("大洲指派: 点击陆地省份", "Continent assignment: click a land province")
         else:
-            self._emit_status("大洲指派关闭")
+            self._emit_status("大洲指派关闭", "Continent assignment disabled")
 
     def on_province_clicked(self, pid: int) -> None:
         """拾取模式下点击省份指派大陆。支持 State 级别批量分配。"""
@@ -83,7 +83,10 @@ class ContinentController(BaseController):
 
         if count > 0:
             self.project.mark_dirty()
-            self._emit_status(f"{count} 个省份已指派到大陆 #{self.pick_index + 1}")
+            self._emit_status(
+                f"{count} 个省份已指派到大陆 #{self.pick_index + 1}",
+                f"{count} provinces assigned to continent #{self.pick_index + 1}",
+            )
             self.event_bus.emit("continent_changed", action="assigned")
 
     def add_continent(self, name: str) -> bool:
@@ -94,7 +97,7 @@ class ContinentController(BaseController):
             self.event_bus.emit("continent_changed", action="added")
             return True
         except ValueError as e:
-            self._emit_status(f"添加大陆失败: {e}")
+            self._emit_status(f"添加大陆失败: {e}", f"Failed to add continent: {e}")
             return False
 
     def rename_continent(self, index: int, name: str) -> bool:
@@ -105,7 +108,7 @@ class ContinentController(BaseController):
             self.event_bus.emit("continent_changed", action="renamed")
             return True
         except (ValueError, IndexError) as e:
-            self._emit_status(f"重命名失败: {e}")
+            self._emit_status(f"重命名失败: {e}", f"Rename failed: {e}")
             return False
 
     def remove_continent(self, index: int) -> bool:
@@ -116,5 +119,5 @@ class ContinentController(BaseController):
             self.event_bus.emit("continent_changed", action="removed")
             return True
         except (ValueError, IndexError) as e:
-            self._emit_status(f"删除失败: {e}")
+            self._emit_status(f"删除失败: {e}", f"Delete failed: {e}")
             return False

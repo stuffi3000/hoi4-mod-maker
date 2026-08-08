@@ -20,6 +20,7 @@ import numpy as np
 from PIL import Image
 
 from data.constants import TILE_LAND, TILE_SEA, TILE_LAKE
+from ui.i18n import tr_pair
 
 
 # definition.csv 类型名 → 内部常量
@@ -42,9 +43,11 @@ def validate_mod_directory(mod_dir: str) -> list[str]:
         # 尝试 vanilla fallback
         vanilla_provinces = os.path.join(DEFAULT_HOI4_PATH, "map", "provinces.bmp")
         if os.path.isfile(vanilla_provinces):
-            return [f"map/provinces.bmp 不在此 MOD 中（该 MOD 使用 vanilla 地图）。\n"
-                    f"如需导入地图，请直接导入 vanilla 目录:\n{DEFAULT_HOI4_PATH}"]
-        return ["map/provinces.bmp（该 MOD 和 vanilla 都找不到地图文件）"]
+            return [tr_pair(
+                f"map/provinces.bmp 不在此 MOD 中（该 MOD 使用 vanilla 地图）。\n如需导入地图，请直接导入 vanilla 目录:\n{DEFAULT_HOI4_PATH}",
+                f"map/provinces.bmp is not included in this mod (it uses the vanilla map).\nTo import the map, select the vanilla directory directly:\n{DEFAULT_HOI4_PATH}",
+            )]
+        return [tr_pair("map/provinces.bmp（该 MOD 和 vanilla 都找不到地图文件）", "map/provinces.bmp was not found in either the mod or the vanilla game")]
     return []
 
 
@@ -349,7 +352,7 @@ def import_mod_map(mod_dir: str) -> dict[str, Any]:
                 break
 
     if not os.path.isfile(provinces_path):
-        raise FileNotFoundError(f"provinces.bmp 不存在: {provinces_path}")
+        raise FileNotFoundError(tr_pair(f"provinces.bmp 不存在: {provinces_path}", f"provinces.bmp does not exist: {provinces_path}"))
 
     warnings: list[str] = []
 
@@ -369,7 +372,7 @@ def import_mod_map(mod_dir: str) -> dict[str, Any]:
     else:
         # 没有 definition.csv → 退回扫描唯一颜色自动分配 ID（慢路径）
         _, color_to_id = _read_provinces_bmp(provinces_path)
-        warnings.append("未找到 definition.csv，省份类型全部设为陆地")
+        warnings.append(tr_pair("未找到 definition.csv，省份类型全部设为陆地", "definition.csv was not found; all province types were set to land"))
 
     # 3. 构建 province_map
     province_map = _build_province_map(rgb, color_to_id)
@@ -386,15 +389,17 @@ def import_mod_map(mod_dir: str) -> dict[str, Any]:
         terrain_map = _read_indexed_bmp(terrain_path)
         if terrain_map.shape != (h, w):
             warnings.append(
-                f"terrain.bmp 尺寸 {terrain_map.shape[1]}x{terrain_map.shape[0]} "
-                f"与 provinces.bmp {w}x{h} 不匹配，已缩放"
+                tr_pair(
+                    f"terrain.bmp 尺寸 {terrain_map.shape[1]}x{terrain_map.shape[0]} 与 provinces.bmp {w}x{h} 不匹配，已缩放",
+                    f"terrain.bmp size {terrain_map.shape[1]}x{terrain_map.shape[0]} did not match provinces.bmp {w}x{h} and was resized",
+                )
             )
             img = Image.fromarray(terrain_map)
             img = img.resize((w, h), Image.Resampling.NEAREST)
             terrain_map = np.array(img, dtype=np.uint8)
     else:
         terrain_map = np.zeros((h, w), dtype=np.uint8)
-        warnings.append("未找到 terrain.bmp，地形图层设为空")
+        warnings.append(tr_pair("未找到 terrain.bmp，地形图层设为空", "terrain.bmp was not found; the terrain layer was left empty"))
 
     # 6. 读取 heightmap.bmp (可选)
     heightmap_path = os.path.join(map_dir, "heightmap.bmp")
@@ -402,15 +407,17 @@ def import_mod_map(mod_dir: str) -> dict[str, Any]:
         height_map = _read_indexed_bmp(heightmap_path)
         if height_map.shape != (h, w):
             warnings.append(
-                f"heightmap.bmp 尺寸 {height_map.shape[1]}x{height_map.shape[0]} "
-                f"与 provinces.bmp {w}x{h} 不匹配，已缩放"
+                tr_pair(
+                    f"heightmap.bmp 尺寸 {height_map.shape[1]}x{height_map.shape[0]} 与 provinces.bmp {w}x{h} 不匹配，已缩放",
+                    f"heightmap.bmp size {height_map.shape[1]}x{height_map.shape[0]} did not match provinces.bmp {w}x{h} and was resized",
+                )
             )
             img = Image.fromarray(height_map)
             img = img.resize((w, h), Image.Resampling.NEAREST)
             height_map = np.array(img, dtype=np.uint8)
     else:
         height_map = np.full((h, w), 40, dtype=np.uint8)
-        warnings.append("未找到 heightmap.bmp，高度图层设为默认值")
+        warnings.append(tr_pair("未找到 heightmap.bmp，高度图层设为默认值", "heightmap.bmp was not found; the height layer was set to its default value"))
 
     # 7. 读取 rivers.bmp (可选)
     rivers_path = os.path.join(map_dir, "rivers.bmp")
@@ -418,15 +425,17 @@ def import_mod_map(mod_dir: str) -> dict[str, Any]:
         river_map = _read_indexed_bmp(rivers_path)
         if river_map.shape != (h, w):
             warnings.append(
-                f"rivers.bmp 尺寸 {river_map.shape[1]}x{river_map.shape[0]} "
-                f"与 provinces.bmp {w}x{h} 不匹配，已缩放"
+                tr_pair(
+                    f"rivers.bmp 尺寸 {river_map.shape[1]}x{river_map.shape[0]} 与 provinces.bmp {w}x{h} 不匹配，已缩放",
+                    f"rivers.bmp size {river_map.shape[1]}x{river_map.shape[0]} did not match provinces.bmp {w}x{h} and was resized",
+                )
             )
             img = Image.fromarray(river_map)
             img = img.resize((w, h), Image.Resampling.NEAREST)
             river_map = np.array(img, dtype=np.uint8)
     else:
         river_map = np.full((h, w), 255, dtype=np.uint8)
-        warnings.append("未找到 rivers.bmp，河流图层设为空")
+        warnings.append(tr_pair("未找到 rivers.bmp，河流图层设为空", "rivers.bmp was not found; the river layer was left empty"))
 
     # 8. 读取 states (可选)
     states_dir = os.path.join(mod_dir, "history", "states")
@@ -442,14 +451,14 @@ def import_mod_map(mod_dir: str) -> dict[str, Any]:
             except Exception:
                 pass
         if states_data:
-            warnings.append(f"读取了 {len(states_data)} 个 State 文件")
+            warnings.append(tr_pair(f"读取了 {len(states_data)} 个 State 文件", f"Read {len(states_data)} state files"))
     else:
-        warnings.append("未找到 history/states/ 目录")
+        warnings.append(tr_pair("未找到 history/states/ 目录", "history/states/ directory was not found"))
 
     # 9a. 扫描美术资产（colormap / world_normal 等 HOI4 会读但工具不生成的文件）
     assets = _collect_art_assets(mod_dir)
     if assets:
-        warnings.append(f"保留了 {len(assets)} 个原始美术资产（导出时不会覆盖）")
+        warnings.append(tr_pair(f"保留了 {len(assets)} 个原始美术资产（导出时不会覆盖）", f"Preserved {len(assets)} original art assets (they will not be overwritten during export)"))
 
     # 9. 读取 strategic regions (可选)
     sr_dir = os.path.join(mod_dir, "map", "strategicregions")
@@ -465,9 +474,9 @@ def import_mod_map(mod_dir: str) -> dict[str, Any]:
             except Exception:
                 pass
         if sr_data:
-            warnings.append(f"读取了 {len(sr_data)} 个战略区域文件")
+            warnings.append(tr_pair(f"读取了 {len(sr_data)} 个战略区域文件", f"Read {len(sr_data)} strategic-region files"))
     else:
-        warnings.append("未找到 map/strategicregions/ 目录")
+        warnings.append(tr_pair("未找到 map/strategicregions/ 目录", "map/strategicregions/ directory was not found"))
 
     # 9c. 读取本地化 → 替换 state 名字（STATE_1 → "Corsica"）
     loc_map = _scan_localisation(mod_dir)
@@ -489,7 +498,7 @@ def import_mod_map(mod_dir: str) -> dict[str, Any]:
             key = rd.get("name", "")
             if key in loc_map:
                 rd["name"] = loc_map[key]
-        warnings.append(f"读取了 {len(loc_map)} 条本地化文本")
+        warnings.append(tr_pair(f"读取了 {len(loc_map)} 条本地化文本", f"Read {len(loc_map)} localization entries"))
 
     # 10. 读取 railways (可选)
     railways_data: list[dict] = []
@@ -497,7 +506,7 @@ def import_mod_map(mod_dir: str) -> dict[str, Any]:
     if os.path.isfile(railways_path):
         railways_data = _parse_railways(railways_path)
         if railways_data:
-            warnings.append(f"读取了 {len(railways_data)} 条铁路")
+            warnings.append(tr_pair(f"读取了 {len(railways_data)} 条铁路", f"Read {len(railways_data)} railways"))
 
     # 11. 读取 supply_nodes (可选)
     supply_data: list[dict] = []
@@ -505,7 +514,7 @@ def import_mod_map(mod_dir: str) -> dict[str, Any]:
     if os.path.isfile(supply_path):
         supply_data = _parse_supply_nodes(supply_path)
         if supply_data:
-            warnings.append(f"读取了 {len(supply_data)} 个补给节点")
+            warnings.append(tr_pair(f"读取了 {len(supply_data)} 个补给节点", f"Read {len(supply_data)} supply hubs"))
 
     # 12. 读取 adjacencies (可选)
     adjacencies_data: list[dict] = []
@@ -513,7 +522,7 @@ def import_mod_map(mod_dir: str) -> dict[str, Any]:
     if os.path.isfile(adj_path):
         adjacencies_data = _parse_adjacencies(adj_path)
         if adjacencies_data:
-            warnings.append(f"读取了 {len(adjacencies_data)} 条邻接关系")
+            warnings.append(tr_pair(f"读取了 {len(adjacencies_data)} 条邻接关系", f"Read {len(adjacencies_data)} adjacencies"))
 
     # 13. 读取国家颜色 (可选)
     country_colors: dict[str, tuple[int, int, int]] = {}
@@ -521,12 +530,12 @@ def import_mod_map(mod_dir: str) -> dict[str, Any]:
     if os.path.isfile(colors_path):
         country_colors = _parse_country_colors(colors_path)
         if country_colors:
-            warnings.append(f"读取了 {len(country_colors)} 个国家颜色")
+            warnings.append(tr_pair(f"读取了 {len(country_colors)} 个国家颜色", f"Read colors for {len(country_colors)} countries"))
 
     # 14. 读取国家历史 (首都/政体, 可选)
     country_history = _parse_country_history_dir(mod_dir)
     if country_history:
-        warnings.append(f"读取了 {len(country_history)} 个国家历史文件")
+        warnings.append(tr_pair(f"读取了 {len(country_history)} 个国家历史文件", f"Read {len(country_history)} country-history files"))
 
     return {
         "width": w,

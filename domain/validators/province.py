@@ -4,6 +4,8 @@
 import numpy as np
 from collections import defaultdict
 
+from ui.i18n import tr_pair
+
 from data.constants import (
     MAP_WIDTH, MAP_HEIGHT,
     TILE_LAND, TILE_SEA, TILE_LAKE,
@@ -82,11 +84,11 @@ def validate_provinces(
     total = int(province_map.max())
     results["total_provinces"] = total
     if total > 21000:
-        results["count_warning"] = f"危险：{total} > 21000，超过 HOI4 边界硬上限，必崩"
+        results["count_warning"] = tr_pair(f"危险：{total} > 21000，超过 HOI4 边界硬上限，必崩", f"Danger: {total} > 21000, exceeding HOI4's hard limit and guaranteed to crash")
     elif total > 14000:
-        results["count_warning"] = f"警告：{total} > 14000，HOI4 文档建议上限"
+        results["count_warning"] = tr_pair(f"警告：{total} > 14000，HOI4 文档建议上限", f"Warning: {total} > 14000, the limit recommended by HOI4 documentation")
     elif total > 13000:
-        results["count_warning"] = f"提示：{total} 接近 vanilla 13000-14000 推荐区间"
+        results["count_warning"] = tr_pair(f"提示：{total} 接近 vanilla 13000-14000 推荐区间", f"Note: {total} is close to the recommended vanilla range of 13000–14000")
 
     return results
 

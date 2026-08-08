@@ -8,6 +8,7 @@ HOI4 硬规则中心 — 所有从 Paradox 官方文档抽出的硬规则集中�
 """
 
 from data.constants import MAP_WIDTH, MAP_HEIGHT
+from ui.i18n import tr_pair
 
 
 class Hoi4Rules:
@@ -108,12 +109,12 @@ class Hoi4Rules:
         """检查地图尺寸是否符合 HOI4 约束。返回错误列表（空=合法）。"""
         errors = []
         if w % cls.MAP_DIM_MULTIPLE != 0:
-            errors.append(f"地图宽度 {w} 不是 {cls.MAP_DIM_MULTIPLE} 的倍数")
+            errors.append(tr_pair(f"地图宽度 {w} 不是 {cls.MAP_DIM_MULTIPLE} 的倍数", f"Map width {w} is not a multiple of {cls.MAP_DIM_MULTIPLE}"))
         if h % cls.MAP_DIM_MULTIPLE != 0:
-            errors.append(f"地图高度 {h} 不是 {cls.MAP_DIM_MULTIPLE} 的倍数")
+            errors.append(tr_pair(f"地图高度 {h} 不是 {cls.MAP_DIM_MULTIPLE} 的倍数", f"Map height {h} is not a multiple of {cls.MAP_DIM_MULTIPLE}"))
         if w * h > cls.MAP_MAX_TOTAL_PIXELS:
             errors.append(
-                f"地图总像素 {w*h} 超过 HOI4 上限 {cls.MAP_MAX_TOTAL_PIXELS}"
+                tr_pair(f"地图总像素 {w*h} 超过 HOI4 上限 {cls.MAP_MAX_TOTAL_PIXELS}", f"Total map pixels {w*h} exceed HOI4's limit of {cls.MAP_MAX_TOTAL_PIXELS}")
             )
         return errors
 
@@ -129,9 +130,9 @@ class Hoi4Rules:
     def province_count_warning(cls, count: int) -> str:
         """返回省份总数对应的警告字符串，无问题返回空。"""
         if count > cls.PROVINCE_HARD_MAX:
-            return f"危险：{count} > {cls.PROVINCE_HARD_MAX}，超过 HOI4 边界硬上限，必崩"
+            return tr_pair(f"危险：{count} > {cls.PROVINCE_HARD_MAX}，超过 HOI4 边界硬上限，必崩", f"Danger: {count} > {cls.PROVINCE_HARD_MAX}, exceeding HOI4's hard limit and guaranteed to crash")
         if count > cls.PROVINCE_SOFT_MAX:
-            return f"警告：{count} > {cls.PROVINCE_SOFT_MAX}，HOI4 文档建议上限"
+            return tr_pair(f"警告：{count} > {cls.PROVINCE_SOFT_MAX}，HOI4 文档建议上限", f"Warning: {count} > {cls.PROVINCE_SOFT_MAX}, the limit recommended by HOI4 documentation")
         if count > cls.PROVINCE_RECOMMENDED:
-            return f"提示：{count} 接近 vanilla {cls.PROVINCE_RECOMMENDED}-{cls.PROVINCE_SOFT_MAX} 推荐区间"
+            return tr_pair(f"提示：{count} 接近 vanilla {cls.PROVINCE_RECOMMENDED}-{cls.PROVINCE_SOFT_MAX} 推荐区间", f"Note: {count} is close to the recommended vanilla range of {cls.PROVINCE_RECOMMENDED}–{cls.PROVINCE_SOFT_MAX}")
         return ""

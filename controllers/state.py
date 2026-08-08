@@ -49,7 +49,7 @@ class StateController(BaseController):
 
     def activate(self) -> None:
         """进入 State 模式，刷新颜色图。"""
-        self._emit_status("State 编辑模式")
+        self._emit_status("State 编辑模式", "State editing mode")
         self.event_bus.emit("state_changed", state_id=0, action="refresh")
 
     def deactivate(self) -> None:
@@ -74,7 +74,7 @@ class StateController(BaseController):
             if sid == self.selected_state_id:
                 return
             if not self._is_land_province(pid):
-                self._emit_status(f"省份 {pid} 是海洋/湖泊，不能加入 State（State 只含陆地）")
+                self._emit_status(f"省份 {pid} 是海洋/湖泊，不能加入 State（State 只含陆地）", f"Province {pid} is sea/lake and cannot be added to a state (states contain land only)")
                 return
             cmd = AssignProvinceToStateCommand(
                 state_mgr, pid, sid, self.selected_state_id,
@@ -87,7 +87,7 @@ class StateController(BaseController):
                 action="modified",
                 property="assign",
             )
-            self._emit_status(f"省份 {pid} 已分配到 State {self.selected_state_id}")
+            self._emit_status(f"省份 {pid} 已分配到 State {self.selected_state_id}", f"Province {pid} assigned to State {self.selected_state_id}")
             # 刷新高亮（省份变了，选中州的范围也变了）
             updated = state_mgr.get_state(self.selected_state_id)
             if updated:
@@ -100,12 +100,12 @@ class StateController(BaseController):
             state = state_mgr.get_state(sid)
             name = state.name if state else f"STATE_{sid}"
             prov_count = len(state.provinces) if state else 0
-            self._emit_status(f"州 #{sid} \"{name}\" ({prov_count} 省份)")
+            self._emit_status(f"州 #{sid} \"{name}\" ({prov_count} 省份)", f"State #{sid} \"{name}\" ({prov_count} provinces)")
             self.event_bus.emit(
                 "state_changed", state_id=sid, action="selected",
             )
         else:
-            self._emit_status(f"省份 {pid} 未分配到任何州（红色高亮区域）")
+            self._emit_status(f"省份 {pid} 未分配到任何州（红色高亮区域）", f"Province {pid} is not assigned to any state (red highlighted area)")
 
     def on_province_double_clicked(self, pid: int) -> None:
         """双击省份设置 VP。通过事件通知 UI 弹对话框。"""
@@ -115,7 +115,7 @@ class StateController(BaseController):
         state_mgr = self.project.state_mgr
         sid = state_mgr.get_state_of_province(pid)
         if sid == 0:
-            self._emit_status("该省份未分配到任何 State，请先分组")
+            self._emit_status("该省份未分配到任何 State，请先分组", "This province is not assigned to a state; group provinces first")
             return
 
         # 通知 UI 弹 VP 对话框（controller 不直接弹 Qt 对话框）
@@ -126,7 +126,7 @@ class StateController(BaseController):
         state_mgr = self.project.state_mgr
         country_mgr = self.project.country_mgr
         if sid <= 0 or state_mgr.get_state(sid) is None:
-            self._emit_status(f"State {sid} 不存在")
+            self._emit_status(f"State {sid} 不存在", f"State {sid} does not exist")
             return
         cmd = DeleteStateCommand(state_mgr, country_mgr, sid)
         self.history.execute(cmd)
@@ -134,7 +134,7 @@ class StateController(BaseController):
             self.selected_state_id = 0
         self.project.mark_dirty()
         self.event_bus.emit("state_changed", state_id=sid, action="deleted")
-        self._emit_status(f"已删除 State {sid}")
+        self._emit_status(f"已删除 State {sid}", f"Deleted State {sid}")
 
     def set_vp(self, pid: int, value: int, name: str = "") -> None:
         """设置省份的 VP 值 + 城市名（由 UI 对话框回调调用）。"""
@@ -159,11 +159,13 @@ class StateController(BaseController):
 
         if new_vp:
             label = f"省份 {pid} 设为 {value} VP"
+            label_en = f"Province {pid} set to {value} VP"
             if name:
                 label += f" ({name})"
-            self._emit_status(label)
+                label_en += f" ({name})"
+            self._emit_status(label, label_en)
         else:
-            self._emit_status(f"省份 {pid} VP 已移除")
+            self._emit_status(f"省份 {pid} VP 已移除", f"Victory points removed from province {pid}")
         self.event_bus.emit("vp_changed", pid=pid, value=value)
 
     def auto_states(self, per_state: int) -> None:
@@ -179,7 +181,7 @@ class StateController(BaseController):
         self.project.mark_dirty()
 
         count = len(state_mgr.states)
-        self._emit_status(f"State 分组完成: {count} 个")
+        self._emit_status(f"State 分组完成: {count} 个", f"State grouping complete: {count} states")
         self.event_bus.emit("state_changed", state_id=0, action="refresh")
 
     def select_state(self, state_id: int) -> None:
@@ -204,10 +206,10 @@ class StateController(BaseController):
         land_pids = [p for p in province_ids if self._is_land_province(p)]
         skipped = len(province_ids) - len(land_pids)
         if not land_pids:
-            self._emit_status("所选省份全部是海洋/湖泊，未创建 State")
+            self._emit_status("所选省份全部是海洋/湖泊，未创建 State", "All selected provinces are sea/lake; no state was created")
             return 0
         if skipped > 0:
-            self._emit_status(f"已跳过 {skipped} 个海洋/湖泊省份")
+            self._emit_status(f"已跳过 {skipped} 个海洋/湖泊省份", f"Skipped {skipped} sea/lake provinces")
         province_ids = land_pids
 
         state_mgr = self.project.state_mgr
@@ -226,7 +228,7 @@ class StateController(BaseController):
         new_state.name = f"STATE_{new_state.id}"
 
         self.project.mark_dirty()
-        self._emit_status(f"创建州 {new_state.id}（{len(province_ids)} 个省份）")
+        self._emit_status(f"创建州 {new_state.id}（{len(province_ids)} 个省份）", f"Created State {new_state.id} ({len(province_ids)} provinces)")
         self.event_bus.emit("state_changed", state_id=new_state.id, action="refresh")
         return new_state.id
 

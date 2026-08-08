@@ -44,22 +44,22 @@ class ModVerifier:
 
     def verify_all(self) -> bool:
         """运行所有检查，返回 True = 通过"""
-        print(f"验证 MOD: {self.mod_dir}\n")
+        print(f"Verifying mod: {self.mod_dir}\n")
 
         self._run_all_checks()
 
         # 报告
         print("\n" + "=" * 60)
         if self.errors:
-            print(f"\n❌ 发现 {len(self.errors)} 个错误（会导致崩溃）:")
+            print(f"\n❌ Found {len(self.errors)} errors (these may cause crashes):")
             for i, e in enumerate(self.errors, 1):
                 print(f"  {i}. {e}")
         if self.warnings:
-            print(f"\n⚠️  发现 {len(self.warnings)} 个警告:")
+            print(f"\n⚠️  Found {len(self.warnings)} warnings:")
             for i, w in enumerate(self.warnings, 1):
                 print(f"  {i}. {w}")
         if not self.errors and not self.warnings:
-            print("\n✅ 所有检查通过！")
+            print("\n✅ All checks passed!")
 
         return len(self.errors) == 0
 
@@ -85,33 +85,33 @@ class ModVerifier:
 
     def _check_required_files(self):
         """检查所有必需文件是否存在"""
-        self._log("[1/16] 检查必需文件...")
+        self._log("[1/16] Checking required files...")
         required = [
-            ("map/provinces.bmp", "省份地图"),
-            ("map/definition.csv", "省份定义"),
-            ("map/default.map", "地图配置"),
-            ("map/heightmap.bmp", "高度图"),
-            ("map/terrain.bmp", "地形图"),
-            ("map/rivers.bmp", "河流图"),
-            ("map/trees.bmp", "树木图"),
-            ("map/continent.txt", "大陆定义"),
-            ("map/adjacencies.csv", "邻接定义"),
-            ("map/adjacency_rules.txt", "邻接规则"),
-            ("map/ambient_object.txt", "环境物体"),
-            ("map/seasons.txt", "季节定义"),
-            ("map/positions.txt", "省份坐标"),
-            ("map/supply_nodes.txt", "补给节点"),
-            ("map/railways.txt", "铁路"),
-            ("map/buildings.txt", "建筑"),
-            ("descriptor.mod", "MOD描述文件"),
+            ("map/provinces.bmp", "province map"),
+            ("map/definition.csv", "province definitions"),
+            ("map/default.map", "map configuration"),
+            ("map/heightmap.bmp", "heightmap"),
+            ("map/terrain.bmp", "terrain map"),
+            ("map/rivers.bmp", "river map"),
+            ("map/trees.bmp", "tree map"),
+            ("map/continent.txt", "continent definitions"),
+            ("map/adjacencies.csv", "adjacency definitions"),
+            ("map/adjacency_rules.txt", "adjacency rules"),
+            ("map/ambient_object.txt", "ambient objects"),
+            ("map/seasons.txt", "season definitions"),
+            ("map/positions.txt", "province positions"),
+            ("map/supply_nodes.txt", "supply hubs"),
+            ("map/railways.txt", "railways"),
+            ("map/buildings.txt", "buildings"),
+            ("descriptor.mod", "mod descriptor"),
         ]
         for path, name in required:
             if not self._exists(path):
-                self.errors.append(f"缺少必需文件: {path} ({name})")
+                self.errors.append(f"Missing required file: {path} ({name})")
 
     def _check_provinces_bmp(self):
         """检查 provinces.bmp 格式"""
-        self._log("[2/16] 检查 provinces.bmp...")
+        self._log("[2/16] Checking provinces.bmp...")
         path = self._path("map", "provinces.bmp")
         if not os.path.exists(path):
             return
@@ -119,7 +119,7 @@ class ModVerifier:
         with open(path, "rb") as f:
             sig = f.read(2)
             if sig != b"BM":
-                self.errors.append("provinces.bmp: 不是有效的BMP文件")
+                self.errors.append("provinces.bmp is not a valid BMP file")
                 return
 
             f.seek(18)
@@ -131,13 +131,13 @@ class ModVerifier:
             valid_sizes = {(2048, 1024), (3072, 1536), (4096, 2048), (5632, 2048)}
             if (w, abs(h)) not in valid_sizes:
                 self.errors.append(
-                    f"provinces.bmp: 尺寸 {w}x{abs(h)}，"
-                    f"应为 2048x1024/3072x1536/4096x2048/5632x2048 之一"
+                    f"provinces.bmp size is {w}x{abs(h)}; expected one of "
+                    f"2048x1024, 3072x1536, 4096x2048, or 5632x2048"
                 )
             if bits != 24:
-                self.errors.append(f"provinces.bmp: 位深 {bits}，应为 24")
+                self.errors.append(f"provinces.bmp bit depth is {bits}; expected 24")
             if h < 0:
-                self.errors.append("provinces.bmp: top-down 格式，应为 bottom-up (高度值应为正)")
+                self.errors.append("provinces.bmp is top-down; it must be bottom-up (height must be positive)")
 
             # 检查是否有 (0,0,0) 像素
             f.seek(10)
@@ -157,11 +157,11 @@ class ModVerifier:
                 if has_black:
                     break
             if has_black:
-                self.errors.append("provinces.bmp: 包含 RGB(0,0,0) 像素，HOI4 会崩溃")
+                self.errors.append("provinces.bmp contains RGB(0,0,0) pixels, which will crash HOI4")
 
     def _check_definition_csv(self):
         """检查 definition.csv 格式"""
-        self._log("[3/16] 检查 definition.csv...")
+        self._log("[3/16] Checking definition.csv...")
         path = self._path("map", "definition.csv")
         if not os.path.exists(path):
             return
@@ -170,13 +170,13 @@ class ModVerifier:
             lines = f.readlines()
 
         if not lines:
-            self.errors.append("definition.csv: 文件为空")
+            self.errors.append("definition.csv is empty")
             return
 
         # 第一行必须是ID=0
         first = lines[0].strip()
         if not first.startswith("0;"):
-            self.errors.append(f"definition.csv: 第一行应以 '0;' 开头，实际是 '{first[:20]}'")
+            self.errors.append(f"definition.csv: the first line must begin with '0;'; actual value: '{first[:20]}'")
 
         seen_colors = set()
         seen_ids = set()
@@ -187,10 +187,10 @@ class ModVerifier:
         for i, line in enumerate(lines):
             line = line.rstrip("\n")
             if line.endswith(" ") or line.endswith("\t"):
-                self.errors.append(f"definition.csv 第{i + 1}行: 行尾有空格/tab")
+                self.errors.append(f"definition.csv line {i + 1}: trailing space/tab")
             parts = line.strip().split(";")
             if len(parts) != 8:
-                self.errors.append(f"definition.csv 第{i + 1}行: {len(parts)}个字段，应为8个")
+                self.errors.append(f"definition.csv line {i + 1}: {len(parts)} fields; expected 8")
                 continue
 
             pid = int(parts[0])
@@ -198,7 +198,7 @@ class ModVerifier:
             ptype = parts[4]
 
             if pid in seen_ids:
-                self.errors.append(f"definition.csv: 省份ID {pid} 重复")
+                self.errors.append(f"definition.csv: duplicate province ID {pid}")
             seen_ids.add(pid)
 
             if pid > 0:
@@ -208,19 +208,19 @@ class ModVerifier:
 
                 color = (r, g, b)
                 if color == (0, 0, 0):
-                    self.errors.append(f"definition.csv 省份{pid}: 颜色是(0,0,0)，HOI4禁止")
+                    self.errors.append(f"definition.csv province {pid}: color (0,0,0) is forbidden by HOI4")
                 if color in seen_colors:
-                    self.errors.append(f"definition.csv 省份{pid}: 颜色{color}与其他省份重复")
+                    self.errors.append(f"definition.csv province {pid}: color {color} duplicates another province")
                 seen_colors.add(color)
 
             if ptype not in valid_types:
-                self.warnings.append(f"definition.csv 省份{pid}: type='{ptype}'，非标准类型")
+                self.warnings.append(f"definition.csv province {pid}: type='{ptype}' is non-standard")
 
-        self._log(f"    → {len(self._province_ids)} 个省份 ({len(self._land_province_ids)} 陆地)")
+        self._log(f"    → {len(self._province_ids)} provinces ({len(self._land_province_ids)} land)")
 
     def _check_default_map(self):
         """检查 default.map"""
-        self._log("[4/16] 检查 default.map...")
+        self._log("[4/16] Checking default.map...")
         path = self._path("map", "default.map")
         if not os.path.exists(path):
             return
@@ -236,12 +236,12 @@ class ModVerifier:
         ]
         for ref in required_refs:
             if ref not in content:
-                self.errors.append(f"default.map: 缺少 {ref} 引用")
+                self.errors.append(f"default.map: missing reference to {ref}")
 
         if "sea_starts" in content:
-            self.errors.append("default.map: 包含 sea_starts（1.17不支持，用definition.csv的type代替）")
+            self.errors.append("default.map contains sea_starts (unsupported in 1.17; use the type in definition.csv instead)")
         if "max_provinces" in content:
-            self.warnings.append("default.map: 包含 max_provinces（1.17可能不支持）")
+            self.warnings.append("default.map contains max_provinces (possibly unsupported in 1.17)")
 
     def _get_provinces_bmp_size(self) -> tuple[int, int] | None:
         """读取 provinces.bmp 的尺寸，用于和其他 BMP 做一致性校验"""
@@ -258,21 +258,21 @@ class ModVerifier:
 
     def _check_heightmap_bmp(self):
         """检查 heightmap.bmp"""
-        self._log("[5/16] 检查 heightmap.bmp...")
+        self._log("[5/16] Checking heightmap.bmp...")
         size = self._get_provinces_bmp_size()
         if size:
             self._check_8bit_bmp("map/heightmap.bmp", "heightmap.bmp", size[0], size[1])
 
     def _check_terrain_bmp(self):
         """检查 terrain.bmp"""
-        self._log("[6/16] 检查 terrain.bmp...")
+        self._log("[6/16] Checking terrain.bmp...")
         size = self._get_provinces_bmp_size()
         if size:
             self._check_8bit_bmp("map/terrain.bmp", "terrain.bmp", size[0], size[1])
 
     def _check_rivers_bmp(self):
         """检查 rivers.bmp"""
-        self._log("[7/16] 检查 rivers.bmp...")
+        self._log("[7/16] Checking rivers.bmp...")
         size = self._get_provinces_bmp_size()
         if size:
             self._check_8bit_bmp("map/rivers.bmp", "rivers.bmp", size[0], size[1])
@@ -284,7 +284,7 @@ class ModVerifier:
         with open(path, "rb") as f:
             sig = f.read(2)
             if sig != b"BM":
-                self.errors.append(f"{name}: 不是有效的BMP文件")
+                self.errors.append(f"{name} is not a valid BMP file")
                 return
             f.seek(18)
             w = struct.unpack("<i", f.read(4))[0]
@@ -293,21 +293,21 @@ class ModVerifier:
             bits = struct.unpack("<H", f.read(2))[0]
 
             if w != expected_w or abs(h) != expected_h:
-                self.errors.append(f"{name}: 尺寸 {w}x{abs(h)}，应为 {expected_w}x{expected_h}")
+                self.errors.append(f"{name} size is {w}x{abs(h)}; expected {expected_w}x{expected_h}")
             if bits != 8:
-                self.errors.append(f"{name}: 位深 {bits}，应为 8")
+                self.errors.append(f"{name} bit depth is {bits}; expected 8")
 
     def _check_states(self):
         """检查 State 文件"""
-        self._log("[8/16] 检查 States...")
+        self._log("[8/16] Checking states...")
         state_dir = self._path("history", "states")
         if not os.path.isdir(state_dir):
-            self.errors.append("缺少 history/states/ 目录")
+            self.errors.append("Missing history/states/ directory")
             return
 
         files = [f for f in os.listdir(state_dir) if f.endswith(".txt")]
         if not files:
-            self.errors.append("history/states/ 目录为空，至少需要1个State")
+            self.errors.append("history/states/ is empty; at least one state is required")
             return
 
         self._state_provinces = set()  # 所有State中的省份
@@ -330,28 +330,28 @@ class ModVerifier:
                 provs = [int(x) for x in prov_text.split() if x.isdigit()]
                 for p in provs:
                     if p in self._state_provinces:
-                        self.errors.append(f"{fn}: 省份 {p} 在多个State中（必须唯一）")
+                        self.errors.append(f"{fn}: province {p} belongs to multiple states (must be unique)")
                     self._state_provinces.add(p)
                 if id_match:
                     self._state_prov_lists[int(id_match.group(1))] = provs
 
             # 检查 owner
             if "owner" not in content:
-                self.errors.append(f"{fn}: 缺少 owner 字段")
+                self.errors.append(f"{fn}: missing owner field")
 
-        self._log(f"    → {len(files)} 个State文件, {len(self._state_provinces)} 个省份被分配")
+        self._log(f"    → {len(files)} state files, {len(self._state_provinces)} provinces assigned")
 
     def _check_strategic_regions(self):
         """检查战略区域"""
-        self._log("[9/16] 检查战略区域...")
+        self._log("[9/16] Checking strategic regions...")
         sr_dir = self._path("map", "strategicregions")
         if not os.path.isdir(sr_dir):
-            self.errors.append("缺少 map/strategicregions/ 目录")
+            self.errors.append("Missing map/strategicregions/ directory")
             return
 
         files = [f for f in os.listdir(sr_dir) if f.endswith(".txt")]
         if not files:
-            self.errors.append("map/strategicregions/ 目录为空")
+            self.errors.append("map/strategicregions/ directory is empty")
             return
 
         self._region_provinces = set()
@@ -362,19 +362,19 @@ class ModVerifier:
             id_match = re.search(r'id\s*=\s*(\d+)', content)
             rid = int(id_match.group(1)) if id_match else 0
             if rid == 0:
-                self.errors.append(f"战略区域 {fn}: 缺少 id 字段")
+                self.errors.append(f"Strategic region {fn}: missing id field")
             prov_match = re.search(r'provinces\s*=\s*\{([^}]+)\}', content)
             if prov_match:
                 provs = [int(x) for x in prov_match.group(1).split() if x.isdigit()]
                 for p in provs:
                     if p in self._region_provinces:
-                        self.errors.append(f"战略区域 {fn}: 省份 {p} 在多个战略区中（必须唯一）")
+                        self.errors.append(f"Strategic region {fn}: province {p} belongs to multiple strategic regions (must be unique)")
                     self._region_provinces.add(p)
                     if rid > 0:  # 缺 id 的文件不参与跨区判断, 避免误报
                         pid_to_rid[p] = rid
 
             if "weather" not in content:
-                self.errors.append(f"战略区域 {fn}: 缺少 weather 块")
+                self.errors.append(f"Strategic region {fn}: missing weather block")
 
         # state ↔ 战略区交叉检查: 一个 state 的省份必须都在同一战略区
         # (nudge: "provinces are not belong to same strategic region")
@@ -385,29 +385,30 @@ class ModVerifier:
                 cross.append(sid)
         if cross:
             preview = ", ".join(str(s) for s in cross[:10])
-            more = f" 等共 {len(cross)} 个" if len(cross) > 10 else ""
+            more = f"; {len(cross)} total" if len(cross) > 10 else ""
             self.warnings.append(
-                f"{len(cross)} 个 State 的省份跨多个战略区 (State {preview}{more})。"
-                f"游戏 nudge 会警告但不崩溃; 通常是 state 含飞地/离岸岛"
+                f"Provinces in {len(cross)} states span multiple strategic regions "
+                f"(State {preview}{more}). The in-game nudge tool will warn but not crash; "
+                f"this usually means a state contains exclaves or offshore islands"
             )
 
-        self._log(f"    → {len(files)} 个区域, 覆盖 {len(self._region_provinces)} 个省份")
+        self._log(f"    → {len(files)} regions covering {len(self._region_provinces)} provinces")
 
     def _check_supply_files(self):
         """检查补给文件"""
-        self._log("[10/16] 检查补给系统...")
+        self._log("[10/16] Checking supply system...")
         for fname in ["supply_nodes.txt", "railways.txt", "buildings.txt"]:
             path = self._path("map", fname)
             if os.path.exists(path):
                 size = os.path.getsize(path)
                 if size == 0:
-                    self.errors.append(f"map/{fname}: 文件为空（不允许）")
+                    self.errors.append(f"map/{fname} is empty (not allowed)")
             else:
-                self.errors.append(f"缺少 map/{fname}")
+                self.errors.append(f"Missing map/{fname}")
 
     def _check_countries(self):
         """检查国家文件"""
-        self._log("[11/16] 检查国家...")
+        self._log("[11/16] Checking countries...")
         # 兼容新旧两种 TAG 注册文件名：新版用 02_worldtest_countries.txt 避免覆盖 vanilla
         ct_dir = self._path("common", "country_tags")
         tag_file = None
@@ -418,7 +419,7 @@ class ModVerifier:
                 break
         if tag_file is None:
             self.errors.append(
-                "缺少 common/country_tags/02_worldtest_countries.txt（或旧版 00_countries.txt）"
+                "Missing common/country_tags/02_worldtest_countries.txt (or legacy 00_countries.txt)"
             )
             return
 
@@ -427,30 +428,30 @@ class ModVerifier:
 
         self._country_tags = re.findall(r'^([A-Z]{3})\s*=', content, re.MULTILINE)
         if not self._country_tags:
-            self.errors.append(f"{os.path.basename(tag_file)}: 没有找到任何国家TAG")
+            self.errors.append(f"{os.path.basename(tag_file)}: no country TAGs found")
             return
 
         for tag in self._country_tags:
             # common/countries/TAG.txt
             if not self._exists("common", "countries", f"{tag}.txt"):
-                self.errors.append(f"缺少 common/countries/{tag}.txt")
+                self.errors.append(f"Missing common/countries/{tag}.txt")
 
             # history/countries/TAG.txt — 必须与 country_tags 注册路径严格一致
             if not self._exists("history", "countries", f"{tag}.txt"):
-                self.errors.append(f"缺少 history/countries/{tag}.txt")
+                self.errors.append(f"Missing history/countries/{tag}.txt")
 
             # history/units/TAG_1936.txt
             if not self._exists("history", "units", f"{tag}_1936.txt"):
-                self.errors.append(f"缺少 history/units/{tag}_1936.txt")
+                self.errors.append(f"Missing history/units/{tag}_1936.txt")
 
-        self._log(f"    → {len(self._country_tags)} 个国家: {', '.join(self._country_tags)}")
+        self._log(f"    → {len(self._country_tags)} countries: {', '.join(self._country_tags)}")
 
     def _check_ideologies(self):
         """检查意识形态"""
-        self._log("[12/16] 检查意识形态...")
+        self._log("[12/16] Checking ideologies...")
         path = self._path("common", "ideologies", "00_ideologies.txt")
         if not os.path.exists(path):
-            self.warnings.append("缺少意识形态文件（如果replace了common/ideologies则会崩溃）")
+            self.warnings.append("Missing ideology file (the game will crash if common/ideologies is replaced)")
             return
 
         with open(path, "r", encoding="utf-8-sig", errors="replace") as f:
@@ -459,17 +460,17 @@ class ModVerifier:
         required = ["democratic", "fascism", "communism", "neutrality"]
         for ideo in required:
             if ideo not in content:
-                self.errors.append(f"意识形态: 缺少 {ideo}")
+                self.errors.append(f"Ideologies: missing {ideo}")
 
         if "types" not in content:
-            self.errors.append("意识形态: 缺少 types 子块（必须有，否则崩溃）")
+            self.errors.append("Ideologies: missing required types sub-block (the game will crash without it)")
 
     def _check_state_categories(self):
         """检查 State 类别"""
-        self._log("[13/16] 检查State类别...")
+        self._log("[13/16] Checking state categories...")
         sc_dir = self._path("common", "state_category")
         if not os.path.isdir(sc_dir):
-            self.warnings.append("缺少 common/state_category/（如果replace了则会崩溃）")
+            self.warnings.append("Missing common/state_category/ (the game will crash if this path is replaced)")
             return
 
         files = [f for f in os.listdir(sc_dir) if f.endswith(".txt")]
@@ -480,40 +481,40 @@ class ModVerifier:
             for f in files
         )
         if not has_town:
-            self.errors.append("state_category: 缺少 'town' 类别（State默认使用）")
+            self.errors.append("state_category: missing the 'town' category used by default for states")
 
     def _check_bookmarks(self):
         """检查 Bookmark"""
-        self._log("[14/16] 检查Bookmark...")
+        self._log("[14/16] Checking bookmarks...")
         bm_dir = self._path("common", "bookmarks")
         if not os.path.isdir(bm_dir):
-            self.warnings.append("缺少 common/bookmarks/（如果replace了则会崩溃）")
+            self.warnings.append("Missing common/bookmarks/ (the game will crash if this path is replaced)")
             return
 
         files = [f for f in os.listdir(bm_dir) if f.endswith(".txt")]
         if not files:
-            self.errors.append("common/bookmarks/ 目录为空")
+            self.errors.append("common/bookmarks/ directory is empty")
             return
 
         for fn in files:
             with open(os.path.join(bm_dir, fn), "r", encoding="utf-8-sig", errors="replace") as f:
                 content = f.read()
             if "randomize_weather" not in content:
-                self.errors.append(f"Bookmark {fn}: 缺少 randomize_weather（必须有）")
+                self.errors.append(f"Bookmark {fn}: missing required randomize_weather")
             if "date" not in content:
-                self.errors.append(f"Bookmark {fn}: 缺少 date 字段")
+                self.errors.append(f"Bookmark {fn}: missing date field")
 
     def _check_localisation(self):
         """检查本地化"""
-        self._log("[15/16] 检查本地化...")
+        self._log("[15/16] Checking localization...")
         loc_dir = self._path("localisation")
         if not os.path.isdir(loc_dir):
-            self.warnings.append("缺少 localisation/ 目录")
+            self.warnings.append("Missing localisation/ directory")
             return
 
         yml_files = [f for f in os.listdir(loc_dir) if f.endswith("_l_english.yml")]
         if not yml_files:
-            self.warnings.append("localisation/ 中没有 *_l_english.yml 文件")
+            self.warnings.append("No *_l_english.yml files found in localisation/")
             return
 
         for fn in yml_files:
@@ -521,15 +522,15 @@ class ModVerifier:
             with open(path, "rb") as f:
                 bom = f.read(3)
                 if bom != b"\xef\xbb\xbf":
-                    self.errors.append(f"本地化 {fn}: 缺少 UTF-8 BOM（必须有）")
+                    self.errors.append(f"Localization {fn}: missing required UTF-8 BOM")
             with open(path, "r", encoding="utf-8-sig") as f:
                 first_line = f.readline().strip()
                 if first_line != "l_english:":
-                    self.errors.append(f"本地化 {fn}: 首行应为 'l_english:'，实际是 '{first_line}'")
+                    self.errors.append(f"Localization {fn}: first line must be 'l_english:'; actual value: '{first_line}'")
 
     def _check_descriptor(self):
         """检查 descriptor.mod"""
-        self._log("[16/16] 检查 descriptor.mod...")
+        self._log("[16/16] Checking descriptor.mod...")
         path = self._path("descriptor.mod")
         if not os.path.exists(path):
             return
@@ -541,7 +542,7 @@ class ModVerifier:
         # 注意不能误匹配 replace_path=
         import re
         if re.search(r'^path\s*=', content, re.MULTILINE):
-            self.errors.append("内部 descriptor.mod 不应包含 path= 字段")
+            self.errors.append("The internal descriptor.mod must not contain a path= field")
 
         # 检查外层 .mod 文件
         mod_dir_name = os.path.basename(self.mod_dir)
@@ -550,15 +551,15 @@ class ModVerifier:
             with open(outer, "r", encoding="utf-8-sig", errors="replace") as f:
                 outer_content = f.read()
             if "path=" not in outer_content:
-                self.errors.append(f"外层 {mod_dir_name}.mod 缺少 path= 字段")
+                self.errors.append(f"Outer {mod_dir_name}.mod is missing a path= field")
         else:
-            self.errors.append(f"缺少外层 .mod 文件: {outer}")
+            self.errors.append(f"Missing outer .mod file: {outer}")
 
         # 检查 replace_path 指向的目录是否存在
         for m in re.finditer(r'replace_path="([^"]+)"', content):
             rp = m.group(1)
             if not self._exists(rp):
-                self.errors.append(f"replace_path=\"{rp}\" 指向的目录不存在")
+                self.errors.append(f"Directory referenced by replace_path=\"{rp}\" does not exist")
 
     def _check_seasons(self):
         """检查 seasons.txt"""
@@ -569,11 +570,11 @@ class ModVerifier:
             content = f.read()
         for season in ["winter", "spring", "summer", "autumn"]:
             if season not in content:
-                self.errors.append(f"seasons.txt: 缺少 {season} 定义")
+                self.errors.append(f"seasons.txt: missing {season} definition")
 
     def _cross_validate(self):
         """交叉验证：省份分配完整性"""
-        self._log("\n[交叉验证] 省份分配一致性...")
+        self._log("\n[Cross-validation] Checking province assignments...")
 
         if not hasattr(self, '_land_province_ids'):
             return
@@ -584,7 +585,7 @@ class ModVerifier:
             if unassigned:
                 sample = sorted(list(unassigned))[:10]
                 self.errors.append(
-                    f"有 {len(unassigned)} 个陆地省份不在任何State中: {sample}..."
+                    f"{len(unassigned)} land provinces do not belong to any state: {sample}..."
                 )
 
         # 每个省份必须在某个战略区域中
@@ -593,19 +594,19 @@ class ModVerifier:
             if unassigned_sr:
                 sample = sorted(list(unassigned_sr))[:10]
                 self.errors.append(
-                    f"有 {len(unassigned_sr)} 个省份不在任何战略区域中: {sample}..."
+                    f"{len(unassigned_sr)} provinces do not belong to any strategic region: {sample}..."
                 )
 
 
 def main():
     if len(sys.argv) < 2:
-        print("用法: python -m export.verify_mod <MOD目录路径>")
-        print("示例: python -m export.verify_mod D:/Documents/Paradox Interactive/Hearts of Iron IV/mod/TestMOD")
+        print("Usage: python -m export.verify_mod <MOD directory path>")
+        print("Example: python -m export.verify_mod D:/Documents/Paradox Interactive/Hearts of Iron IV/mod/TestMOD")
         sys.exit(1)
 
     mod_dir = sys.argv[1]
     if not os.path.isdir(mod_dir):
-        print(f"错误: 目录不存在: {mod_dir}")
+        print(f"Error: directory does not exist: {mod_dir}")
         sys.exit(1)
 
     v = ModVerifier(mod_dir)

@@ -9,6 +9,8 @@ from __future__ import annotations
 import numpy as np
 from dataclasses import dataclass, field
 
+from ui.i18n import get_language, tr_pair
+
 
 @dataclass(frozen=True)
 class ExportReport:
@@ -23,14 +25,14 @@ def validate_before_export(canvas, state_mgr, country_mgr) -> list[str]:
     warnings: list[str] = []
     pm = canvas.province_map
     if int(pm.max()) == 0:
-        warnings.append("没有省份数据，请先生成省份")
+        warnings.append(tr_pair("没有省份数据，请先生成省份", "No province data; generate provinces first"))
         return warnings
 
     if not state_mgr.states:
-        warnings.append("没有 State，请先自动分组或手动创建")
+        warnings.append(tr_pair("没有 State，请先自动分组或手动创建", "No states; group provinces automatically or create a state manually"))
 
     if not country_mgr.countries:
-        warnings.append("没有国家，请先创建至少一个国家")
+        warnings.append(tr_pair("没有国家，请先创建至少一个国家", "No countries; create at least one country"))
 
     unowned = []
     for sid, state in state_mgr.states.items():
@@ -39,25 +41,29 @@ def validate_before_export(canvas, state_mgr, country_mgr) -> list[str]:
             unowned.append(str(sid))
     if unowned:
         warnings.append(
-            f"{len(unowned)} 个 State 未分配国家: {', '.join(unowned[:5])}..."
+            tr_pair(
+                f"{len(unowned)} 个 State 未分配国家: {', '.join(unowned[:5])}...",
+                f"{len(unowned)} states have no country: {', '.join(unowned[:5])}...",
+            )
         )
 
     for tag, country in country_mgr.countries.items():
         if country.capital <= 0:
-            warnings.append(f"国家 {tag} 没有设首都")
+            warnings.append(tr_pair(f"国家 {tag} 没有设首都", f"Country {tag} has no capital"))
 
     # ── 河流合法性（显示级问题: 不会崩游戏, 但会断流/不显示）──
     from domain.managers.river import validate_rivers, VALID_RIVER_VALUES
     rm = getattr(canvas, "river_map", None)
     if rm is not None and bool(np.isin(rm, list(VALID_RIVER_VALUES)).any()):
         issues = [
-            w for w in validate_rivers(rm)
-            if "没有河流数据" not in w and "验证通过" not in w
+            w for w in validate_rivers(rm, lang=get_language())
+            if not any(ok in w for ok in ("没有河流数据", "验证通过", "No river data", "Validation passed"))
         ]
         for w in issues[:5]:
-            warnings.append(f"河流: {w}")
+            warnings.append(tr_pair(f"河流: {w}", f"River: {w}"))
         if len(issues) > 5:
-            warnings.append(f"河流: 还有 {len(issues) - 5} 个问题, 详见河流页的「验证河流」")
+            n = len(issues) - 5
+            warnings.append(tr_pair(f"河流: 还有 {n} 个问题, 详见河流页的「验证河流」", f"River: {n} more issues; see Validate River on the River page"))
 
     return warnings
 
@@ -84,13 +90,13 @@ def _precheck_sync_terrain_tile(terrain_map, tile_map, fixed) -> None:
 
     if count_lb > 0:
         terrain_map[land_bad] = plains_idx
-        fixed.append(f"修正 {count_lb:,} 个陆地像素的地形 ocean→plains")
+        fixed.append(tr_pair(f"修正 {count_lb:,} 个陆地像素的地形 ocean→plains", f"Changed terrain on {count_lb:,} land pixels from ocean to plains"))
     if count_sb > 0:
         terrain_map[sea_bad] = ocean_idx
-        fixed.append(f"修正 {count_sb:,} 个海洋像素的地形→ocean")
+        fixed.append(tr_pair(f"修正 {count_sb:,} 个海洋像素的地形→ocean", f"Changed terrain on {count_sb:,} sea pixels to ocean"))
     if count_lk > 0:
         terrain_map[lake_bad] = lakes_idx
-        fixed.append(f"修正 {count_lk:,} 个湖泊像素的地形→lakes")
+        fixed.append(tr_pair(f"修正 {count_lk:,} 个湖泊像素的地形→lakes", f"Changed terrain on {count_lk:,} lake pixels to lakes"))
 
 
 def _precheck_clean_empty_states(state_mgr, country_mgr, fixed) -> None:
@@ -105,13 +111,13 @@ def _precheck_clean_empty_states(state_mgr, country_mgr, fixed) -> None:
         for sid in empty_sids:
             state_mgr.delete_state(sid)
         preview = ", ".join(str(s) for s in empty_sids[:10])
-        more = f" 等共 {len(empty_sids)} 个" if len(empty_sids) > 10 else ""
-        fixed.append(f"删除 {len(empty_sids)} 个空 State (合并省份留下的): {preview}{more}")
+        more = tr_pair(f" 等共 {len(empty_sids)} 个", f"; {len(empty_sids)} total") if len(empty_sids) > 10 else ""
+        fixed.append(tr_pair(f"删除 {len(empty_sids)} 个空 State (合并省份留下的): {preview}{more}", f"Deleted {len(empty_sids)} empty states left by province merges: {preview}{more}"))
     mapping = state_mgr.compact_ids()
     if mapping:
         if country_mgr is not None:
             country_mgr.remap_state_ids(mapping)
-        fixed.append(f"重新编号 {len(mapping)} 个 State 为连续 ID (HOI4 要求 ID 无 gap)")
+        fixed.append(tr_pair(f"重新编号 {len(mapping)} 个 State 为连续 ID (HOI4 要求 ID 无 gap)", f"Renumbered {len(mapping)} states with consecutive IDs (HOI4 does not allow ID gaps)"))
 
 
 def _precheck_warn_orphan_provinces(province_map, tile_map, province_count,
@@ -136,7 +142,7 @@ def _precheck_warn_orphan_provinces(province_map, tile_map, province_count,
     orphan_pids = land_pids - assigned_pids
     if orphan_pids:
         warnings.append(
-            f"{len(orphan_pids)} 个陆地省份未分配到 State（导出时自动领养）"
+            tr_pair(f"{len(orphan_pids)} 个陆地省份未分配到 State（导出时自动领养）", f"{len(orphan_pids)} land provinces are not assigned to a state (assigned automatically during export)")
         )
 
 
@@ -156,9 +162,9 @@ def _precheck_fix_unowned_states(state_mgr, country_mgr, warnings, fixed) -> Non
             state = state_mgr.get_state(sid)
             if state:
                 state.owner_tag = first_tag
-        fixed.append(f"{len(unowned)} 个无主 State 自动分配给 {first_tag}")
+        fixed.append(tr_pair(f"{len(unowned)} 个无主 State 自动分配给 {first_tag}", f"Assigned {len(unowned)} unowned states automatically to {first_tag}"))
     else:
-        warnings.append(f"{len(unowned)} 个 State 没有所有者，且没有可分配的国家")
+        warnings.append(tr_pair(f"{len(unowned)} 个 State 没有所有者，且没有可分配的国家", f"{len(unowned)} states have no owner and no country is available for assignment"))
 
 
 def _precheck_align_states_to_regions(province_map, province_count,
@@ -244,10 +250,12 @@ def _precheck_align_states_to_regions(province_map, province_count,
             region.province_ids = sorted(prov_set)
     for rid in emptied:
         strategic_region_mgr.remove_region(rid)
-    msg = (f"修正 {moved} 个省份的战略区归属, 消除 state 被战略区切开"
-           f" (涉及 {len(split_states)} 个 State")
+    msg = tr_pair(
+        f"修正 {moved} 个省份的战略区归属, 消除 state 被战略区切开 (涉及 {len(split_states)} 个 State",
+        f"Corrected strategic-region assignment for {moved} provinces so states are not split across regions (affecting {len(split_states)} states",
+    )
     if emptied:
-        msg += f", 删除 {len(emptied)} 个被挪空的战略区"
+        msg += tr_pair(f", 删除 {len(emptied)} 个被挪空的战略区", f", deleted {len(emptied)} regions emptied by the move")
     msg += ")"
     fixed.append(msg)
 
@@ -282,8 +290,10 @@ def _precheck_split_disconnected_regions(province_map, province_count,
             new_regions_added += 1
     if split_count > 0:
         fixed.append(
-            f"拆分 {split_count} 个地理不连通的战略区域 → 新增 {new_regions_added} 个连通区域 "
-            f"(HOI4 要求 region 内省份必须像素相连, 否则崩溃)"
+            tr_pair(
+                f"拆分 {split_count} 个地理不连通的战略区域 → 新增 {new_regions_added} 个连通区域 (HOI4 要求 region 内省份必须像素相连, 否则崩溃)",
+                f"Split {split_count} geographically disconnected strategic regions → added {new_regions_added} connected regions (HOI4 requires provinces in a region to be pixel-connected or it may crash)",
+            )
         )
 
 
@@ -305,10 +315,12 @@ def _precheck_warn_cross_region_states(state_mgr, strategic_region_mgr, warnings
             cross_sids.append(sid)
     if cross_sids:
         preview = ", ".join(str(s) for s in cross_sids[:10])
-        more = f" 等共 {len(cross_sids)} 个" if len(cross_sids) > 10 else ""
+        more = tr_pair(f" 等共 {len(cross_sids)} 个", f"; {len(cross_sids)} total") if len(cross_sids) > 10 else ""
         warnings.append(
-            f"{len(cross_sids)} 个 State 含飞地/离岸岛, 无法归入同一战略区"
-            f" (State {preview}{more})。游戏内只有无害警告; 要消除的话把飞地拆成独立 State"
+            tr_pair(
+                f"{len(cross_sids)} 个 State 含飞地/离岸岛, 无法归入同一战略区 (State {preview}{more})。游戏内只有无害警告; 要消除的话把飞地拆成独立 State",
+                f"{len(cross_sids)} states contain exclaves/offshore islands and cannot fit in one strategic region (State {preview}{more}). This only causes a harmless in-game warning; split the exclaves into separate states to eliminate it",
+            )
         )
 
 
@@ -322,11 +334,11 @@ def _precheck_fix_missing_capitals(state_mgr, country_mgr, warnings, fixed) -> N
             first_state = state_mgr.get_state(owned_states[0])
             if first_state and first_state.provinces:
                 country.capital = first_state.provinces[0]
-                fixed.append(f"国家 {tag} 自动设首都为省份 {country.capital}")
+                fixed.append(tr_pair(f"国家 {tag} 自动设首都为省份 {country.capital}", f"Set the capital of {tag} automatically to province {country.capital}"))
             else:
-                warnings.append(f"国家 {tag} 没有首都且无法自动设置")
+                warnings.append(tr_pair(f"国家 {tag} 没有首都且无法自动设置", f"Country {tag} has no capital and one could not be set automatically"))
         else:
-            warnings.append(f"国家 {tag} 没有首都且没有领土")
+            warnings.append(tr_pair(f"国家 {tag} 没有首都且没有领土", f"Country {tag} has no capital and no territory"))
 
 
 def pre_export_check_and_fix(
@@ -347,7 +359,7 @@ def pre_export_check_and_fix(
 
     province_count = int(province_map.max())
     if province_count == 0:
-        return ExportReport(warnings=["没有省份数据"], fixed=[], stats={})
+        return ExportReport(warnings=[tr_pair("没有省份数据", "No province data")], fixed=[], stats={})
 
     # ── 1. 同步 terrain_map 与 tile_map ──
     if terrain_map is not None:
@@ -372,7 +384,7 @@ def pre_export_check_and_fix(
     if continent_mgr is not None:
         # continent_mgr 默认所有陆地省份归 index 0，所以一般没问题
         if continent_mgr.count() == 0:
-            warnings.append("没有大陆定义，导出时使用默认大陆")
+            warnings.append(tr_pair("没有大陆定义，导出时使用默认大陆", "No continents are defined; the default continent will be used during export"))
 
     # ── 5.4 state ↔ 战略区对齐 (被战略区切开的 state 整组挪回同一区) ──
     if (strategic_region_mgr is not None and strategic_region_mgr.regions
@@ -571,7 +583,7 @@ def export_mod(
     if filled > 0:
         report = ExportReport(
             warnings=report.warnings,
-            fixed=list(report.fixed) + [f"为 {filled} 个 State 填充了默认资源/建筑"],
+            fixed=list(report.fixed) + [tr_pair(f"为 {filled} 个 State 填充了默认资源/建筑", f"Filled default resources/buildings for {filled} states")],
             stats=report.stats,
         )
 
@@ -585,8 +597,10 @@ def export_mod(
             report = ExportReport(
                 warnings=report.warnings,
                 fixed=list(report.fixed) + [
-                    f"检测到 {_gap_count} 个省份编号空洞 (合并省份留下的), "
-                    f"导出文件已自动压实为连续编号, 项目数据保持不变"
+                    tr_pair(
+                        f"检测到 {_gap_count} 个省份编号空洞 (合并省份留下的), 导出文件已自动压实为连续编号, 项目数据保持不变",
+                        f"Detected {_gap_count} gaps in province numbering left by merges; exported files were compacted automatically to consecutive IDs while project data remains unchanged",
+                    )
                 ],
                 stats=report.stats,
             )

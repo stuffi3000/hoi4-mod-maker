@@ -26,7 +26,7 @@ class ColormapController(BaseController):
         color = ColormapColor(r, g, b)
         setattr(self.project.colormap_settings, attr, color)
         self.project.mark_dirty()
-        self._emit_status(f"总览贴图 {attr} 颜色已更新 ({r},{g},{b})")
+        self._emit_status(f"总览贴图 {attr} 颜色已更新 ({r},{g},{b})", f"Colormap {attr} color updated ({r},{g},{b})")
 
     def reset(self) -> None:
         """恢复总览贴图默认颜色。"""
@@ -34,4 +34,4 @@ class ColormapController(BaseController):
 
         self.project.colormap_settings = ColormapSettings.default()
         self.project.mark_dirty()
-        self._emit_status("总览贴图颜色已恢复默认")
+        self._emit_status("总览贴图颜色已恢复默认", "Colormap colors restored to defaults")

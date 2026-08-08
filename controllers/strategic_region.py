@@ -33,7 +33,7 @@ class StrategicRegionController(BaseController):
         """进入战略区域模式。"""
         self.pick_on = False
         self.pick_rid = 0
-        self._emit_status("战略区域编辑模式")
+        self._emit_status("战略区域编辑模式", "Strategic region editing mode")
 
     def deactivate(self) -> None:
         """离开战略区域模式，清除高亮。"""
@@ -56,11 +56,11 @@ class StrategicRegionController(BaseController):
             if region:
                 self.event_bus.emit("batch_highlight_pids", pids=list(region.province_ids))
             self.event_bus.emit("sr_colors_dirty")
-            self._emit_status(f"省份 {pid} → 战略区域 #{self.pick_rid}")
+            self._emit_status(f"省份 {pid} → 战略区域 #{self.pick_rid}", f"Province {pid} → strategic region #{self.pick_rid}")
             return
 
         if self.assign_mode and self.pick_rid <= 0:
-            self._emit_status("请先在列表中选中一个区域")
+            self._emit_status("请先在列表中选中一个区域", "Select a region in the list first")
             return
 
         # 查看模式：点击省份 → 高亮所属战略区 + 在列表中选中
@@ -69,24 +69,24 @@ class StrategicRegionController(BaseController):
             self.select_region(rid)
             self.event_bus.emit("sr_select_in_list", rid=rid)
         else:
-            self._emit_status(f"省份 {pid} 未分配到任何战略区域")
+            self._emit_status(f"省份 {pid} 未分配到任何战略区域", f"Province {pid} is not assigned to a strategic region")
 
     def set_assign_mode(self, on: bool) -> None:
         """开关分配模式。"""
         self.assign_mode = on
         if on:
-            self._emit_status("分配模式: 点击省份加入选中区域")
+            self._emit_status("分配模式: 点击省份加入选中区域", "Assign mode: click provinces to add them to the selected region")
         else:
-            self._emit_status("查看模式: 点击省份查看所属区域")
+            self._emit_status("查看模式: 点击省份查看所属区域", "View mode: click a province to inspect its region")
 
     def toggle_pick(self, on: bool, rid: int = 0) -> None:
         """开关拾取模式。"""
         self.pick_on = on
         self.pick_rid = rid if on else 0
         if on:
-            self._emit_status(f"战略区拾取: 点击省份 → 加入 Region #{rid}")
+            self._emit_status(f"战略区拾取: 点击省份 → 加入 Region #{rid}", f"Strategic region picking: click a province → add to Region #{rid}")
         else:
-            self._emit_status("战略区拾取关闭")
+            self._emit_status("战略区拾取关闭", "Strategic region picking disabled")
 
     def auto_generate(self) -> None:
         """自动生成战略区域。"""
@@ -94,7 +94,7 @@ class StrategicRegionController(BaseController):
         province_map = map_data.province_map
 
         if int(province_map.max()) == 0:
-            self._emit_status("请先生成省份")
+            self._emit_status("请先生成省份", "Generate provinces first")
             return
 
         sr_mgr = self.project.strategic_region_mgr
@@ -104,19 +104,19 @@ class StrategicRegionController(BaseController):
             state_mgr=self.project.state_mgr,
         )
         self.project.mark_dirty()
-        self._emit_status(f"已生成 {sr_mgr.count()} 个战略区域")
+        self._emit_status(f"已生成 {sr_mgr.count()} 个战略区域", f"Generated {sr_mgr.count()} strategic regions")
 
     def auto_assign_weather(self) -> None:
         """按纬度自动分配所有战略区域的天气预设."""
         sr_mgr = self.project.strategic_region_mgr
         if sr_mgr.count() == 0:
-            self._emit_status("没有战略区域，请先生成")
+            self._emit_status("没有战略区域，请先生成", "No strategic regions exist; generate them first")
             return
 
         province_map = self.project.map_data.province_map
         changed = sr_mgr.auto_assign_weather_by_latitude(province_map)
         self.project.mark_dirty()
-        self._emit_status(f"已按纬度分配 {changed} 个战略区域的天气预设")
+        self._emit_status(f"已按纬度分配 {changed} 个战略区域的天气预设", f"Assigned weather presets to {changed} strategic regions by latitude")
 
     def select_region(self, rid: int) -> None:
         """选中战略区域 → 高亮其所有省份。"""
@@ -126,7 +126,9 @@ class StrategicRegionController(BaseController):
             self.event_bus.emit("batch_highlight_pids", pids=list(region.province_ids))
             self._emit_status(
                 f"战略区 #{rid} \"{region.name}\" "
-                f"({len(region.province_ids)} 省份, {region.weather_preset})"
+                f"({len(region.province_ids)} 省份, {region.weather_preset})",
+                f"Strategic region #{rid} \"{region.name}\" "
+                f"({len(region.province_ids)} provinces, {region.weather_preset})",
             )
         else:
             self.event_bus.emit("batch_highlight_pids", pids=[])
@@ -179,7 +181,7 @@ class StrategicRegionController(BaseController):
                 province_ids.extend(state.provinces)
 
         if not province_ids:
-            self._emit_status("选中的州没有省份")
+            self._emit_status("选中的州没有省份", "The selected states contain no provinces")
             return 0
 
         # 从旧战略区域移除这些省份
@@ -198,5 +200,5 @@ class StrategicRegionController(BaseController):
         state_names = ", ".join(str(s) for s in state_ids[:5])
         if len(state_ids) > 5:
             state_names += f"... (+{len(state_ids)-5})"
-        self._emit_status(f"创建战略区域 #{r.id}（包含州 {state_names}，{len(province_ids)} 个省份）")
+        self._emit_status(f"创建战略区域 #{r.id}（包含州 {state_names}，{len(province_ids)} 个省份）", f"Created strategic region #{r.id} (states {state_names}, {len(province_ids)} provinces)")
         return r.id

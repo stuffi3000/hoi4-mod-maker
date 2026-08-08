@@ -37,7 +37,7 @@ class CountryController(BaseController):
 
     def activate(self) -> None:
         """进入国家模式，刷新颜色图。"""
-        self._emit_status("国家编辑模式")
+        self._emit_status("国家编辑模式", "Country editing mode")
         self.event_bus.emit("country_changed", tag="", action="refresh")
 
     def deactivate(self) -> None:
@@ -52,9 +52,11 @@ class CountryController(BaseController):
         self.assign_mode = bool(on)
         if on:
             self._emit_status(
-                "分配领土模式：点击地图上的州分配给当前选中的国家（Ctrl+Z 撤销可归还原主）")
+                "分配领土模式：点击地图上的州分配给当前选中的国家（Ctrl+Z 撤销可归还原主）",
+                "Assign territory mode: click states on the map to assign them to the selected country (Ctrl+Z restores the previous owner)",
+            )
         else:
-            self._emit_status("信息模式：点击地图查看该处的国家")
+            self._emit_status("信息模式：点击地图查看该处的国家", "Information mode: click the map to inspect the country at that location")
 
     def on_province_clicked(self, pid: int) -> None:
         """点击省份：信息模式查看该处国家; 分配模式把所在 State 分给选中国家。"""
@@ -64,7 +66,7 @@ class CountryController(BaseController):
             self._show_country_at(pid)
             return
         if not self.selected_country_tag:
-            self._emit_status("请先在国家列表选中一个国家，再分配领土")
+            self._emit_status("请先在国家列表选中一个国家，再分配领土", "Select a country in the list before assigning territory")
             return
 
         state_mgr = self.project.state_mgr
@@ -72,7 +74,7 @@ class CountryController(BaseController):
 
         state_id = state_mgr.get_state_of_province(pid)
         if state_id <= 0:
-            self._emit_status("该省份未分配到任何 State")
+            self._emit_status("该省份未分配到任何 State", "This province is not assigned to a state")
             return
 
         # 获取旧的所有者 (undo 时归还给它)
@@ -93,28 +95,29 @@ class CountryController(BaseController):
             action="modified",
         )
         self._emit_status(
-            f"State {state_id} 已分配给 {self.selected_country_tag}"
+            f"State {state_id} 已分配给 {self.selected_country_tag}",
+            f"State {state_id} assigned to {self.selected_country_tag}",
         )
 
     def _show_country_at(self, pid: int) -> None:
         """信息模式：查该省所在州属于哪个国家并选中它（面板显示可编辑信息）。"""
         state_id = self.project.state_mgr.get_state_of_province(pid)
         if state_id <= 0:
-            self._emit_status("该省份未分配到任何 State")
+            self._emit_status("该省份未分配到任何 State", "This province is not assigned to a state")
             return
         tag = self.project.country_mgr.get_owner_of_state(state_id)
         if tag:
             country = self.project.country_mgr.get_country(tag)
             self.select_country(tag)
-            self._emit_status(f"{tag}（{country.name}）— 左侧面板可编辑该国信息")
+            self._emit_status(f"{tag}（{country.name}）— 左侧面板可编辑该国信息", f"{tag} ({country.name}) — edit this country in the left panel")
         else:
-            self._emit_status(f"State {state_id} 尚未分配给任何国家")
+            self._emit_status(f"State {state_id} 尚未分配给任何国家", f"State {state_id} is not assigned to a country")
 
     def on_province_right_clicked(self, pid: int, x: int, y: int) -> None:
         """右键省份：设为当前国家的首都。"""
         if pid <= 0 or not self.selected_country_tag:
             if not self.selected_country_tag:
-                self._emit_status("请先在国家模式下选中一个国家")
+                self._emit_status("请先在国家模式下选中一个国家", "Select a country in Country mode first")
             return
 
         tag = self.selected_country_tag
@@ -123,7 +126,7 @@ class CountryController(BaseController):
         self.project.mark_dirty()
 
         self.event_bus.emit("country_changed", tag=tag, action="modified")
-        self._emit_status(f"{tag} 的首都已设为省份 {pid}")
+        self._emit_status(f"{tag} 的首都已设为省份 {pid}", f"Capital of {tag} set to province {pid}")
 
     def create_country(
         self,
@@ -135,7 +138,7 @@ class CountryController(BaseController):
         """创建新国家。返回是否成功。"""
         tag = tag.upper().strip()[:3]
         if len(tag) != 3 or not tag.isalpha():
-            self._emit_status("TAG 必须是 3 个英文字母")
+            self._emit_status("TAG 必须是 3 个英文字母", "TAG must consist of 3 letters")
             return False
 
         cmd = CreateCountryCommand(
@@ -145,13 +148,13 @@ class CountryController(BaseController):
         try:
             self.history.execute(cmd)
         except ValueError as e:
-            self._emit_status(f"创建国家失败: {e}")
+            self._emit_status(f"创建国家失败: {e}", f"Failed to create country: {e}")
             return False
 
         self.project.mark_dirty()
         self.selected_country_tag = tag
         self.event_bus.emit("country_changed", tag=tag, action="created")
-        self._emit_status(f"国家 {tag} ({name}) 已创建")
+        self._emit_status(f"国家 {tag} ({name}) 已创建", f"Country {tag} ({name}) created")
         return True
 
     def select_country(self, tag: str) -> None:
@@ -167,7 +170,7 @@ class CountryController(BaseController):
         """删除国家. 同时清理所有指向该国的 state owner. 走 command 支持 undo."""
         country_mgr = self.project.country_mgr
         if not tag or country_mgr.get_country(tag) is None:
-            self._emit_status(f"国家 {tag} 不存在")
+            self._emit_status(f"国家 {tag} 不存在", f"Country {tag} does not exist")
             return
         cmd = DeleteCountryCommand(country_mgr, tag)
         self.history.execute(cmd)
@@ -175,7 +178,7 @@ class CountryController(BaseController):
             self.selected_country_tag = ""
         self.project.mark_dirty()
         self.event_bus.emit("country_changed", tag=tag, action="deleted")
-        self._emit_status(f"已删除国家 {tag}")
+        self._emit_status(f"已删除国家 {tag}", f"Deleted country {tag}")
 
     def change_property(self, tag: str, prop: str, value: str) -> None:
         """修改国家属性。"""
@@ -200,4 +203,4 @@ class CountryController(BaseController):
         country.color = color
         self.project.mark_dirty()
         self.event_bus.emit("country_changed", tag=tag, action="modified")
-        self._emit_status(f"{tag} 颜色已修改")
+        self._emit_status(f"{tag} 颜色已修改", f"Color of {tag} updated")

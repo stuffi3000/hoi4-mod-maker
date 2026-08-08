@@ -87,7 +87,7 @@ class AdjacencyRuleManager:
 
     def add(self, rule: AdjacencyRule) -> None:
         if not rule.name:
-            raise ValueError("rule name 不能为空")
+            raise ValueError("Rule name cannot be empty")
         self._rules[rule.name] = rule
 
     def remove(self, name: str) -> bool:

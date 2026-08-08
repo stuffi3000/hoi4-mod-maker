@@ -16,7 +16,7 @@ from ui.styles import (
     _DIM, _ACCENT, _BORDER, _SECTION_STYLE, _LABEL_STYLE, _DIM_LABEL_STYLE,
     _SECONDARY_BTN_STYLE, _LINEEDIT_STYLE,
 )
-from ui.i18n import tr
+from ui.i18n import tr, tr_pair
 
 # 模式激活时的按钮样式（醒目橙色）
 _ACTIVE_MODE_BTN_STYLE = """
@@ -239,10 +239,13 @@ class ProvincePage(QWidget):
         if len(gap_ids) <= 10:
             ids_str = ", ".join(str(i) for i in gap_ids)
         else:
-            ids_str = ", ".join(str(i) for i in gap_ids[:10]) + f" ... 共 {len(gap_ids)} 个"
+            ids_str = ", ".join(str(i) for i in gap_ids[:10]) + tr_pair(f" ... 共 {len(gap_ids)} 个", f" ... {len(gap_ids)} total")
 
         self._stats_label.setText(
-            f"缺失省份 ID: {ids_str}\n需要用切割或增量生成补回"
+            tr_pair(
+                f"缺失省份 ID: {ids_str}\n需要用切割或增量生成补回",
+                f"Missing province IDs: {ids_str}\nRestore them by splitting or incremental generation",
+            )
         )
         self._stats_label.setStyleSheet(
             "color: #f59e0b; font-size: 12px; font-weight: bold; padding: 8px;"

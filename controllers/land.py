@@ -48,10 +48,11 @@ class LandController(BaseController):
         has_provinces = int(self.project.map_data.province_map.max()) > 0
         if has_provinces:
             self._emit_status(
-                "⚠ 已有省份 — 画新陆地后切到「省份」模式点生成，选「Yes」= 只给新区域生成"
+                "⚠ 已有省份 — 画新陆地后切到「省份」模式点生成，选「Yes」= 只给新区域生成",
+                "⚠ Provinces already exist — after drawing new land, switch to Province mode and click Generate; choose Yes to generate only in new areas",
             )
         else:
-            self._emit_status("大陆编辑模式")
+            self._emit_status("大陆编辑模式", "Land editing mode")
 
     def deactivate(self) -> None:
         """离开大陆模式，结束未完成笔触。"""

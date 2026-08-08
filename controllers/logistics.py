@@ -26,7 +26,7 @@ class LogisticsController(BaseController):
     def activate(self) -> None:
         """进入后勤模式。"""
         self.pick_target = None
-        self._emit_status("后勤编辑模式: 点击省份设置铁路等级")
+        self._emit_status("后勤编辑模式: 点击省份设置铁路等级", "Logistics editing mode: click provinces to set railway levels")
 
     def deactivate(self) -> None:
         """离开后勤模式，清理所有临时状态。"""
@@ -62,9 +62,9 @@ class LogisticsController(BaseController):
         self.event_bus.emit("railway_changed")
 
         if new_level > 0:
-            self._emit_status(f"省份 {pid} 铁路等级 → {new_level}")
+            self._emit_status(f"省份 {pid} 铁路等级 → {new_level}", f"Province {pid} railway level → {new_level}")
         else:
-            self._emit_status(f"省份 {pid} 铁路已移除")
+            self._emit_status(f"省份 {pid} 铁路已移除", f"Railway removed from province {pid}")
 
     def set_railway_level(self, level: int) -> None:
         """设置铁路等级。"""
@@ -75,29 +75,30 @@ class LogisticsController(BaseController):
         if on:
             self.pick_target = "supply_erase" if erase else "supply"
             mode_text = "删除" if erase else "放置"
-            self._emit_status(f"点击陆地省份{mode_text}补给节点")
+            mode_text_en = "remove a" if erase else "place a"
+            self._emit_status(f"点击陆地省份{mode_text}补给节点", f"Click a land province to {mode_text_en} supply hub")
         else:
             if self.pick_target in ("supply", "supply_erase"):
                 self.pick_target = None
-            self._emit_status("补给模式已关闭")
+            self._emit_status("补给模式已关闭", "Supply hub mode disabled")
 
     def set_adjacency_pick(self, on: bool, target: str = "") -> None:
         """设置 adjacency 对话框拾取模式。"""
         if on and target:
             self.pick_target = f"adj_{target}"
-            self._emit_status(f"点击画布省份填入 adjacency {target}")
+            self._emit_status(f"点击画布省份填入 adjacency {target}", f"Click a map province to fill adjacency {target}")
         else:
             self.pick_target = None
-            self._emit_status("拾取模式关闭")
+            self._emit_status("拾取模式关闭", "Picking mode disabled")
 
     def set_rule_pick(self, on: bool, target: str = "") -> None:
         """设置 adjacency_rule 对话框拾取模式。"""
         if on and target:
             self.pick_target = target  # 'rule_required' or 'rule_icon'
-            self._emit_status(f"点击画布省份 → 加入 {target}")
+            self._emit_status(f"点击画布省份 → 加入 {target}", f"Click a map province → add to {target}")
         else:
             self.pick_target = None
-            self._emit_status("拾取模式关闭")
+            self._emit_status("拾取模式关闭", "Picking mode disabled")
 
     def _handle_pick(self, pid: int) -> None:
         """统一的拾取分发。"""
@@ -138,7 +139,7 @@ class LogisticsController(BaseController):
             return
 
         if int(tile_map[ys[0], xs[0]]) != TILE_LAND:
-            self._emit_status(f"省份 {pid} 不是陆地, 跳过")
+            self._emit_status(f"省份 {pid} 不是陆地, 跳过", f"Province {pid} is not land; skipped")
             return
 
         mgr = self.project.supply_mgr
@@ -147,14 +148,14 @@ class LogisticsController(BaseController):
                 mgr.remove(pid)
                 self.project.mark_dirty()
                 self.event_bus.emit("railway_changed")
-                self._emit_status(f"补给节点已删除: 省份 {pid}")
+                self._emit_status(f"补给节点已删除: 省份 {pid}", f"Supply hub removed from province {pid}")
             else:
-                self._emit_status(f"省份 {pid} 无补给节点")
+                self._emit_status(f"省份 {pid} 无补给节点", f"Province {pid} has no supply hub")
         else:
             if not mgr.contains(pid):
                 mgr.add(pid)
                 self.project.mark_dirty()
                 self.event_bus.emit("railway_changed")
-                self._emit_status(f"补给节点已添加: 省份 {pid}")
+                self._emit_status(f"补给节点已添加: 省份 {pid}", f"Supply hub added to province {pid}")
             else:
-                self._emit_status(f"省份 {pid} 已有补给节点")
+                self._emit_status(f"省份 {pid} 已有补给节点", f"Province {pid} already has a supply hub")

@@ -69,17 +69,17 @@ class CountryManager:
         """
         tag = tag.upper()[:3]
         if len(tag) != 3:
-            raise ValueError("TAG 必须是 3 个字符")
+            raise ValueError("TAG must contain exactly 3 characters")
         if not tag.isalnum():
-            raise ValueError("TAG 只能包含字母和数字")
+            raise ValueError("TAG can contain letters and numbers only")
         # BUG-6b: 拒绝 vanilla TAG (避免热那亚→Krakow 类撞车)
         if not allow_vanilla_tag:
             from data.constants import is_vanilla_tag
             if is_vanilla_tag(tag):
                 raise ValueError(
-                    f"TAG '{tag}' 与 vanilla 国家撞车，HOI4 会用 vanilla 数据覆盖你的国家"
-                    f"（如名字、颜色、idea 等）。请改用其他 3 字符组合，"
-                    f"建议含数字以避开 vanilla：例如 X01, K42, Z99 等。"
+                    f"TAG '{tag}' conflicts with a vanilla country, so HOI4 would overwrite "
+                    f"your country's data (including name, color, and ideas). Choose another "
+                    f"3-character combination, preferably containing a number, such as X01, K42, or Z99."
                 )
         country = CountryData(tag=tag, name=name or tag, color=color)
         self._countries[tag] = country

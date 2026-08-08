@@ -77,7 +77,8 @@ def _compose(canvas):
     tiles = assets.atlas_tiles()
     mapping = assets.terrain_to_texture()
     if tiles is None or mapping is None:
-        canvas._preview_error = assets.last_error or "未找到 HOI4 安装目录"
+        from ui.i18n import tr_pair
+        canvas._preview_error = assets.last_error or tr_pair("未找到 HOI4 安装目录", "HOI4 installation directory was not found")
         return None
     canvas._preview_error = ""
 

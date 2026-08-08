@@ -21,6 +21,7 @@ from PyQt5.QtWidgets import (
 
 from domain.managers.strategic_region import (
     StrategicRegionManager, StrategicRegion, PRESET_LABELS,
+    weather_preset_display_name,
 )
 from ui.i18n import tr
 
@@ -93,8 +94,8 @@ class StrategicRegionDialog(QDialog):
         weather_row = QHBoxLayout()
         weather_row.addWidget(QLabel(tr("sr_dlg_weather_label")))
         self._weather_combo = QComboBox()
-        for key, label in PRESET_LABELS.items():
-            self._weather_combo.addItem(label, key)
+        for key in PRESET_LABELS:
+            self._weather_combo.addItem(weather_preset_display_name(key), key)
         self._weather_combo.currentIndexChanged.connect(self._on_weather_changed)
         weather_row.addWidget(self._weather_combo)
         right.addLayout(weather_row)
@@ -141,7 +142,7 @@ class StrategicRegionDialog(QDialog):
     def _refresh_list(self) -> None:
         self._list.clear()
         for r in sorted(self._mgr.regions.values(), key=lambda x: x.id):
-            label = f"#{r.id} {r.name}  ({tr('sr_dlg_list_item_fmt', len(r.province_ids))}, {PRESET_LABELS.get(r.weather_preset, r.weather_preset)})"
+            label = f"#{r.id} {r.name}  ({tr('sr_dlg_list_item_fmt', len(r.province_ids))}, {weather_preset_display_name(r.weather_preset)})"
             item = QListWidgetItem(label)
             item.setData(Qt.UserRole, r.id)
             self._list.addItem(item)

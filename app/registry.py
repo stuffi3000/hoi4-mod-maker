@@ -23,9 +23,9 @@ class FeatureRegistry:
 
     def register(self, feature: Feature) -> None:
         if not feature.id:
-            raise ValueError("Feature 必须有非空 id")
+            raise ValueError("Feature must have a non-empty id")
         if feature.id in self._features:
-            raise ValueError(f"Feature id 重复: {feature.id}")
+            raise ValueError(f"Duplicate feature id: {feature.id}")
         self._features[feature.id] = feature
 
     def get(self, feature_id: str) -> Feature | None:
@@ -52,10 +52,10 @@ class ExporterRegistry:
 
     def register(self, name: str, group: str, writer, order: int = 100) -> None:
         if not name:
-            raise ValueError("writer 必须有非空 name")
+            raise ValueError("Writer must have a non-empty name")
         for _, _, existing_name, _ in self._writers:
             if existing_name == name:
-                raise ValueError(f"writer 名字重复: {name}")
+                raise ValueError(f"Duplicate writer name: {name}")
         self._writers.append((order, group, name, writer))
         self._writers.sort(key=lambda x: (x[0], x[2]))
 
