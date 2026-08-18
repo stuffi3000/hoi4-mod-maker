@@ -21,7 +21,8 @@ logger = logging.getLogger(__name__)
 
 # 语言 -> {key: text}
 _languages: dict[str, dict[str, str]] = {}
-_current_lang: str = "zh"
+_DEFAULT_LANGUAGE = "en"
+_current_lang: str = _DEFAULT_LANGUAGE
 _FALLBACK_CHAIN = ("en", "zh")
 _PKG_ROOT = Path(__file__).parent
 
@@ -72,16 +73,20 @@ def _load_saved_language() -> str:
         from PyQt5.QtCore import QSettings
 
         s = QSettings("HOI4MapMaker", "Settings")
-        return s.value("language", "zh")
+        return str(s.value("language", _DEFAULT_LANGUAGE))
     except Exception:
-        return "zh"
+        return _DEFAULT_LANGUAGE
 
 
 # 启动时加载
 _load_all_languages()
 _current_lang = _load_saved_language()
 if _current_lang not in _languages:
-    _current_lang = "zh" if "zh" in _languages else next(iter(_languages), "zh")
+    _current_lang = (
+        _DEFAULT_LANGUAGE
+        if _DEFAULT_LANGUAGE in _languages
+        else next(iter(_languages), _DEFAULT_LANGUAGE)
+    )
 
 
 # ---------- 对外 API ----------
@@ -138,10 +143,14 @@ def tr(key: str, *args: object, **kwargs: object) -> str:
     例：tr("status_pos", 100, 200)             -> "位置: (100, 200)"
         tr("dlg_batch_state_done", sid=5, n=3) -> "已创建州 5（3 个省份）"
 
-    缺失时按 _current_lang -> en -> zh -> key 顺序 fallback。
+    English mode falls back directly to the key so Chinese cannot leak into the UI.
+    Other languages fall back through en -> zh -> key.
     placeholder 不匹配时 logger.warning 不再静默吞 (历史上的 silent KeyError 坑).
     """
-    for lang in (_current_lang, *_FALLBACK_CHAIN):
+    # English mode must never leak Chinese when a catalog key is missing.
+    # Other translations still fall back through English and then Chinese.
+    fallback_chain = ("en",) if _current_lang == "en" else _FALLBACK_CHAIN
+    for lang in (_current_lang, *fallback_chain):
         text = _languages.get(lang, {}).get(key)
         if text is None:
             continue

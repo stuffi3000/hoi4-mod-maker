@@ -115,7 +115,7 @@ def test_export_byte_diff_matches_baseline():
         BASELINE_FILE.parent.mkdir(parents=True, exist_ok=True)
         with open(BASELINE_FILE, "w", encoding="utf-8") as f:
             json.dump(current, f, indent=2, sort_keys=True)
-        pytest.skip(f"Baseline 已创建: {BASELINE_FILE} ({len(current)} 个文件)")
+        pytest.skip(f"Baseline created: {BASELINE_FILE} ({len(current)} files)")
 
     with open(BASELINE_FILE, "r", encoding="utf-8") as f:
         baseline: dict[str, str] = json.load(f)
@@ -129,10 +129,10 @@ def test_export_byte_diff_matches_baseline():
 
     msg_parts = []
     if missing:
-        msg_parts.append(f"缺失 {len(missing)} 个文件: {sorted(missing)[:5]}")
+        msg_parts.append(f"Missing {len(missing)} files: {sorted(missing)[:5]}")
     if extra:
-        msg_parts.append(f"多出 {len(extra)} 个文件: {sorted(extra)[:5]}")
+        msg_parts.append(f"Found {len(extra)} extra files: {sorted(extra)[:5]}")
     if changed:
-        msg_parts.append(f"{len(changed)} 个文件内容变了: {sorted(changed)[:5]}")
+        msg_parts.append(f"Content changed in {len(changed)} files: {sorted(changed)[:5]}")
 
     assert not msg_parts, " | ".join(msg_parts)

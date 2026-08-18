@@ -47,6 +47,34 @@ def test_english_catalog_contains_no_chinese_text(i18n):
     assert not offenders, f"English translations still contain Chinese: {offenders}"
 
 
+def test_fresh_install_defaults_to_english(i18n, monkeypatch):
+    captured = {}
+
+    class FakeSettings:
+        def __init__(self, organization, application):
+            captured["scope"] = (organization, application)
+
+        def value(self, key, default):
+            captured["value"] = (key, default)
+            return default
+
+    monkeypatch.setattr("PyQt5.QtCore.QSettings", FakeSettings)
+
+    assert i18n._load_saved_language() == "en"
+    assert captured["scope"] == ("HOI4MapMaker", "Settings")
+    assert captured["value"] == ("language", "en")
+
+
+def test_english_mode_never_falls_back_to_chinese(i18n):
+    key = "app_title"
+    english = i18n._languages["en"].pop(key)
+    try:
+        i18n.set_language("en")
+        assert i18n.tr(key) == key
+    finally:
+        i18n._languages["en"][key] = english
+
+
 def test_placeholder_consistency_zh_en_ru(i18n):
     """zh/en/ru 之间 {placeholder} 必须一致, 否则 tr() 会运行时炸."""
     import re
