@@ -300,6 +300,9 @@ class ToolPanel(QWidget):
     lasso_province_toggled = pyqtSignal(bool)
     merge_mode_toggled = pyqtSignal(bool)
     find_province_requested = pyqtSignal(int)
+    province_paint_mode_changed = pyqtSignal(str)
+    province_brush_size_changed = pyqtSignal(int)
+    new_province_requested = pyqtSignal()
 
     # State / Country 信号
     auto_states_requested = pyqtSignal(int)
@@ -560,6 +563,10 @@ class ToolPanel(QWidget):
         p.lasso_province_toggled.connect(self.lasso_province_toggled)
         p.merge_mode_toggled.connect(self.merge_mode_toggled)
         p.find_province_requested.connect(self.find_province_requested)
+        p.province_paint_mode_changed.connect(self.province_paint_mode_changed)
+        p.province_brush_size_changed.connect(self.province_brush_size_changed)
+        p.new_province_requested.connect(self.new_province_requested)
+        p.import_ref_requested.connect(self.import_ref_requested)
 
     def _connect_terrain_signals(self) -> None:
         p = self._terrain_page

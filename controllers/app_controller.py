@@ -571,6 +571,15 @@ class ApplicationController:
             if len(self._cmd_history._undo_stack) > self._cmd_history._max_size:
                 self._cmd_history._undo_stack.pop(0)
             self._cmd_history._notify()
+            self._project.mark_dirty()
+            if mode == "province":
+                self.invalidate_province_cache()
+                pm = self._canvas.province_map
+                max_pid = int(pm.max())
+                existing = set(int(v) for v in np.unique(pm) if int(v) > 0)
+                gaps = sorted(set(range(1, max_pid + 1)) - existing)
+                self._event_bus.emit("province_count_changed", count=max_pid)
+                self._event_bus.emit("province_gaps_changed", gap_ids=gaps)
         self._stroke_before = None
 
     def _refresh_brush_targets(self, cmd) -> None:

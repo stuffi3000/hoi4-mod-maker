@@ -540,13 +540,10 @@ def generate_provinces_incremental(
             next_id += actual_count
 
     # 后处理：只对新增区域做修复，不动已有省份
-    # 记录哪些 ID 是旧的（不能动）
-    old_pids = set(np.unique(province_map).tolist())
-    old_pids.discard(0)
-
-    from domain.validators.province import fix_x_crossings
+    from domain.validators.province import fix_x_crossings_preserving
+    protected_pixels = province_map > 0
     for _ in range(3):
-        if fix_x_crossings(result) == 0:
+        if fix_x_crossings_preserving(result, protected_pixels, tile_map) == 0:
             break
 
     # 不做 compact_province_ids — 增量模式保留旧 ID 不变

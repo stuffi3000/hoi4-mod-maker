@@ -422,6 +422,9 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
         tp.lasso_province_toggled.connect(self._on_lasso_toggled)
         tp.merge_mode_toggled.connect(self._on_merge_toggled)
         tp.find_province_requested.connect(self._on_find_province)
+        tp.province_paint_mode_changed.connect(self._on_province_paint_mode)
+        tp.province_brush_size_changed.connect(cv.set_province_paint_brush_size)
+        tp.new_province_requested.connect(self._on_new_manual_province)
         cv.split_line_drawn.connect(self._on_split_line_drawn)
 
         # State 信号 → controller
@@ -803,6 +806,46 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
         else:
             self._canvas.set_framework_tool(None)
             self._status_info.setText(tr("status_view_mode"))
+
+    def _on_province_paint_mode(self, mode: str) -> None:
+        """Switch between province selection, brush painting, and blank fill."""
+        if mode == "select":
+            self._canvas.set_framework_tool(None)
+            self._status_info.setText(tr("province_status_select"))
+            return
+        if mode not in ("brush", "fill"):
+            return
+
+        from domain.tools import province_paint  # noqa: F401
+
+        self._canvas.set_framework_tool(
+            "province_paint",
+            undo_mgr=self._undo_mgr,
+            state_mgr=self._project.state_mgr,
+            country_mgr=self._project.country_mgr,
+        )
+        page = self._tool_panel._province_page
+        pid = int(self._canvas._selected_province_id)
+        tile_type = int(self._canvas._selected_province_tile)
+        self._canvas.configure_province_paint(
+            mode,
+            page._brush_slider.value(),
+            pid=pid,
+            tile_type=tile_type,
+        )
+        page.update_manual_target(pid)
+        self._status_info.setText(
+            tr("province_status_brush") if mode == "brush"
+            else tr("province_status_fill")
+        )
+
+    def _on_new_manual_province(self) -> None:
+        """Allocate a gap-free ID; its type is inferred from the first stroke."""
+        pid = self._canvas.begin_new_manual_province()
+        if pid <= 0:
+            return
+        self._tool_panel._province_page.update_manual_target(pid, is_new=True)
+        self._status_info.setText(tr("province_status_new", pid=pid))
 
     def _on_find_province(self, pid: int) -> None:
         """省份查找：跳转 + 高亮 + 同步信息条。"""

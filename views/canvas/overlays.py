@@ -417,10 +417,17 @@ class OverlayMixin:
                             and self._terrain_brush_mode)
         height_brush_on = (self._display_mode == "height"
                            and getattr(self, '_height_brush_mode', 'off') != "off")
+        province_brush_on = (
+            self._display_mode == "province"
+            and self._framework_tool is not None
+            and self._framework_tool.name == "province_paint"
+            and self._framework_ctx is not None
+            and self._framework_ctx.state.get("mode", "brush") == "brush"
+        )
         show_brush = (
             (self._current_tool in ("brush", "eraser", "new_land")
              and self._display_mode in ("land", "river"))
-            or density_on or terrain_brush_on or height_brush_on
+            or density_on or terrain_brush_on or height_brush_on or province_brush_on
         )
 
         if show_brush:
@@ -431,6 +438,8 @@ class OverlayMixin:
                 bs = self._terrain_brush_size
             elif height_brush_on:
                 bs = self._height_brush_size
+            elif province_brush_on:
+                bs = self._framework_ctx.brush_size
             else:
                 bs = self._brush_size
             r = bs // 2

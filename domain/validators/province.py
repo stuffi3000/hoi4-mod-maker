@@ -169,6 +169,40 @@ def fix_x_crossings(province_map: np.ndarray) -> int:
     return fixed
 
 
+def fix_x_crossings_preserving(
+    province_map: np.ndarray,
+    protected_mask: np.ndarray,
+    tile_map: np.ndarray,
+) -> int:
+    """Fix X-crossings without changing protected or cross-type pixels.
+
+    Incremental generation uses the pre-existing province pixels as the
+    protected region.  A fix is applied only when one of the newly generated
+    pixels can copy an ID from another corner with the same land/sea/lake type.
+    """
+    _h, w = province_map.shape
+    fixed = 0
+    for y, x in detect_x_crossings(province_map):
+        right = 0 if x == w - 1 else x + 1
+        coords = [(y, x), (y, right), (y + 1, x), (y + 1, right)]
+        changed = False
+        for dst_y, dst_x in coords:
+            if protected_mask[dst_y, dst_x]:
+                continue
+            dst_tile = int(tile_map[dst_y, dst_x])
+            for src_y, src_x in coords:
+                if (src_y, src_x) == (dst_y, dst_x):
+                    continue
+                if int(tile_map[src_y, src_x]) == dst_tile:
+                    province_map[dst_y, dst_x] = province_map[src_y, src_x]
+                    fixed += 1
+                    changed = True
+                    break
+            if changed:
+                break
+    return fixed
+
+
 def detect_small_provinces(
     province_map: np.ndarray,
     min_pixels: int = MIN_PROVINCE_PIXELS,

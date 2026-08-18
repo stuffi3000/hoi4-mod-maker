@@ -435,6 +435,43 @@ class MapCanvas(InputMixin, OverlayMixin, NameLabelsMixin, RefImageMixin, QGraph
             brush_size=self._brush_size,
         )
 
+    def configure_province_paint(
+        self, mode: str, brush_size: int, pid: int = 0, tile_type: int = 0
+    ) -> bool:
+        """Configure the active manual province tool and its paint target."""
+        if (self._framework_tool is None
+                or self._framework_tool.name != "province_paint"
+                or self._framework_ctx is None):
+            return False
+        kwargs = {"mode": mode, "brush_size": brush_size}
+        if pid > 0:
+            kwargs["pid"] = pid
+            kwargs["tile_type"] = tile_type
+        self._framework_tool.configure(self._framework_ctx, **kwargs)
+        self._refresh_brush_cursor()
+        return True
+
+    def set_province_paint_brush_size(self, size: int) -> None:
+        """Update the manual province brush without reselecting its target."""
+        size = max(1, min(100, int(size)))
+        if (self._framework_tool is not None
+                and self._framework_tool.name == "province_paint"
+                and self._framework_ctx is not None):
+            self._framework_ctx.brush_size = size
+            self._refresh_brush_cursor()
+
+    def begin_new_manual_province(self) -> int:
+        """Allocate and select a new province ID for the next paint stroke."""
+        if (self._framework_tool is None
+                or self._framework_tool.name != "province_paint"
+                or self._framework_ctx is None):
+            return 0
+        pid = self._framework_tool.begin_new_province(self._framework_ctx)
+        self._selected_province_id = pid
+        self._selected_province_tile = 0
+        self._render_province_overlay()
+        return pid
+
     def _set_layer(self, attr: str, data: np.ndarray, dtype) -> None:
         """统一的图层替换：写入 MapData，同步本地别名。
 

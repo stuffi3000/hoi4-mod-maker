@@ -8,13 +8,14 @@ from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QIntValidator
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGroupBox,
-    QPushButton, QLabel, QLineEdit,
+    QPushButton, QLabel, QLineEdit, QSlider, QButtonGroup,
 )
 
 from ui.styles import (
     make_section as _make_section,
     _DIM, _ACCENT, _BORDER, _SECTION_STYLE, _LABEL_STYLE, _DIM_LABEL_STYLE,
     _SECONDARY_BTN_STYLE, _LINEEDIT_STYLE,
+    _TOOL_BTN_STYLE, _SLIDER_STYLE,
 )
 from ui.i18n import tr, tr_pair
 
@@ -58,6 +59,10 @@ class ProvincePage(QWidget):
     lasso_province_toggled = pyqtSignal(bool)
     merge_mode_toggled = pyqtSignal(bool)
     find_province_requested = pyqtSignal(int)
+    province_paint_mode_changed = pyqtSignal(str)
+    province_brush_size_changed = pyqtSignal(int)
+    new_province_requested = pyqtSignal()
+    import_ref_requested = pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -109,6 +114,71 @@ class ProvincePage(QWidget):
         self._stats_label.setStyleSheet(f"color: {_DIM}; font-size: 12px; padding: 4px 8px;")
         lay.addWidget(self._stats_label)
 
+        # ── 手动画省份（与自动生成共用同一 province_map）──
+        draw_box = _make_section(tr("province_section_manual_draw"))
+
+        ref_row = QHBoxLayout()
+        ref_btn = QPushButton(tr("province_btn_import_ref"))
+        ref_btn.setStyleSheet(_SECONDARY_BTN_STYLE)
+        ref_btn.setToolTip(tr("province_btn_import_ref_tip"))
+        ref_btn.clicked.connect(self.import_ref_requested.emit)
+        ref_row.addWidget(ref_btn)
+        ref_hint = QLabel(tr("province_ref_hint"))
+        ref_hint.setWordWrap(True)
+        ref_hint.setStyleSheet(_DIM_LABEL_STYLE)
+        ref_row.addWidget(ref_hint, 1)
+        draw_box.layout().addLayout(ref_row)
+
+        paint_row = QHBoxLayout()
+        paint_row.setSpacing(3)
+        self._paint_group = QButtonGroup(self)
+        self._paint_group.setExclusive(True)
+        self._select_btn = QPushButton(tr("province_tool_select"))
+        self._paint_brush_btn = QPushButton(tr("province_tool_brush"))
+        self._paint_fill_btn = QPushButton(tr("province_tool_fill"))
+        for btn, mode, tip_key in (
+            (self._select_btn, "select", "province_tool_select_tip"),
+            (self._paint_brush_btn, "brush", "province_tool_brush_tip"),
+            (self._paint_fill_btn, "fill", "province_tool_fill_tip"),
+        ):
+            btn.setCheckable(True)
+            btn.setProperty("paint_mode", mode)
+            btn.setStyleSheet(_TOOL_BTN_STYLE)
+            btn.setToolTip(tr(tip_key))
+            self._paint_group.addButton(btn)
+            paint_row.addWidget(btn)
+        self._select_btn.setChecked(True)
+        self._paint_group.buttonClicked.connect(self._on_paint_tool_clicked)
+        draw_box.layout().addLayout(paint_row)
+
+        self._new_province_btn = QPushButton(tr("province_btn_new"))
+        self._new_province_btn.setStyleSheet(_SECONDARY_BTN_STYLE)
+        self._new_province_btn.setToolTip(tr("province_btn_new_tip"))
+        self._new_province_btn.clicked.connect(self._on_new_province)
+        draw_box.layout().addWidget(self._new_province_btn)
+
+        brush_row = QHBoxLayout()
+        brush_label = QLabel(tr("province_label_brush_size"))
+        brush_label.setStyleSheet(_LABEL_STYLE)
+        brush_row.addWidget(brush_label)
+        brush_row.addStretch()
+        self._brush_value_label = QLabel("9px")
+        self._brush_value_label.setStyleSheet(_DIM_LABEL_STYLE)
+        brush_row.addWidget(self._brush_value_label)
+        draw_box.layout().addLayout(brush_row)
+        self._brush_slider = QSlider(Qt.Orientation.Horizontal)
+        self._brush_slider.setRange(1, 100)
+        self._brush_slider.setValue(9)
+        self._brush_slider.setStyleSheet(_SLIDER_STYLE)
+        self._brush_slider.valueChanged.connect(self._on_brush_size)
+        draw_box.layout().addWidget(self._brush_slider)
+
+        self._manual_target_label = QLabel(tr("province_target_none"))
+        self._manual_target_label.setWordWrap(True)
+        self._manual_target_label.setStyleSheet(_DIM_LABEL_STYLE)
+        draw_box.layout().addWidget(self._manual_target_label)
+        lay.addWidget(draw_box)
+
         # ── 工具按钮（横排） ──
         tools_box = _make_section(tr("province_section_tools"))
         tools_row = QHBoxLayout()
@@ -151,20 +221,43 @@ class ProvincePage(QWidget):
     def _on_merge_toggled(self, on: bool) -> None:
         if on:
             self._clear_other_modes(self._merge_btn)
+            self._select_btn.setChecked(True)
+            self.province_paint_mode_changed.emit("select")
         self.merge_mode_toggled.emit(on)
         self._update_mode_visuals()
 
     def _on_expand_toggled(self, on: bool) -> None:
         if on:
             self._clear_other_modes(self._expand_btn)
+            self._select_btn.setChecked(True)
+            self.province_paint_mode_changed.emit("select")
         self.lasso_province_toggled.emit(on)
         self._update_mode_visuals()
 
     def _on_split_toggled(self, on: bool) -> None:
         if on:
             self._clear_other_modes(self._split_btn)
+            self._select_btn.setChecked(True)
+            self.province_paint_mode_changed.emit("select")
         self.split_mode_toggled.emit(on)
         self._update_mode_visuals()
+
+    def _on_paint_tool_clicked(self, button: QPushButton) -> None:
+        self._clear_other_modes()
+        self.province_paint_mode_changed.emit(str(button.property("paint_mode")))
+        self._update_mode_visuals()
+
+    def _on_new_province(self) -> None:
+        # Creating always enters brush mode so the next stroke gives the ID pixels.
+        self._paint_brush_btn.setChecked(True)
+        self._clear_other_modes()
+        self.province_paint_mode_changed.emit("brush")
+        self.new_province_requested.emit()
+        self._update_mode_visuals()
+
+    def _on_brush_size(self, value: int) -> None:
+        self._brush_value_label.setText(f"{value}px")
+        self.province_brush_size_changed.emit(value)
 
     def _on_find_clicked(self) -> None:
         txt = self._find_input.text().strip()
@@ -191,6 +284,8 @@ class ProvincePage(QWidget):
         merging = self._merge_btn.isChecked()
         expanding = self._expand_btn.isChecked()
         splitting = self._split_btn.isChecked()
+        painting = self._paint_brush_btn.isChecked()
+        filling = self._paint_fill_btn.isChecked()
 
         # 按钮样式：激活时变橙色
         for btn, active in [
@@ -210,6 +305,12 @@ class ProvincePage(QWidget):
         elif splitting:
             self._province_hint.setText(tr("province_hint_split"))
             self._province_hint.setStyleSheet(_ACTIVE_HINT_STYLE)
+        elif painting:
+            self._province_hint.setText(tr("province_hint_paint"))
+            self._province_hint.setStyleSheet(_ACTIVE_HINT_STYLE)
+        elif filling:
+            self._province_hint.setText(tr("province_hint_fill"))
+            self._province_hint.setStyleSheet(_ACTIVE_HINT_STYLE)
         else:
             self._province_hint.setText(tr("province_hint_default"))
             self._province_hint.setStyleSheet(_NORMAL_HINT_STYLE)
@@ -228,6 +329,16 @@ class ProvincePage(QWidget):
         if coastal:
             parts.append(tr("province_info_coastal"))
         self._prov_info_label.setText(" | ".join(parts))
+        self._manual_target_label.setText(tr("province_target_selected", pid=pid))
+
+    def update_manual_target(self, pid: int, is_new: bool = False) -> None:
+        """Show which ID the brush/fill tools currently paint."""
+        if pid <= 0:
+            self._manual_target_label.setText(tr("province_target_none"))
+        elif is_new:
+            self._manual_target_label.setText(tr("province_target_new", pid=pid))
+        else:
+            self._manual_target_label.setText(tr("province_target_selected", pid=pid))
 
     def update_province_gaps(self, gap_ids: list[int]) -> None:
         """更新省份 ID 空洞提示。"""

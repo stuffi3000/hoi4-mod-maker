@@ -92,15 +92,18 @@ class InputMixin:
             sx, sy = self._scene_pos(event)
             if 0 <= sx < self.map_w and 0 <= sy < self.map_h:
                 self._framework_ctx.dirty_bbox = None
+                # Snapshot before on_press: brush/fill both modify pixels on the
+                # initial click, so recording afterwards would make that first
+                # stamp impossible to undo.
+                self.stroke_started.emit()
                 self._framework_tool.begin_undo(self._framework_ctx)
                 self._framework_tool.on_press(self._framework_ctx, sx, sy)
                 self._is_drawing = True
 
                 # 扩张工具可视反馈：选中省份后显示 allowed 区域 overlay
-                if self._framework_ctx.state.get("pid"):
+                if self._framework_ctx.state.get("allowed_mask") is not None:
                     self._show_expand_overlay()
 
-                self.stroke_started.emit()
                 self._render_province_overlay()
                 event.accept()
                 return
@@ -425,9 +428,11 @@ class InputMixin:
                 self._framework_tool.on_drag(self._framework_ctx, sx, sy)
                 # 拖动期间持续刷新画布，让用户看到扩张效果
                 if self._framework_ctx.state.get("painting"):
+                    brush_radius = max(10, int(self._framework_ctx.brush_size) // 2 + 2)
                     self._mark_dirty(
-                        max(0, sx - 10), max(0, sy - 10),
-                        min(self.map_w, sx + 11), min(self.map_h, sy + 11),
+                        max(0, sx - brush_radius), max(0, sy - brush_radius),
+                        min(self.map_w, sx + brush_radius + 1),
+                        min(self.map_h, sy + brush_radius + 1),
                     )
                     self._flush_dirty()
                     self._render_province_overlay()
@@ -586,8 +591,11 @@ class InputMixin:
                     self._framework_tool.end_undo(self._framework_ctx)
                     # 同步选中状态到 canvas
                     self._selected_province_id = self._framework_ctx.selected_province_id
+                    selected_tile = self._framework_ctx.state.get("tile")
+                    if selected_tile is not None:
+                        self._selected_province_tile = int(selected_tile)
                     # overlay 跟随：还有 pid 就保留显示，否则清掉
-                    if self._framework_ctx.state.get("pid"):
+                    if self._framework_ctx.state.get("allowed_mask") is not None:
                         self._show_expand_overlay()
                     else:
                         self._clear_lasso_visual()
@@ -606,6 +614,9 @@ class InputMixin:
                     gap_ids = sorted(set(range(1, max_id + 1)) - existing)
                     self.province_gaps_detected.emit(gap_ids)
                     self.stroke_ended.emit()
+                    if (self._selected_province_id > 0
+                            and self._selected_province_id in existing):
+                        self.province_clicked.emit(self._selected_province_id)
                     event.accept()
                     return
 
