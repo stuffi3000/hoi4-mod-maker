@@ -36,14 +36,14 @@ from ui.i18n import tr
 
 
 OPERATION_ROLES = {
-    "land": ("land", "water"),
+    "land": ("land", "sea", "lake"),
     "province": ("land_province", "sea_province"),
     "hydrology": ("lake", "river"),
 }
 
 ROLE_LABEL_KEYS = {
     "land": "reference_role_land",
-    "water": "reference_role_water",
+    "sea": "reference_role_sea",
     "land_province": "reference_role_land_province",
     "sea_province": "reference_role_sea_province",
     "lake": "reference_role_lake",

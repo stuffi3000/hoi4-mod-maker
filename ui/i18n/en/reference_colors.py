@@ -24,10 +24,10 @@ STRINGS: dict[str, str] = {
     ),
     "reference_color_editor_preview_unavailable": "Preview unavailable",
     "reference_role_land": "Land",
+    "reference_role_sea": "Sea",
     "reference_role_water": "Water",
     "reference_role_land_province": "Land province outline",
     "reference_role_sea_province": "Sea province outline",
     "reference_role_lake": "Lake",
     "reference_role_river": "River",
 }
-

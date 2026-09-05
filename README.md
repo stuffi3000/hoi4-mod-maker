@@ -46,8 +46,8 @@ HOI4 Map Maker is an open-source desktop map editor built with Python and PyQt5.
 ### Map Drawing
 - **Land / Sea / Lake** brush with brush, eraser, fill, transform, and pan tools
 - Load vanilla map reference overlay or custom reference images
-- Generate land/sea and lake/river layers directly from color-coded full-map reference images (undoable)
-- Choose detected reference-image colors in a visual role-mapping editor (land, water, province outlines, lakes, rivers) before generation
+- Generate land, sea, and lake tiles plus rivers directly from color-coded full-map reference images (undoable)
+- Choose detected reference-image colors in a visual role-mapping editor (land, sea, lake, province outlines, rivers) before generation
 - 4 map sizes: 2048×1024 / 3072×1536 / 4096×2048 / 5632×2048
 
 ### Province System
@@ -81,7 +81,7 @@ HOI4 Map Maker is an open-source desktop map editor built with Python and PyQt5.
 ### Project Management
 - Save / load `.hoi4proj` project files (zip format)
 - Undo / redo with Command pattern (30-step history)
-- Chinese / English bilingual UI
+- English-only interface
 - Import existing MOD maps
 
 ---
@@ -141,7 +141,7 @@ hoi4_map_maker/          224 files, 26,000 lines
 - [x] Logistics (adjacencies / railways / supply nodes)
 - [x] One-click export of playable MOD
 - [x] Import existing MOD maps
-- [x] Chinese / English bilingual UI
+- [x] English-only interface
 - [x] Packaged `.exe` release
 
 ### v2.0 — Content Editor (Planned)

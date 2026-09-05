@@ -63,6 +63,24 @@ def test_explicit_color_roles_drive_land_water_and_provinces() -> None:
     assert set(np.unique(provinces[tiles == TILE_LAND])) == {1, 2}
 
 
+def test_explicit_land_sea_and_lake_roles_generate_distinct_tiles() -> None:
+    rgb = np.full((24, 32, 3), (255, 255, 255), dtype=np.uint8)
+    rgb[2:22, 3:29] = (220, 140, 55)
+    rgb[8:16, 10:22] = (190, 178, 151)
+
+    tiles = generate_land_water_from_rgb(
+        rgb,
+        land_colors=[(220, 140, 55)],
+        sea_colors=[(255, 255, 255)],
+        lake_colors=[(190, 178, 151)],
+    )
+
+    assert np.all(tiles[:2] == TILE_SEA)
+    assert np.all(tiles[8:16, 10:22] == TILE_LAKE)
+    assert np.all(tiles[3:8, 4:29] == TILE_LAND)
+    assert int(np.sum(tiles == TILE_LAKE)) == 8 * 12
+
+
 def test_palette_preserves_rare_flat_map_colors_and_suggests_roles() -> None:
     rgb = np.full((30, 40, 3), (221, 136, 57), dtype=np.uint8)
     rgb[:, :4] = (255, 255, 255)
@@ -72,6 +90,17 @@ def test_palette_preserves_rare_flat_map_colors_and_suggests_roles() -> None:
     assert (185, 121, 50) in colors
     mapping = suggest_reference_color_mapping(rgb, "province", max_colors=8)
     assert (185, 121, 50) in mapping["land_province"]
+
+
+def test_land_color_suggestions_separate_sea_and_lake() -> None:
+    rgb = np.full((30, 40, 3), (207, 213, 16), dtype=np.uint8)
+    rgb[:, :4] = (255, 255, 255)
+    rgb[8:20, 15:29] = (190, 178, 151)
+
+    mapping = suggest_reference_color_mapping(rgb, "land", max_colors=8)
+
+    assert mapping["sea"] == [(255, 255, 255)]
+    assert (190, 178, 151) in mapping["lake"]
 
 
 def test_explicit_hydrology_roles_are_respected() -> None:

@@ -210,7 +210,8 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
                 lambda: generate_land_water_from_rgb(
                     load_reference_rgb(path, map_data.tile_map.shape),
                     land_colors=selection.colors.get("land"),
-                    water_colors=selection.colors.get("water"),
+                    sea_colors=selection.colors.get("sea"),
+                    lake_colors=selection.colors.get("lake"),
                     color_tolerance=selection.tolerance,
                 )
             )
@@ -230,7 +231,10 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
             self._canvas.refresh_display()
             counts = map_data.get_tile_counts()
             self._status_info.setText(tr(
-                "land_auto_ref_done", land=counts["land"], sea=counts["sea"]
+                "land_auto_ref_done",
+                land=counts["land"],
+                sea=counts["sea"],
+                lake=counts["lake"],
             ))
         except Exception as exc:
             QMessageBox.critical(self, tr("dlg_error"), str(exc))

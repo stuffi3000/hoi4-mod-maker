@@ -200,7 +200,26 @@ def suggest_reference_color_mapping(
 
     if operation == "land":
         mapping["land"] = dominant_land
-        mapping["water"] = neutral[:2] or colors[-1:]
+        # White/light-neutral backgrounds are normally the open sea in GIS
+        # exports.  Inland-water references often contain a second, muted
+        # grey/brown family for lakes; suggest those separately so the user
+        # can generate lake tiles without having to start from an empty role.
+        mapping["sea"] = neutral[:2] or colors[-1:]
+        inland = [
+            color for color in colors
+            if min(color) < 180
+            and color[2] >= 0.45 * color[1]
+            and color[1] >= 45
+        ]
+        lake_candidates = [
+            color for color in inland
+            if abs(color[0] - color[1]) <= 32
+        ]
+        lake_pixels = sum(counts_by_color.get(color, 0) for color in lake_candidates)
+        min_lake_pixels = max(32, int(rgb.shape[0] * rgb.shape[1] * 0.002))
+        mapping["lake"] = (
+            lake_candidates[:3] if lake_pixels >= min_lake_pixels else []
+        )
     elif operation == "province":
         # Province imports need the dark stroke colors rather than the broad
         # land fill.  Keep a few top candidates so anti-aliased stroke shades
@@ -261,32 +280,58 @@ def generate_land_water_from_rgb(
     rgb: np.ndarray,
     *,
     land_colors: list[Color] | tuple[Color, ...] | None = None,
+    sea_colors: list[Color] | tuple[Color, ...] | None = None,
+    lake_colors: list[Color] | tuple[Color, ...] | None = None,
+    # ``water_colors`` is retained as a compatibility alias for callers of
+    # the original land/sea-only API.  New callers should use ``sea_colors``.
     water_colors: list[Color] | tuple[Color, ...] | None = None,
     color_tolerance: float = 18.0,
 ) -> np.ndarray:
-    """Infer a TILE_LAND/TILE_SEA map from a colored reference image.
+    """Infer land, sea, and lake tile types from a colored reference image.
 
-    When role colors are supplied, every pixel is assigned to the closest
-    selected land or water color.  This handles anti-aliased coast pixels and
-    makes the result follow the visual editor's assignments.  With no colors,
-    the historical white/neutral-water heuristic is retained.
+    When both land and sea colors are supplied, every pixel is assigned to the
+    closest selected role.  Lake colors are included in that comparison when
+    present.  If sea is omitted, unmatched pixels default to sea when land or
+    lake colors are selected; this keeps the legacy land-only behavior useful.
+    ``water_colors`` remains an alias for ``sea_colors``.  With no colors, the
+    historical white/neutral-water heuristic is retained.
     """
     if rgb.ndim != 3 or rgb.shape[2] != 3:
         raise ValueError("Reference image must be an RGB array")
     land = _normalise_colors(land_colors)
-    water = _normalise_colors(water_colors)
-    if land or water:
-        if land and water:
-            land_distance = _color_distance(rgb, land)
-            water_distance = _color_distance(rgb, water)
-            result = np.where(land_distance <= water_distance, TILE_LAND, TILE_SEA)
-            return result.astype(np.uint8, copy=False)
-        if land:
-            result = np.full(rgb.shape[:2], TILE_SEA, dtype=np.uint8)
-            result[_color_mask(rgb, land, color_tolerance)] = TILE_LAND
-            return result
-        result = np.full(rgb.shape[:2], TILE_LAND, dtype=np.uint8)
-        result[_color_mask(rgb, water, color_tolerance)] = TILE_SEA
+    if sea_colors is None:
+        sea_colors = water_colors
+    sea = _normalise_colors(sea_colors)
+    lake = _normalise_colors(lake_colors)
+    roles = (
+        (TILE_LAND, land),
+        (TILE_SEA, sea),
+        (TILE_LAKE, lake),
+    )
+    selected_roles = [(tile_type, colors) for tile_type, colors in roles if colors]
+    if selected_roles:
+        # With land and sea selected, nearest-role assignment covers the full
+        # image and naturally handles anti-aliased coast pixels.  When one of
+        # those broad roles is omitted, only pixels within the tolerance of a
+        # selected color are changed; the unselected background remains the
+        # sensible opposite (sea without land, land without sea).
+        nearest_distance = np.full(rgb.shape[:2], np.inf, dtype=np.float32)
+        nearest_index = np.zeros(rgb.shape[:2], dtype=np.intp)
+        for index, (_, colors) in enumerate(selected_roles):
+            distance = _color_distance(rgb, colors)
+            closer = distance < nearest_distance
+            nearest_distance[closer] = distance[closer]
+            nearest_index[closer] = index
+        type_values = np.asarray(
+            [tile_type for tile_type, _ in selected_roles], dtype=np.uint8
+        )
+        if land and sea:
+            return type_values[nearest_index]
+
+        default_type = TILE_SEA if land else TILE_LAND
+        result = np.full(rgb.shape[:2], default_type, dtype=np.uint8)
+        selected = nearest_distance <= max(0.0, float(color_tolerance)) ** 2
+        result[selected] = type_values[nearest_index[selected]]
         return result
     sea = _neutral_sea_mask(rgb)
     result = np.full(sea.shape, TILE_LAND, dtype=np.uint8)

@@ -23,12 +23,13 @@ def test_editor_lists_colors_and_returns_land_roles(qtbot, tmp_path):
     qtbot.addWidget(dialog)
 
     assert dialog._table.rowCount() == 3
-    assert set(dialog._role_columns) == {"land", "water"}
+    assert set(dialog._role_columns) == {"land", "sea", "lake"}
     dialog._accept()
     assert dialog.selection is not None
     assert dialog.selection.tolerance == 18
     assert dialog.selection.colors["land"] == [(220, 140, 55)]
-    assert dialog.selection.colors["water"] == [(255, 255, 255)]
+    assert dialog.selection.colors["sea"] == [(255, 255, 255)]
+    assert dialog.selection.colors["lake"] == []
 
 
 def test_editor_uses_operation_specific_role_columns(qtbot, tmp_path):
