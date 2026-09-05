@@ -20,3 +20,4 @@ logs/*.log
 dist/
 build/
 build_log.txt
+start.bat
