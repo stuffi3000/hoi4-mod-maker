@@ -18,21 +18,8 @@ def main():
     # 全局崩溃处理器 (弹窗显示原因 + 写 logs/crash_*.log)
     install_crash_handler()
 
-    # 加载用户语言设置
-    import json
-    config_path = os.path.join(os.path.expanduser("~"), ".hoi4_map_maker.json")
-    if os.path.exists(config_path):
-        try:
-            # 配置由 welcome_page 以 utf-8 写入 (ensure_ascii=False), 读必须同编码
-            with open(config_path, "r", encoding="utf-8") as f:
-                config = json.load(f)
-            lang = config.get("language")
-            if lang:
-                from ui.i18n import set_language, available_languages
-                if lang in available_languages():
-                    set_language(lang)
-        except Exception:
-            pass
+    # The editor is intentionally English-only.  Legacy locale settings are
+    # ignored and normalized by ui.i18n when the application starts.
 
     # 高DPI支持
     QApplication.setAttribute(Qt.ApplicationAttribute.AA_EnableHighDpiScaling, True)

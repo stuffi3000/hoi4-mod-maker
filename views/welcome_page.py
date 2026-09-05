@@ -89,7 +89,7 @@ class WelcomePage(QWidget):
     open_recent_requested = pyqtSignal(str)         # path
     import_mod_requested = pyqtSignal()              # 导入MOD地图
     open_vanilla_requested = pyqtSignal()            # 打开原版游戏地图(只读参考)
-    language_changed = pyqtSignal(str)               # 语言 code, eg. "zh" / "en" / "ja"
+    language_changed = pyqtSignal(str)               # retained for compatibility; always "en"
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -133,36 +133,6 @@ class WelcomePage(QWidget):
         version.setStyleSheet(f"color: {_DIM}; font-size: 14px; background: transparent;")
         version.setAlignment(Qt.AlignmentFlag.AlignCenter)
         left.addWidget(version)
-
-        # 语言切换（自动按 ui/i18n/ 下已有语言文件夹填充）
-        lang_row = QHBoxLayout()
-        lang_row.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        from ui.i18n import get_language, available_languages, language_display_name
-        cur = get_language()
-
-        def _lang_btn(text: str, lang: str) -> QPushButton:
-            active = (lang == cur)
-            btn = QPushButton(text)
-            btn.setStyleSheet(f"""
-                QPushButton {{
-                    background: {_ACCENT if active else 'transparent'};
-                    border: 1px solid {_ACCENT if active else _BORDER};
-                    color: {'white' if active else _DIM};
-                    padding: 4px 12px;
-                    font-size: 13px;
-                    border-radius: 4px;
-                    min-width: 60px;
-                }}
-                QPushButton:hover {{
-                    border-color: {_ACCENT};
-                }}
-            """)
-            btn.clicked.connect(lambda _checked=False, _l=lang: self._switch_lang(_l))
-            return btn
-
-        for lang in available_languages():
-            lang_row.addWidget(_lang_btn(language_display_name(lang), lang))
-        left.addLayout(lang_row)
 
         left.addSpacing(24)
 
@@ -323,25 +293,10 @@ class WelcomePage(QWidget):
         dlg.exec_()
 
     def _switch_lang(self, lang: str) -> None:
-        from ui.i18n import set_language, get_language
-        if lang == get_language():
-            return
-        set_language(lang)
-        # 保存语言设置到 json
-        import json, os as _os
-        config_path = _os.path.join(_os.path.expanduser("~"), ".hoi4_map_maker.json")
-        config = {}
-        if _os.path.exists(config_path):
-            try:
-                # 写入用 utf-8 (ensure_ascii=False), 读必须同编码
-                with open(config_path, "r", encoding="utf-8") as f:
-                    config = json.load(f)
-            except Exception:
-                pass
-        config["language"] = lang
-        with open(config_path, "w", encoding="utf-8") as f:
-            json.dump(config, f, ensure_ascii=False)
-        self.language_changed.emit(lang)
+        """Compatibility hook; locale switching is disabled in English-only mode."""
+        from ui.i18n import set_language
+        set_language("en")
+        self.language_changed.emit("en")
 
     def retranslateUi(self) -> None:
         """语言切换后重建整个欢迎页。"""

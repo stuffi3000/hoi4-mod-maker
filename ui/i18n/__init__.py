@@ -22,8 +22,11 @@ logger = logging.getLogger(__name__)
 # 语言 -> {key: text}
 _languages: dict[str, dict[str, str]] = {}
 _DEFAULT_LANGUAGE = "en"
+# The application is intentionally English-only.  The legacy zh/ru catalogs
+# remain in the repository for historical reference, but are never loaded or
+# exposed through the runtime language API.
+_SUPPORTED_LANGUAGES = ("en",)
 _current_lang: str = _DEFAULT_LANGUAGE
-_FALLBACK_CHAIN = ("en", "zh")
 _PKG_ROOT = Path(__file__).parent
 
 
@@ -61,7 +64,7 @@ def _load_all_languages() -> None:
         if not entry.is_dir():
             continue
         name = entry.name
-        if name.startswith("_") or name.startswith("."):
+        if name not in _SUPPORTED_LANGUAGES:
             continue
         loaded = _load_language_dir(name)
         if loaded:
@@ -73,7 +76,13 @@ def _load_saved_language() -> str:
         from PyQt5.QtCore import QSettings
 
         s = QSettings("HOI4MapMaker", "Settings")
-        return str(s.value("language", _DEFAULT_LANGUAGE))
+        saved = str(s.value("language", _DEFAULT_LANGUAGE))
+        if saved not in _SUPPORTED_LANGUAGES:
+            # Normalize a locale left by an older installation so subsequent
+            # launches cannot restore a disabled language.
+            s.setValue("language", _DEFAULT_LANGUAGE)
+            return _DEFAULT_LANGUAGE
+        return saved
     except Exception:
         return _DEFAULT_LANGUAGE
 
@@ -82,33 +91,17 @@ def _load_saved_language() -> str:
 _load_all_languages()
 _current_lang = _load_saved_language()
 if _current_lang not in _languages:
-    _current_lang = (
-        _DEFAULT_LANGUAGE
-        if _DEFAULT_LANGUAGE in _languages
-        else next(iter(_languages), _DEFAULT_LANGUAGE)
-    )
+    _current_lang = _DEFAULT_LANGUAGE
 
 
 # ---------- 对外 API ----------
 # 语言 code -> 母语显示名（社区加新语言时扩展此表）
-_DISPLAY_NAMES: dict[str, str] = {
-    "zh": "中文",
-    "en": "English",
-    "ja": "日本語",
-    "ko": "한국어",
-    "ru": "Русский",
-    "de": "Deutsch",
-    "fr": "Français",
-    "es": "Español",
-    "pt": "Português",
-    "it": "Italiano",
-    "pl": "Polski",
-}
+_DISPLAY_NAMES: dict[str, str] = {"en": "English"}
 
 
 def available_languages() -> list[str]:
-    """列出所有已加载的语言 code（用于设置下拉菜单动态填充）。"""
-    return sorted(_languages.keys())
+    """Return the only supported application language."""
+    return [lang for lang in _SUPPORTED_LANGUAGES if lang in _languages]
 
 
 def language_display_name(code: str) -> str:
@@ -117,24 +110,23 @@ def language_display_name(code: str) -> str:
 
 
 def set_language(lang: str) -> None:
-    """切换语言并持久化到 QSettings。"""
+    """Keep the application in English and normalize legacy locale requests."""
     global _current_lang
-    if lang not in _languages:
-        logger.warning("Language %s is not loaded; ignoring switch", lang)
-        return
-    _current_lang = lang
+    if lang != _DEFAULT_LANGUAGE:
+        logger.info("Ignoring unsupported language %s; English-only mode is enabled", lang)
+    _current_lang = _DEFAULT_LANGUAGE
     try:
         from PyQt5.QtCore import QSettings
 
         s = QSettings("HOI4MapMaker", "Settings")
-        s.setValue("language", lang)
+        s.setValue("language", _DEFAULT_LANGUAGE)
     except Exception:
         pass
 
 
 def get_language() -> str:
-    """当前语言 code。"""
-    return _current_lang
+    """Return ``en``; non-English locales are intentionally unsupported."""
+    return _DEFAULT_LANGUAGE
 
 
 def tr(key: str, *args: object, **kwargs: object) -> str:
@@ -143,14 +135,12 @@ def tr(key: str, *args: object, **kwargs: object) -> str:
     例：tr("status_pos", 100, 200)             -> "位置: (100, 200)"
         tr("dlg_batch_state_done", sid=5, n=3) -> "已创建州 5（3 个省份）"
 
-    English mode falls back directly to the key so Chinese cannot leak into the UI.
-    Other languages fall back through en -> zh -> key.
+    English mode falls back directly to the key so non-English text cannot
+    leak into the UI.
     placeholder 不匹配时 logger.warning 不再静默吞 (历史上的 silent KeyError 坑).
     """
-    # English mode must never leak Chinese when a catalog key is missing.
-    # Other translations still fall back through English and then Chinese.
-    fallback_chain = ("en",) if _current_lang == "en" else _FALLBACK_CHAIN
-    for lang in (_current_lang, *fallback_chain):
+    # English-only mode has a single catalog and a single fallback path.
+    for lang in (_DEFAULT_LANGUAGE,):
         text = _languages.get(lang, {}).get(key)
         if text is None:
             continue
@@ -169,12 +159,8 @@ def tr(key: str, *args: object, **kwargs: object) -> str:
 
 
 def tr_pair(zh: str, en: str, *args: object, **kwargs: object) -> str:
-    """Return Chinese text in Chinese mode and English everywhere else.
-
-    This is intended for dynamic messages whose values contain runtime IDs,
-    paths, or counts and would otherwise bypass the translation catalogs.
-    """
-    text = zh if _current_lang == "zh" else en
+    """Return the English form for dynamic messages in all circumstances."""
+    text = en
     if not args and not kwargs:
         return text
     try:
@@ -190,5 +176,7 @@ def tr_pair(zh: str, en: str, *args: object, **kwargs: object) -> str:
 
 def reload_translations() -> None:
     """热重载：清空并重新扫描（用于开发调试）。"""
+    global _current_lang
     _languages.clear()
     _load_all_languages()
+    _current_lang = _DEFAULT_LANGUAGE

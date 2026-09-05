@@ -12,7 +12,7 @@ from pathlib import Path
 
 SRC_FILE = Path(__file__).resolve().parent.parent / "ui" / "i18n.py"
 OUT_ROOT = Path(__file__).resolve().parent.parent / "ui" / "i18n"
-LANGS = ("zh", "en")
+LANGS = ("en",)
 
 # ---- Key -> bucket (目标文件名) 分类规则 ----
 # 顺序敏感：更具体的前缀要先匹配
@@ -207,7 +207,7 @@ def main() -> None:
         bucket = classify(key)
         for lang in LANGS:
             buckets.setdefault(bucket, {}).setdefault(lang, {})[key] = values.get(
-                lang, values.get("zh", key)
+                lang, key
             )
 
     # 报告

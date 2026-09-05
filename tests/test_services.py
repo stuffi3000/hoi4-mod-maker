@@ -11,7 +11,7 @@ def _isolate_language():
     """Service-message assertions must not depend on another test's locale."""
     from ui.i18n import get_language, set_language
     previous = get_language()
-    set_language("zh")
+    set_language("en")
     try:
         yield
     finally:
@@ -60,7 +60,7 @@ def test_export_service_validate_empty_map():
         province_map = np.zeros((10, 10), dtype=np.int32)
 
     warnings = validate_before_export(_FakeCanvas(), StateManager(), CountryManager())
-    assert any("省份" in w for w in warnings)
+    assert any("province" in w.lower() for w in warnings)
 
 
 def test_export_service_validate_empty_map_in_english():
@@ -92,8 +92,8 @@ def test_export_service_validate_missing_owner():
     country_mgr.set_capital("TST", 1)
 
     warnings = validate_before_export(_FakeCanvas(), state_mgr, country_mgr)
-    # 应该警告 State 1 未分配 owner
-    assert any("未分配" in w for w in warnings)
+    # Should warn that State 1 has no country owner.
+    assert any("no country" in w.lower() for w in warnings)
 
 
 def test_export_service_validate_river_issues():
@@ -110,11 +110,14 @@ def test_export_service_validate_river_issues():
     canvas.river_map[5, 2:8] = 3  # 一段河, 没放源头标记
 
     warnings = validate_before_export(canvas, StateManager(), CountryManager())
-    assert any("河流" in w and "源头" in w for w in warnings)
+    assert any("river" in w.lower() and "source" in w.lower() for w in warnings)
 
     canvas.river_map[5, 2] = 0  # 补上源头
     warnings = validate_before_export(canvas, StateManager(), CountryManager())
-    assert not any(w.startswith("河流") for w in warnings)
+    assert not any(
+        w.startswith("River:") and "validation passed" not in w.lower()
+        for w in warnings
+    )
 
 
 # ────────── state ↔ 战略区对齐 (pre_export_check_and_fix 5.4/5.6) ──────────
@@ -156,8 +159,8 @@ def test_pre_export_aligns_split_state_to_one_region():
     r2 = sr_mgr.get_region_of_province(2)
     assert r1 == r2 and r1 != 0
     assert sr_mgr.count() == 1  # 被挪空的战略区已删除
-    assert any("战略区" in f for f in report.fixed)
-    assert not any("飞地" in w for w in report.warnings)
+    assert any("strategic-region" in f for f in report.fixed)
+    assert not any("exclave" in w for w in report.warnings)
 
 
 def test_pre_export_enclave_state_warns():
@@ -179,7 +182,7 @@ def test_pre_export_enclave_state_warns():
 
     # 两块地各留原区, 不许被硬拉到一起 (会造出不连通的战略区)
     assert sr_mgr.get_region_of_province(1) != sr_mgr.get_region_of_province(2)
-    assert any("飞地" in w for w in report.warnings)
+    assert any("exclave" in w for w in report.warnings)
 
 
 def test_pre_export_pulls_unassigned_province_into_state_region():
@@ -199,4 +202,4 @@ def test_pre_export_pulls_unassigned_province_into_state_region():
 
     rid = sr_mgr.get_region_of_province(1)
     assert sr_mgr.get_region_of_province(2) == rid and rid != 0
-    assert not any("飞地" in w for w in report.warnings)
+    assert not any("exclave" in w for w in report.warnings)

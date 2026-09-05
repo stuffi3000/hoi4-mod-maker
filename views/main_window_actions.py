@@ -15,7 +15,7 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
 from PyQt5.QtGui import QColor
 
-from ui.i18n import tr, tr_pair, set_language, get_language, available_languages
+from ui.i18n import tr, tr_pair
 from views.main_window_file_ops import MainWindowFileOpsMixin
 
 if TYPE_CHECKING:
@@ -1730,33 +1730,8 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
     # ═══════════════════════ 杂项 ═══════════════════════════
 
     def _on_toggle_language(self) -> None:
-        # 在已加载的所有语言之间循环（zh → en → ja → ... → zh）
-        langs = available_languages()
-        if not langs:
-            return
-        cur = get_language()
-        try:
-            next_idx = (langs.index(cur) + 1) % len(langs)
-        except ValueError:
-            next_idx = 0
-        new_lang = langs[next_idx]
-        set_language(new_lang)
-        # 保存语言设置到 json
-        import json, os
-        config_path = os.path.join(os.path.expanduser("~"), ".hoi4_map_maker.json")
-        config = {}
-        if os.path.exists(config_path):
-            try:
-                with open(config_path, "r", encoding="utf-8") as f:
-                    config = json.load(f)
-            except Exception:
-                pass
-        config["language"] = new_lang
-        with open(config_path, "w", encoding="utf-8") as f:
-            json.dump(config, f, ensure_ascii=False)
-
-        # 立即刷新 UI
-        self._retranslate_ui()
+        """Compatibility hook for older callers; the application is English-only."""
+        return
 
     def _retranslate_ui(self) -> None:
         """语言切换后刷新整个界面文字（无需重启）。"""

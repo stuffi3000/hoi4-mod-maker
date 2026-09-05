@@ -1,6 +1,8 @@
-[English](README.md) | [中文](README.zh-CN.md)
+[English](README.md)
 
 # HOI4 Map Maker
+
+The application interface and generated messages are English-only.
 
 **Build a complete Hearts of Iron IV total conversion MOD from scratch — no manual file editing required.**
 
