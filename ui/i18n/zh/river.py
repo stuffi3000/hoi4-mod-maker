@@ -51,4 +51,10 @@ STRINGS: dict[str, str] = {
     "river_width_8": "巨河",
     "river_width_9": "最宽",
     "river_width_note": "💡 河流必须 1px 宽（HOI4 规则），滑块只影响橡皮擦范围",
+    "river_section_auto_reference": "从内陆水域参考图生成",
+    "river_auto_reference_hint": "宽水域形状会转换为湖泊，细线会骨架化为 1px 河流并自动添加源头。为了获得干净的省份类型，建议在导入省界前运行。",
+    "river_btn_auto_reference": "从图像生成湖泊和河流…",
+    "river_btn_auto_reference_tip": "选择一张黄/绿色陆地、白色海洋和灰/棕/蓝色内陆水域的整图图像。地块层和河流层将一起更改并可一起撤销。",
+    "river_auto_ref_dialog": "从参考图生成湖泊和河流",
+    "river_auto_ref_done": "已生成 {lakes} 个湖泊像素和 {rivers} 个河流像素，共 {networks} 个河网。Ctrl+Z 可同时撤销两个图层。",
 }

@@ -50,6 +50,7 @@ class LandPage(QWidget):
     smooth_coast_requested = pyqtSignal()
     clear_new_land_mask_requested = pyqtSignal()
     import_ref_requested = pyqtSignal()          # 导入自定义参考图片
+    auto_land_from_ref_requested = pyqtSignal()  # 从整图参考自动提取陆地/海洋
     open_vanilla_requested = pyqtSignal()        # 打开原版参考
     ref_adjust_toggled = pyqtSignal(bool)        # 调整参考图模式开关
     ref_adjust_target_changed = pyqtSignal(str)  # 调整对象: "custom"/"vanilla"
@@ -127,6 +128,12 @@ class LandPage(QWidget):
 
         # ══ ② 绘制陆地与海洋 — 类型 / 工具 / 画笔 / 修海岸 ══
         draw_card = _make_card(tr("land_section_tile_draw"), "②")
+
+        auto_land_btn = QPushButton(tr("land_btn_auto_land_ref"))
+        auto_land_btn.setStyleSheet(_PRIMARY_BTN_STYLE)
+        auto_land_btn.setToolTip(tr("land_btn_auto_land_ref_tip"))
+        auto_land_btn.clicked.connect(self.auto_land_from_ref_requested.emit)
+        draw_card.layout().addWidget(auto_land_btn)
 
         tile_row = QHBoxLayout()
         tile_row.setSpacing(3)

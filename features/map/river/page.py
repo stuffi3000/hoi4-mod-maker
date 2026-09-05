@@ -27,6 +27,7 @@ class RiverPage(QWidget):
     brush_size_changed = pyqtSignal(int)
     river_type_changed = pyqtSignal(int)
     validate_river_requested = pyqtSignal()
+    auto_hydrology_from_ref_requested = pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -36,6 +37,18 @@ class RiverPage(QWidget):
         lay = QVBoxLayout(self)
         lay.setContentsMargins(10, 10, 10, 10)
         lay.setSpacing(10)
+
+        auto_box = _make_section(tr("river_section_auto_reference"))
+        auto_hint = QLabel(tr("river_auto_reference_hint"))
+        auto_hint.setWordWrap(True)
+        auto_hint.setStyleSheet(_DIM_LABEL_STYLE)
+        auto_box.layout().addWidget(auto_hint)
+        auto_btn = QPushButton(tr("river_btn_auto_reference"))
+        auto_btn.setStyleSheet(_PRIMARY_BTN_STYLE)
+        auto_btn.setToolTip(tr("river_btn_auto_reference_tip"))
+        auto_btn.clicked.connect(self.auto_hydrology_from_ref_requested.emit)
+        auto_box.layout().addWidget(auto_btn)
+        lay.addWidget(auto_box)
 
         # ═══════════════════ ✏️ 手动画河流 ═══════════════════
         manual_box = _make_section(tr("river_section_manual"))

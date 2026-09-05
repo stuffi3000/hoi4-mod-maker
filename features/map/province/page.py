@@ -8,13 +8,13 @@ from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QIntValidator
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGroupBox,
-    QPushButton, QLabel, QLineEdit, QSlider, QButtonGroup,
+    QPushButton, QLabel, QLineEdit, QSlider, QButtonGroup, QSpinBox,
 )
 
 from ui.styles import (
     make_section as _make_section,
     _DIM, _ACCENT, _BORDER, _SECTION_STYLE, _LABEL_STYLE, _DIM_LABEL_STYLE,
-    _SECONDARY_BTN_STYLE, _LINEEDIT_STYLE,
+    _PRIMARY_BTN_STYLE, _SECONDARY_BTN_STYLE, _LINEEDIT_STYLE,
     _TOOL_BTN_STYLE, _SLIDER_STYLE,
 )
 from ui.i18n import tr, tr_pair
@@ -63,6 +63,8 @@ class ProvincePage(QWidget):
     province_brush_size_changed = pyqtSignal(int)
     new_province_requested = pyqtSignal()
     import_ref_requested = pyqtSignal()
+    auto_provinces_from_ref_requested = pyqtSignal()
+    random_split_requested = pyqtSignal(int)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -128,6 +130,12 @@ class ProvincePage(QWidget):
         ref_hint.setStyleSheet(_DIM_LABEL_STYLE)
         ref_row.addWidget(ref_hint, 1)
         draw_box.layout().addLayout(ref_row)
+
+        auto_ref_btn = QPushButton(tr("province_btn_auto_ref"))
+        auto_ref_btn.setStyleSheet(_PRIMARY_BTN_STYLE)
+        auto_ref_btn.setToolTip(tr("province_btn_auto_ref_tip"))
+        auto_ref_btn.clicked.connect(self.auto_provinces_from_ref_requested.emit)
+        draw_box.layout().addWidget(auto_ref_btn)
 
         paint_row = QHBoxLayout()
         paint_row.setSpacing(3)
@@ -202,6 +210,24 @@ class ProvincePage(QWidget):
         tools_row.addWidget(self._split_btn)
 
         tools_box.layout().addLayout(tools_row)
+
+        random_row = QHBoxLayout()
+        random_label = QLabel(tr("province_random_target_label"))
+        random_label.setStyleSheet(_LABEL_STYLE)
+        random_row.addWidget(random_label)
+        self._random_split_count = QSpinBox()
+        self._random_split_count.setRange(2, 1000)
+        self._random_split_count.setValue(4)
+        self._random_split_count.setToolTip(tr("province_random_target_tip"))
+        random_row.addWidget(self._random_split_count)
+        random_btn = QPushButton(tr("province_btn_random_split"))
+        random_btn.setStyleSheet(_PRIMARY_BTN_STYLE)
+        random_btn.setToolTip(tr("province_btn_random_split_tip"))
+        random_btn.clicked.connect(
+            lambda: self.random_split_requested.emit(self._random_split_count.value())
+        )
+        random_row.addWidget(random_btn, 1)
+        tools_box.layout().addLayout(random_row)
         lay.addWidget(tools_box)
 
         # ── 信号连接 ──

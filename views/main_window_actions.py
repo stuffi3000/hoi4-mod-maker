@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 from PyQt5.QtWidgets import (
-    QMessageBox, QApplication, QInputDialog, QColorDialog,
+    QMessageBox, QApplication, QInputDialog, QColorDialog, QFileDialog,
 )
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
 from PyQt5.QtGui import QColor
@@ -141,6 +141,206 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
         self._cmd_history._notify()
 
     # ═══════════════════════ 省份生成与验证 ═══════════════════
+
+    @staticmethod
+    def _reference_image_filter() -> str:
+        return "Images (*.png *.jpg *.jpeg *.bmp *.tif *.tiff);;All Files (*)"
+
+    def _pick_reference_image(self, title: str) -> str:
+        path, _ = QFileDialog.getOpenFileName(
+            self, title, "", self._reference_image_filter()
+        )
+        return path
+
+    def _run_reference_analysis(self, callback):
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        try:
+            QApplication.processEvents()
+            return callback()
+        finally:
+            QApplication.restoreOverrideCursor()
+
+    def _on_auto_land_from_reference(self) -> None:
+        """Replace land/sea tiles from a full-map image as one undo step."""
+        path = self._pick_reference_image(tr("land_auto_ref_dialog"))
+        if not path:
+            return
+        try:
+            from services.reference_map_service import (
+                load_reference_rgb, generate_land_water_from_rgb,
+            )
+            from commands.map.apply_reference import ApplyReferenceLayersCommand
+            map_data = self._project.map_data
+            new_tiles = self._run_reference_analysis(
+                lambda: generate_land_water_from_rgb(
+                    load_reference_rgb(path, map_data.tile_map.shape)
+                )
+            )
+            self._cmd_history.execute(ApplyReferenceLayersCommand(
+                map_data, {"tile_map": new_tiles}, tr("land_auto_ref_dialog")
+            ))
+            self._canvas.new_land_mask[:] = False
+            self._project.mark_dirty()
+            self._project.mark_assets_dirty(
+                "map/terrain/colormap_rgb_cityemissivemask_a.dds",
+                "map/terrain/colormap_water_0.dds",
+                "map/terrain/colormap_water_1.dds",
+                "map/terrain/colormap_water_2.dds",
+                "map/terrain/fow_rgb_waterspec_a.dds",
+                "map/world_normal.bmp",
+            )
+            self._canvas.refresh_display()
+            counts = map_data.get_tile_counts()
+            self._status_info.setText(tr(
+                "land_auto_ref_done", land=counts["land"], sea=counts["sea"]
+            ))
+        except Exception as exc:
+            QMessageBox.critical(self, tr("dlg_error"), str(exc))
+
+    def _on_auto_provinces_from_reference(self) -> None:
+        """Replace province IDs with regions enclosed by reference outlines."""
+        if int(self._project.map_data.province_map.max()) > 0:
+            answer = QMessageBox.question(
+                self,
+                tr("province_auto_ref_confirm_title"),
+                tr("province_auto_ref_confirm"),
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No,
+            )
+            if answer != QMessageBox.Yes:
+                return
+        path = self._pick_reference_image(tr("province_auto_ref_dialog"))
+        if not path:
+            return
+        try:
+            from services.reference_map_service import (
+                load_reference_rgb, generate_provinces_from_rgb,
+            )
+            from commands.map.apply_reference import ApplyReferenceLayersCommand
+            map_data = self._project.map_data
+
+            def generate():
+                rgb = load_reference_rgb(path, map_data.province_map.shape)
+                return generate_provinces_from_rgb(rgb, map_data.tile_map)
+
+            province_map, count = self._run_reference_analysis(generate)
+            self._cmd_history.execute(ApplyReferenceLayersCommand(
+                map_data,
+                {"province_map": province_map},
+                tr("province_auto_ref_dialog"),
+            ))
+            self._project.mark_dirty()
+            self._app.invalidate_province_cache()
+            self._canvas.select_province(0)
+            self._update_province_count()
+            self._canvas.refresh_display()
+            self._status_info.setText(tr("province_auto_ref_done", count=count))
+        except Exception as exc:
+            QMessageBox.critical(self, tr("dlg_error"), str(exc))
+
+    def _on_random_split_selected(self, target_count: int) -> None:
+        """Split the current multi-selection into a requested total piece count."""
+        selected = self._canvas.selected_province_ids()
+        if not selected:
+            QMessageBox.information(
+                self, tr("province_btn_random_split"),
+                tr_pair("请先选择至少一个省份。", "Select at least one province first."),
+            )
+            return
+        if target_count <= len(selected):
+            QMessageBox.information(
+                self, tr("province_btn_random_split"),
+                tr_pair(
+                    "总块数必须大于当前选中的省份数。",
+                    "Total pieces must be greater than the number of selected provinces.",
+                ),
+            )
+            return
+        try:
+            from services.reference_map_service import split_selected_provinces_randomly
+            from commands.province.random_split import RandomSplitProvincesCommand
+            new_map, parents = self._run_reference_analysis(
+                lambda: split_selected_provinces_randomly(
+                    self._project.map_data.province_map,
+                    selected,
+                    target_count,
+                )
+            )
+            command = RandomSplitProvincesCommand(self._project, new_map, parents)
+            self._cmd_history.execute(command)
+            self._project.mark_dirty()
+            self._app.invalidate_province_cache()
+            output_selection = selected | set(parents)
+            self._canvas.select_province(0)
+            for pid in sorted(output_selection):
+                self._canvas.select_province(pid, additive=True)
+            self._canvas.set_batch_selection_pids(output_selection)
+            self._update_province_count()
+            self._event_bus.emit("state_changed", state_id=0, action="refresh")
+            self._event_bus.emit("continent_changed", action="refresh")
+            self._event_bus.emit("sr_colors_dirty")
+            self._canvas.refresh_display()
+            self._status_info.setText(tr(
+                "province_random_split_done",
+                selected=len(selected),
+                count=target_count,
+            ))
+        except Exception as exc:
+            QMessageBox.critical(self, tr("dlg_error"), str(exc))
+
+    def _on_auto_hydrology_from_reference(self) -> None:
+        """Generate lake tiles and an indexed river layer together."""
+        if int(self._project.map_data.province_map.max()) > 0:
+            answer = QMessageBox.question(
+                self,
+                tr("river_auto_ref_dialog"),
+                tr_pair(
+                    "生成湖泊会改变地块类型。建议随后重新导入或生成省份，以免省份跨越陆地和湖泊。是否继续？",
+                    "Generating lakes changes tile types. Reimport or regenerate provinces afterwards so provinces do not cross land and lakes. Continue?",
+                ),
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No,
+            )
+            if answer != QMessageBox.Yes:
+                return
+        path = self._pick_reference_image(tr("river_auto_ref_dialog"))
+        if not path:
+            return
+        try:
+            from services.reference_map_service import (
+                load_reference_rgb, generate_hydrology_from_rgb,
+            )
+            from commands.map.apply_reference import ApplyReferenceLayersCommand
+            map_data = self._project.map_data
+
+            def generate():
+                rgb = load_reference_rgb(path, map_data.tile_map.shape)
+                return generate_hydrology_from_rgb(rgb, map_data.tile_map)
+
+            new_tiles, river_map, stats = self._run_reference_analysis(generate)
+            self._cmd_history.execute(ApplyReferenceLayersCommand(
+                map_data,
+                {"tile_map": new_tiles, "river_map": river_map},
+                tr("river_auto_ref_dialog"),
+            ))
+            self._project.mark_dirty()
+            self._project.mark_assets_dirty(
+                "map/terrain/colormap_rgb_cityemissivemask_a.dds",
+                "map/terrain/colormap_water_0.dds",
+                "map/terrain/colormap_water_1.dds",
+                "map/terrain/colormap_water_2.dds",
+                "map/terrain/fow_rgb_waterspec_a.dds",
+                "map/world_normal.bmp",
+            )
+            self._canvas.refresh_display()
+            self._status_info.setText(tr(
+                "river_auto_ref_done",
+                lakes=stats["lake_pixels"],
+                rivers=stats["river_pixels"],
+                networks=stats["river_networks"],
+            ))
+        except Exception as exc:
+            QMessageBox.critical(self, tr("dlg_error"), str(exc))
 
     def _on_clear_new_land_mask(self) -> None:
         """清空扩展陆地遮罩（保留已画陆地像素）。"""

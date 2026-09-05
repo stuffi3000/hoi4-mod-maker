@@ -72,4 +72,8 @@ STRINGS: dict[str, str] = {
     "tile_lake": "湖泊",
     "tile_land": "陆地",
     "tile_sea": "海洋",
+    "land_btn_auto_land_ref": "从图像生成陆地/水域…",
+    "land_btn_auto_land_ref_tip": "选择一张彩色陆地、白色水域的整图图像。图像会自动缩放到画布并分类，整个操作可撤销。",
+    "land_auto_ref_dialog": "从参考图生成陆地和水域",
+    "land_auto_ref_done": "已从参考图生成陆地和水域（陆地 {land} 像素，海洋 {sea} 像素）。Ctrl+Z 可撤销。",
 }

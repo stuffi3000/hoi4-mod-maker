@@ -261,6 +261,9 @@ class ToolPanel(QWidget):
     validate_requested = pyqtSignal()
     smooth_coast_requested = pyqtSignal()
     import_ref_requested = pyqtSignal()
+    auto_land_from_ref_requested = pyqtSignal()
+    auto_provinces_from_ref_requested = pyqtSignal()
+    random_split_requested = pyqtSignal(int)
     open_vanilla_requested = pyqtSignal()
     ref_adjust_toggled = pyqtSignal(bool)
     ref_adjust_target_changed = pyqtSignal(str)
@@ -327,6 +330,7 @@ class ToolPanel(QWidget):
     # 河流信号
     river_type_changed = pyqtSignal(int)
     validate_river_requested = pyqtSignal()
+    auto_hydrology_from_ref_requested = pyqtSignal()
 
     # 后勤信号
     open_adjacency_dialog_requested = pyqtSignal()
@@ -546,6 +550,7 @@ class ToolPanel(QWidget):
         p.smooth_coast_requested.connect(self.smooth_coast_requested)
         p.clear_new_land_mask_requested.connect(self.clear_new_land_mask_requested)
         p.import_ref_requested.connect(self.import_ref_requested)
+        p.auto_land_from_ref_requested.connect(self.auto_land_from_ref_requested)
         p.open_vanilla_requested.connect(self.open_vanilla_requested)
         p.ref_adjust_toggled.connect(self.ref_adjust_toggled)
         p.ref_adjust_target_changed.connect(self.ref_adjust_target_changed)
@@ -567,6 +572,8 @@ class ToolPanel(QWidget):
         p.province_brush_size_changed.connect(self.province_brush_size_changed)
         p.new_province_requested.connect(self.new_province_requested)
         p.import_ref_requested.connect(self.import_ref_requested)
+        p.auto_provinces_from_ref_requested.connect(self.auto_provinces_from_ref_requested)
+        p.random_split_requested.connect(self.random_split_requested)
 
     def _connect_terrain_signals(self) -> None:
         p = self._terrain_page
@@ -607,6 +614,7 @@ class ToolPanel(QWidget):
         p.brush_size_changed.connect(self.brush_size_changed)
         p.river_type_changed.connect(self.river_type_changed)
         p.validate_river_requested.connect(self.validate_river_requested)
+        p.auto_hydrology_from_ref_requested.connect(self.auto_hydrology_from_ref_requested)
 
     def _connect_state_signals(self) -> None:
         p = self._state_page

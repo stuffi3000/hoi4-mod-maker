@@ -374,6 +374,7 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
         tp.smooth_coast_requested.connect(self._on_smooth_coast)
         # ① 参考底图卡片里的导入按钮 → 复用文件菜单的导入参考图动作
         tp.import_ref_requested.connect(self._on_import_image)
+        tp.auto_land_from_ref_requested.connect(self._on_auto_land_from_reference)
         tp.clear_new_land_mask_requested.connect(self._on_clear_new_land_mask)
         # 新大陆信号
         # 密度模式信号
@@ -426,6 +427,8 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
         tp.province_paint_mode_changed.connect(self._on_province_paint_mode)
         tp.province_brush_size_changed.connect(cv.set_province_paint_brush_size)
         tp.new_province_requested.connect(self._on_new_manual_province)
+        tp.auto_provinces_from_ref_requested.connect(self._on_auto_provinces_from_reference)
+        tp.random_split_requested.connect(self._on_random_split_selected)
         cv.split_line_drawn.connect(self._on_split_line_drawn)
 
         # State 信号 → controller
@@ -473,6 +476,7 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
         # River 信号
         tp.river_type_changed.connect(cv.set_river_type)
         tp.validate_river_requested.connect(self._on_validate_river)
+        tp.auto_hydrology_from_ref_requested.connect(self._on_auto_hydrology_from_reference)
 
         # Logistics 信号 → controller
         tp.open_adjacency_dialog_requested.connect(self._open_adjacency_dialog)

@@ -44,6 +44,7 @@ HOI4 Map Maker is an open-source desktop map editor built with Python and PyQt5.
 ### Map Drawing
 - **Land / Sea / Lake** brush with brush, eraser, fill, transform, and pan tools
 - Load vanilla map reference overlay or custom reference images
+- Generate land/sea and lake/river layers directly from color-coded full-map reference images (undoable)
 - 4 map sizes: 2048×1024 / 3072×1536 / 4096×2048 / 5632×2048
 
 ### Province System
@@ -51,6 +52,7 @@ HOI4 Map Maker is an open-source desktop map editor built with Python and PyQt5.
 - Manual province brush, new-province creation, and unassigned-area fill over reference images
 - Manual edits and automatic/incremental generation operate on the same province map
 - **Merge** / **Split** / **Lasso expand** tools for fine-tuning borders
+- Import closed province outlines or randomly split a multi-selection into a requested total number of connected provinces (undoable)
 - Incremental regeneration (select a region to regenerate)
 - Full-map diagnostics: X-crossings, tiny provinces, disconnected regions, coastal detection
 
