@@ -68,7 +68,23 @@ STRINGS: dict[str, str] = {
     "province_auto_ref_dialog": "Generate Provinces from Reference Outlines",
     "province_auto_ref_confirm_title": "Replace Province Map?",
     "province_auto_ref_confirm": "This will replace all existing province IDs. Province-linked state and country data may no longer match. The map replacement itself is undoable. Continue?",
-    "province_auto_ref_done": "Generated {count} provinces from reference outlines. Sea without outlines remains unassigned. Ctrl+Z to undo.",
+    "province_auto_ref_done": "Imported {count} provinces from reference outlines. Automatic validation and repair are complete. Ctrl+Z to undo.",
+    "province_auto_ref_report_title": "Province Import Complete",
+    "province_auto_ref_report": (
+        "Imported provinces:\n"
+        "Land: {land}\n"
+        "Sea: {sea}\n"
+        "Lake: {lake}\n\n"
+        "Modified provinces: {modified}\n"
+        "Border adjustments: {border_adjusted}\n"
+        "Too-small provinces merged: {too_small_merged}\n"
+        "Too-small isolated provinces removed: {too_small_removed}\n"
+        "Disconnected provinces repaired: {not_contiguous}\n"
+        "Oversized provinces split: {too_large_split}\n"
+        "Province ID gaps compacted: {id_gaps}\n\n"
+        "Remaining validation issues: {remaining}\n"
+        "Coastal land provinces noted for export metadata: {coastal}"
+    ),
     "province_random_target_label": "Total pieces:",
     "province_random_target_tip": "Total number of provinces the current selection should become, not the number added.",
     "province_btn_random_split": "Random Split Selection",

@@ -14,7 +14,7 @@ import numpy as np
 from PIL import Image
 from scipy import ndimage
 
-from data.constants import TILE_LAKE, TILE_LAND, TILE_SEA
+from data.constants import MIN_PROVINCE_PIXELS, TILE_LAKE, TILE_LAND, TILE_SEA
 from domain.managers.river import (
     RIVER_BG_LAND,
     RIVER_BG_SEA,
@@ -807,3 +807,21 @@ def split_selected_provinces_randomly(
                 parent_by_new_id[output_id] = pid
 
     return result, parent_by_new_id
+
+
+def validate_and_repair_generated_provinces(
+    tile_map: np.ndarray,
+    province_map: np.ndarray,
+    *,
+    min_pixels: int = MIN_PROVINCE_PIXELS,
+    max_iterations: int = 8,
+) -> tuple[np.ndarray, dict]:
+    """Validate and repair provinces produced by a reference image import."""
+    from domain.validators.province import validate_and_repair_provinces
+
+    return validate_and_repair_provinces(
+        tile_map,
+        province_map,
+        min_pixels=min_pixels,
+        max_iterations=max_iterations,
+    )

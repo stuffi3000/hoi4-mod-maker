@@ -161,6 +161,78 @@ def test_province_reference_command_undoes_tile_snapshot() -> None:
     assert project.map_data.tile_snapshot is None
 
 
+def test_reference_province_validation_merges_tiny_same_type_regions() -> None:
+    from domain.validators.province import validate_and_repair_provinces
+
+    tile_map = np.full((64, 64), TILE_LAND, dtype=np.uint8)
+    province_map = np.zeros((64, 64), dtype=np.int32)
+    province_map[10:17, 10:17] = 1
+    province_map[10, 17] = 2
+
+    repaired, report = validate_and_repair_provinces(
+        tile_map, province_map, min_pixels=50
+    )
+
+    assert report["imported_counts"] == {"land": 2, "sea": 0, "lake": 0, "unknown": 0}
+    assert report["repair_counts"]["too_small_merged"] >= 1
+    assert report["remaining_issue_count"] == 0
+    assert set(np.unique(repaired)) == {0, 1}
+
+
+def test_reference_province_validation_adjusts_x_crossings() -> None:
+    from domain.validators.province import validate_and_repair_provinces
+
+    tile_map = np.full((64, 64), TILE_LAND, dtype=np.uint8)
+    province_map = np.zeros((64, 64), dtype=np.int32)
+    province_map[20:22, 20:22] = np.array([[1, 2], [3, 4]], dtype=np.int32)
+
+    repaired, report = validate_and_repair_provinces(
+        tile_map, province_map, min_pixels=1
+    )
+
+    assert report["validation_before"]["x_crossings"] == 1
+    assert report["repair_counts"]["border_adjusted"] >= 1
+    assert report["validation_after"]["x_crossings"] == 0
+    assert repaired.shape == province_map.shape
+
+
+def test_reference_province_validation_reports_land_sea_lake_counts() -> None:
+    from domain.validators.province import validate_and_repair_provinces
+
+    tile_map = np.full((64, 64), TILE_SEA, dtype=np.uint8)
+    tile_map[4:12, 4:12] = TILE_LAND
+    tile_map[20:28, 4:12] = TILE_LAKE
+    province_map = np.zeros((64, 64), dtype=np.int32)
+    province_map[4:12, 4:12] = 1
+    province_map[20:28, 4:12] = 2
+    province_map[36:44, 4:12] = 3
+
+    _repaired, report = validate_and_repair_provinces(
+        tile_map, province_map, min_pixels=1
+    )
+
+    assert report["imported_counts"] == {"land": 1, "sea": 1, "lake": 1, "unknown": 0}
+
+
+def test_reference_province_validation_reassigns_detached_component() -> None:
+    from domain.validators.province import validate_and_repair_provinces
+
+    tile_map = np.full((64, 64), TILE_LAND, dtype=np.uint8)
+    province_map = np.zeros((64, 64), dtype=np.int32)
+    province_map[10:18, 10:18] = 1
+    province_map[10:18, 18:26] = 2
+    province_map[18, 20] = 1
+
+    repaired, report = validate_and_repair_provinces(
+        tile_map, province_map, min_pixels=1
+    )
+
+    assert report["validation_before"]["not_contiguous"] == 1
+    assert report["repair_counts"]["not_contiguous"] >= 1
+    assert report["validation_after"]["not_contiguous"] == 0
+    assert repaired[18, 20] != 1
+
+
 def test_random_split_command_inherits_and_restores_metadata() -> None:
     project = Project()
     original = np.ones((12, 12), dtype=np.int32)

@@ -226,7 +226,9 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
             return
         try:
             from services.reference_map_service import (
-                load_reference_rgb, generate_provinces_from_rgb,
+                load_reference_rgb,
+                generate_provinces_from_rgb,
+                validate_and_repair_generated_provinces,
             )
             from commands.map.apply_reference import ApplyReferenceLayersCommand
             map_data = self._project.map_data
@@ -236,15 +238,19 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
 
             def generate():
                 rgb = load_reference_rgb(path, map_data.province_map.shape)
-                return generate_provinces_from_rgb(
+                generated_map, _generated_count = generate_provinces_from_rgb(
                     rgb,
                     map_data.tile_map,
                     land_province_colors=selection.colors.get("land_province"),
                     sea_province_colors=selection.colors.get("sea_province"),
                     color_tolerance=selection.tolerance,
                 )
+                return validate_and_repair_generated_provinces(
+                    map_data.tile_map,
+                    generated_map,
+                )
 
-            province_map, count = self._run_reference_analysis(generate)
+            province_map, report = self._run_reference_analysis(generate)
             self._cmd_history.execute(ApplyReferenceLayersCommand(
                 map_data,
                 {"province_map": province_map},
@@ -255,9 +261,32 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
             self._canvas.select_province(0)
             self._update_province_count()
             self._canvas.refresh_display()
-            self._status_info.setText(tr("province_auto_ref_done", count=count))
+            imported_total = int(report.get("imported_total", 0))
+            self._status_info.setText(tr("province_auto_ref_done", count=imported_total))
+            self._show_reference_province_report(report)
         except Exception as exc:
             QMessageBox.critical(self, tr("dlg_error"), str(exc))
+
+    def _show_reference_province_report(self, report: dict) -> None:
+        """Show imported type counts and the automatic validation repairs."""
+        imported = report.get("imported_counts", {})
+        repairs = report.get("repair_counts", {})
+        message = tr(
+            "province_auto_ref_report",
+            land=int(imported.get("land", 0)),
+            sea=int(imported.get("sea", 0)),
+            lake=int(imported.get("lake", 0)),
+            modified=int(report.get("modified_count", 0)),
+            border_adjusted=int(repairs.get("border_adjusted", 0)),
+            too_small_merged=int(repairs.get("too_small_merged", 0)),
+            too_small_removed=int(repairs.get("too_small_removed", 0)),
+            not_contiguous=int(repairs.get("not_contiguous", 0)),
+            too_large_split=int(repairs.get("too_large_split", 0)),
+            id_gaps=int(repairs.get("id_gaps", 0)),
+            remaining=int(report.get("remaining_issue_count", 0)),
+            coastal=int(report.get("validation_after", {}).get("coastal_mismatch", 0)),
+        )
+        QMessageBox.information(self, tr("province_auto_ref_report_title"), message)
 
     def _on_random_split_selected(self, target_count: int) -> None:
         """Split the current multi-selection into a requested total piece count."""

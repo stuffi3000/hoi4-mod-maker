@@ -2,20 +2,26 @@
 省份验证器 — 检测 HOI4 省份地图中的各种问题
 """
 import numpy as np
-from collections import defaultdict
+from collections import deque
+from scipy import ndimage
 
 from ui.i18n import tr_pair
 
 from data.constants import (
-    MAP_WIDTH, MAP_HEIGHT,
+    MAP_WIDTH,
     TILE_LAND, TILE_SEA, TILE_LAKE,
     MIN_PROVINCE_PIXELS,
 )
 
 
+_CROSS = np.array([[0, 1, 0], [1, 1, 1], [0, 1, 0]], dtype=bool)
+
+
 def validate_provinces(
     tile_map: np.ndarray,
     province_map: np.ndarray,
+    *,
+    min_pixels: int = MIN_PROVINCE_PIXELS,
 ) -> dict:
     """
     验证省份地图，检测所有可能导致 HOI4 崩溃的问题。
@@ -58,7 +64,7 @@ def validate_provinces(
     results["x_crossing_positions"] = x_positions
 
     # 2. 过小省份检测
-    small_ids = detect_small_provinces(province_map)
+    small_ids = detect_small_provinces(province_map, min_pixels=min_pixels)
     results["too_small"] = len(small_ids)
     results["too_small_ids"] = small_ids
 
@@ -224,43 +230,37 @@ def detect_small_provinces(
 
 
 def detect_non_contiguous(province_map: np.ndarray) -> list[int]:
-    """
-    检测不连续的省份 — 用整图一次性标记连通分量，O(n)复杂度。
-    不再逐省份扫描，而是对整张地图做一次 label，再比较省份ID和连通分量。
-    """
-    from scipy.ndimage import label
-
-    max_pid = int(province_map.max())
-    if max_pid == 0:
+    """Return province IDs whose pixels form multiple 4-connected regions."""
+    if province_map.size == 0 or int(province_map.max()) == 0:
         return []
 
-    # 对整张图做连通分量标记（相邻且值相同的像素归为一组）
-    # structure: 4-connectivity
-    struct = np.array([[0, 1, 0], [1, 1, 1], [0, 1, 0]], dtype=np.int32)
-    labeled, num_features = label(province_map, structure=struct)
+    # Group coordinates by ID once, then label each ID's bounding box. A
+    # foreground label over the complete integer map would merge adjacent
+    # provinces and cannot detect detached pieces of the same ID.
+    _height, width = province_map.shape
+    flat = province_map.ravel()
+    order = np.argsort(flat, kind="stable")
+    sorted_ids = flat[order]
+    boundaries = np.flatnonzero(np.diff(sorted_ids) != 0) + 1
+    starts = np.concatenate(([0], boundaries))
+    ends = np.concatenate((boundaries, [len(order)]))
+    structure = np.array([[0, 1, 0], [1, 1, 1], [0, 1, 0]], dtype=bool)
+    result: list[int] = []
 
-    # 如果省份是连续的，同一个pid应该只对应1个连通分量
-    # 用 bincount 统计每个pid对应了多少个不同的label
-    flat_pm = province_map.ravel()
-    flat_lb = labeled.ravel()
-
-    # 对每个pid，找它对应的所有label值，看是否>1个
-    # 优化：构建 pid → set(labels) 的映射
-    # 先用 pandas-free 方法：按pid分组统计唯一label数
-    pid_label_pairs = flat_pm.astype(np.int64) * (num_features + 1) + flat_lb
-    unique_pairs = np.unique(pid_label_pairs)
-
-    # 从 pair 还原 pid
-    pair_pids = unique_pairs // (num_features + 1)
-    # 统计每个pid出现了几个不同的pair（= 几个不同的label）
-    pid_counts = np.bincount(pair_pids.astype(np.intp), minlength=max_pid + 1)
-
-    non_contiguous = []
-    for pid in range(1, max_pid + 1):
-        if pid_counts[pid] > 1:
-            non_contiguous.append(pid)
-
-    return non_contiguous
+    for start, end in zip(starts.tolist(), ends.tolist()):
+        pid = int(sorted_ids[start])
+        if pid <= 0:
+            continue
+        coordinates = order[start:end]
+        ys, xs = np.divmod(coordinates, width)
+        y0, y1 = int(ys.min()), int(ys.max()) + 1
+        x0, x1 = int(xs.min()), int(xs.max()) + 1
+        if (y1 - y0) * (x1 - x0) == len(coordinates):
+            continue
+        local_mask = province_map[y0:y1, x0:x1] == pid
+        if ndimage.label(local_mask, structure=structure)[1] > 1:
+            result.append(pid)
+    return result
 
 
 def detect_coastal_mismatch(
@@ -392,8 +392,12 @@ def detect_too_large_provinces(province_map: np.ndarray) -> list[int]:
     本函数不处理 wrap，因为 HOI4 引擎本身就是按 bbox 判断的，
     一个跨 wrap 的省份在 HOI4 看来确实是"超宽"的，需要拆分。
     """
-    max_w = MAP_WIDTH // 8
-    max_h = MAP_HEIGHT // 8
+    # Validate against the actual map dimensions.  The editor supports
+    # several map presets, so the fixed vanilla constants are not sufficient
+    # for resized projects.
+    height, width = province_map.shape
+    max_w = max(1, width // 8)
+    max_h = max(1, height // 8)
 
     if province_map.max() == 0:
         return []
@@ -406,9 +410,9 @@ def detect_too_large_provinces(province_map: np.ndarray) -> list[int]:
 
     n = int(province_map.max()) + 1
     # 用 bincount 类技巧求 min/max 太麻烦；这里用 np.maximum.at / minimum.at
-    min_y = np.full(n, MAP_HEIGHT, dtype=np.int32)
+    min_y = np.full(n, height, dtype=np.int32)
     max_y = np.full(n, -1, dtype=np.int32)
-    min_x = np.full(n, MAP_WIDTH, dtype=np.int32)
+    min_x = np.full(n, width, dtype=np.int32)
     max_x = np.full(n, -1, dtype=np.int32)
     np.minimum.at(min_y, flat, flat_y)
     np.maximum.at(max_y, flat, flat_y)
@@ -453,3 +457,594 @@ def get_coastal_provinces(
     用于导出 definition.csv 时设置 coastal 字段。
     """
     return set(detect_coastal_mismatch(tile_map, province_map))
+
+
+# ---------------------------------------------------------------------------
+# Automatic repair for reference-image imports
+
+_REPAIR_REASON_KEYS = (
+    "border_adjusted",
+    "too_small_merged",
+    "too_small_removed",
+    "not_contiguous",
+    "too_large_split",
+)
+
+
+def _record_repair(
+    reason_ids: dict[str, set[int]],
+    reason: str,
+    province_ids: object,
+) -> None:
+    bucket = reason_ids.setdefault(reason, set())
+    try:
+        values = province_ids if isinstance(province_ids, (list, tuple, set)) else [province_ids]
+        for value in values:
+            pid = int(value)
+            if pid > 0:
+                bucket.add(pid)
+    except (TypeError, ValueError):
+        return
+
+
+def _province_type(
+    tile_map: np.ndarray,
+    province_map: np.ndarray,
+    pid: int,
+    cache: dict[int, int],
+) -> int:
+    if pid in cache:
+        return cache[pid]
+    values = tile_map[province_map == pid]
+    if values.size == 0:
+        cache[pid] = 0
+        return 0
+    tile_ids, counts = np.unique(values, return_counts=True)
+    result = int(tile_ids[int(np.argmax(counts))])
+    cache[pid] = result
+    return result
+
+
+def _province_area_cache(province_map: np.ndarray) -> dict[int, int]:
+    values, counts = np.unique(province_map, return_counts=True)
+    return {
+        int(pid): int(count)
+        for pid, count in zip(values.tolist(), counts.tolist())
+        if int(pid) > 0
+    }
+
+
+def _province_type_lookup(
+    tile_map: np.ndarray,
+    province_map: np.ndarray,
+) -> dict[int, int]:
+    """Return the dominant tile type for every assigned province."""
+    max_pid = int(province_map.max())
+    if max_pid <= 0:
+        return {}
+    province_pixels = province_map.ravel()
+    tile_pixels = tile_map.ravel()
+    valid = province_pixels > 0
+    if not np.any(valid):
+        return {}
+    tile_count = max(4, int(tile_pixels.max()) + 1)
+    pairs = province_pixels[valid].astype(np.int64) * tile_count + tile_pixels[valid]
+    unique_pairs, pixel_counts = np.unique(pairs, return_counts=True)
+    table = np.zeros((max_pid + 1, tile_count), dtype=np.int64)
+    table[unique_pairs // tile_count, unique_pairs % tile_count] = pixel_counts
+    dominant_types = np.argmax(table, axis=1)
+    return {pid: int(tile_type) for pid, tile_type in enumerate(dominant_types) if pid > 0}
+
+
+def _province_coordinate_groups(province_map: np.ndarray) -> dict[int, np.ndarray]:
+    """Group flat pixel coordinates by province ID with one sort."""
+    flat = province_map.ravel()
+    order = np.argsort(flat, kind="stable")
+    sorted_ids = flat[order]
+    boundaries = np.flatnonzero(np.diff(sorted_ids) != 0) + 1
+    starts = np.concatenate(([0], boundaries))
+    ends = np.concatenate((boundaries, [len(order)]))
+    return {
+        int(sorted_ids[start]): order[start:end]
+        for start, end in zip(starts.tolist(), ends.tolist())
+        if int(sorted_ids[start]) > 0
+    }
+
+
+def _neighbor_counts_for_coordinates(
+    province_map: np.ndarray,
+    ys: np.ndarray,
+    xs: np.ndarray,
+    source_pid: int,
+) -> dict[int, int]:
+    """Count contacts for an explicit coordinate list."""
+    height, width = province_map.shape
+    if len(ys) == 0:
+        return {}
+    contacts: dict[int, int] = {}
+    for dy, dx in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+        ny = ys + dy
+        valid = (ny >= 0) & (ny < height)
+        if not np.any(valid):
+            continue
+        nx = (xs + dx) % width
+        adjacent = province_map[ny[valid], nx[valid]]
+        ids, counts = np.unique(adjacent, return_counts=True)
+        for value, count in zip(ids.tolist(), counts.tolist()):
+            pid = int(value)
+            if pid > 0 and pid != source_pid:
+                contacts[pid] = contacts.get(pid, 0) + int(count)
+    return contacts
+
+
+def _neighbor_counts_for_mask(
+    province_map: np.ndarray,
+    mask: np.ndarray,
+    source_pid: int,
+) -> dict[int, int]:
+    """Count 4-connected province contacts, including horizontal map wrapping."""
+    ys, xs = np.where(mask)
+    return _neighbor_counts_for_coordinates(province_map, ys, xs, source_pid)
+
+
+def _choose_same_type_neighbor(
+    tile_map: np.ndarray,
+    province_map: np.ndarray,
+    mask: np.ndarray,
+    source_pid: int,
+    type_cache: dict[int, int],
+    area_cache: dict[int, int],
+) -> int:
+    source_type = _province_type(tile_map, province_map, source_pid, type_cache)
+    contacts = _neighbor_counts_for_mask(province_map, mask, source_pid)
+    candidates = [
+        pid for pid in contacts
+        if _province_type(tile_map, province_map, pid, type_cache) == source_type
+    ]
+    if not candidates:
+        return 0
+    return max(
+        candidates,
+        key=lambda pid: (contacts[pid], area_cache.get(pid, 0), -pid),
+    )
+
+
+def _choose_same_type_neighbor_for_coordinates(
+    tile_map: np.ndarray,
+    province_map: np.ndarray,
+    ys: np.ndarray,
+    xs: np.ndarray,
+    source_pid: int,
+    type_cache: dict[int, int],
+    area_cache: dict[int, int],
+) -> int:
+    source_type = _province_type(tile_map, province_map, source_pid, type_cache)
+    contacts = _neighbor_counts_for_coordinates(province_map, ys, xs, source_pid)
+    candidates = [
+        pid for pid in contacts
+        if _province_type(tile_map, province_map, pid, type_cache) == source_type
+    ]
+    if not candidates:
+        return 0
+    return max(
+        candidates,
+        key=lambda pid: (contacts[pid], area_cache.get(pid, 0), -pid),
+    )
+
+
+def _repair_x_crossings(
+    tile_map: np.ndarray,
+    province_map: np.ndarray,
+    reason_ids: dict[str, set[int]],
+    max_passes: int = 8,
+) -> int:
+    """Adjust one corner of each X-crossing without crossing tile types."""
+    fixed = 0
+    height, width = province_map.shape
+    for _ in range(max(1, int(max_passes))):
+        positions = detect_x_crossings(province_map)
+        if not positions:
+            break
+        changed = False
+        for y, x in positions:
+            right = 0 if x == width - 1 else x + 1
+            coordinates = ((y, x), (y, right), (y + 1, x), (y + 1, right))
+            values = [int(province_map[py, px]) for py, px in coordinates]
+            if len(set(values)) != 4:
+                continue
+            # Prefer a replacement with the same tile type as the destination;
+            # malformed mixed-type crossings are left for the final report.
+            for dst_index, (dy, dx) in enumerate(coordinates):
+                destination_type = int(tile_map[dy, dx])
+                for src_index, (sy, sx) in enumerate(coordinates):
+                    if src_index == dst_index:
+                        continue
+                    if int(tile_map[sy, sx]) != destination_type:
+                        continue
+                    old_pid = int(province_map[dy, dx])
+                    new_pid = int(province_map[sy, sx])
+                    if old_pid == new_pid:
+                        continue
+                    province_map[dy, dx] = new_pid
+                    _record_repair(reason_ids, "border_adjusted", (old_pid, new_pid))
+                    fixed += 1
+                    changed = True
+                    break
+                if changed:
+                    break
+        if not changed:
+            break
+    return fixed
+
+
+def _geodesic_two_way_partition(
+    mask: np.ndarray,
+    seed_a: tuple[int, int],
+    seed_b: tuple[int, int],
+) -> np.ndarray:
+    """Partition a connected mask into two connected regions."""
+    labels = np.zeros(mask.shape, dtype=np.int8)
+    queue: deque[tuple[int, int]] = deque()
+    for label_id, seed in ((1, seed_a), (2, seed_b)):
+        if not mask[seed]:
+            return labels
+        labels[seed] = label_id
+        queue.append(seed)
+    height, width = mask.shape
+    while queue:
+        y, x = queue.popleft()
+        label_id = labels[y, x]
+        for ny, nx in ((y - 1, x), (y + 1, x), (y, x - 1), (y, x + 1)):
+            if (
+                0 <= ny < height
+                and 0 <= nx < width
+                and mask[ny, nx]
+                and labels[ny, nx] == 0
+            ):
+                labels[ny, nx] = label_id
+                queue.append((ny, nx))
+    return labels
+
+
+def _partition_large_mask(mask: np.ndarray, min_pixels: int) -> np.ndarray | None:
+    """Find a deterministic two-way split whose pieces stay connected."""
+    coordinates = np.argwhere(mask)
+    if len(coordinates) < max(2, int(min_pixels) * 2):
+        return None
+    height, width = mask.shape
+    axis = 1 if width >= height else 0
+    first = coordinates[int(np.argmin(coordinates[:, axis]))]
+    second = coordinates[int(np.argmax(coordinates[:, axis]))]
+    if np.array_equal(first, second):
+        distances = np.sum((coordinates - first) ** 2, axis=1)
+        second = coordinates[int(np.argmax(distances))]
+    if np.array_equal(first, second):
+        return None
+
+    # Euclidean Voronoi is fast for large maps and normally keeps both pieces
+    # connected.  The geodesic fallback guarantees connectivity for narrow or
+    # irregular reference outlines.
+    seed_a = np.ones(mask.shape, dtype=bool)
+    seed_b = np.ones(mask.shape, dtype=bool)
+    seed_a[tuple(first)] = False
+    seed_b[tuple(second)] = False
+    distance_a = ndimage.distance_transform_edt(seed_a)
+    distance_b = ndimage.distance_transform_edt(seed_b)
+    labels = np.zeros(mask.shape, dtype=np.int8)
+    labels[mask] = np.where(distance_a[mask] <= distance_b[mask], 1, 2)
+    labels[tuple(first)] = 1
+    labels[tuple(second)] = 2
+
+    def connected(label_id: int) -> bool:
+        return ndimage.label(labels == label_id, structure=_CROSS)[1] == 1
+
+    if not connected(1) or not connected(2):
+        labels = _geodesic_two_way_partition(mask, tuple(first), tuple(second))
+    sizes = np.bincount(labels[mask].astype(np.intp), minlength=3)
+    if sizes[1] < max(1, int(min_pixels)) or sizes[2] < max(1, int(min_pixels)):
+        return None
+    if not connected(1) or not connected(2):
+        return None
+    return labels
+
+
+def _repair_disconnected_provinces(
+    tile_map: np.ndarray,
+    province_map: np.ndarray,
+    reason_ids: dict[str, set[int]],
+) -> int:
+    """Reassign detached components to touching same-type provinces."""
+    repaired = 0
+    next_id = int(province_map.max()) + 1
+    type_cache = _province_type_lookup(tile_map, province_map)
+    for source_pid in detect_non_contiguous(province_map):
+        source_mask = province_map == source_pid
+        labels, component_count = ndimage.label(source_mask, structure=_CROSS)
+        if component_count <= 1:
+            continue
+        sizes = np.bincount(labels.ravel(), minlength=component_count + 1)
+        keep_label = int(np.argmax(sizes[1:]) + 1)
+        for component_id in range(1, component_count + 1):
+            if component_id == keep_label or sizes[component_id] == 0:
+                continue
+            component = labels == component_id
+            area_cache = _province_area_cache(province_map)
+            target = _choose_same_type_neighbor(
+                tile_map, province_map, component, source_pid, type_cache, area_cache
+            )
+            old_pid = source_pid
+            if target:
+                province_map[component] = target
+                _record_repair(reason_ids, "not_contiguous", (old_pid, target))
+            else:
+                province_map[component] = next_id
+                _record_repair(reason_ids, "not_contiguous", (old_pid, next_id))
+                next_id += 1
+            repaired += 1
+    return repaired
+
+
+def _grow_small_province(
+    tile_map: np.ndarray,
+    province_map: np.ndarray,
+    pid: int,
+    min_pixels: int,
+) -> int:
+    """Use adjacent unassigned same-type pixels for an isolated small region."""
+    current = int(np.sum(province_map == pid))
+    if current >= min_pixels:
+        return 0
+    tile_type = _province_type(tile_map, province_map, pid, {})
+    height, width = province_map.shape
+    ys, xs = np.where(province_map == pid)
+    queue: deque[tuple[int, int]] = deque(zip(ys.tolist(), xs.tolist()))
+    seen = {(int(y), int(x)) for y, x in zip(ys.tolist(), xs.tolist())}
+    grown = 0
+    while queue and current < min_pixels:
+        y, x = queue.popleft()
+        for ny, nx in ((y - 1, x), (y + 1, x), (y, (x - 1) % width), (y, (x + 1) % width)):
+            if not (0 <= ny < height):
+                continue
+            if (ny, nx) in seen:
+                continue
+            seen.add((ny, nx))
+            if province_map[ny, nx] == 0 and int(tile_map[ny, nx]) == tile_type:
+                province_map[ny, nx] = pid
+                current += 1
+                grown += 1
+                queue.append((ny, nx))
+            elif province_map[ny, nx] == pid:
+                queue.append((ny, nx))
+    return grown
+
+
+def _merge_small_provinces(
+    tile_map: np.ndarray,
+    province_map: np.ndarray,
+    reason_ids: dict[str, set[int]],
+    min_pixels: int,
+    max_passes: int = 32,
+) -> int:
+    """Merge small provinces into the strongest same-type neighboring region."""
+    merged = 0
+    type_cache = _province_type_lookup(tile_map, province_map)
+    for _ in range(max(1, int(max_passes))):
+        area_cache = _province_area_cache(province_map)
+        coordinate_groups = _province_coordinate_groups(province_map)
+        flat_map = province_map.ravel()
+        small_ids = [
+            pid for pid, area in sorted(area_cache.items(), key=lambda pair: (pair[1], pair[0]))
+            if area < max(1, int(min_pixels))
+        ]
+        if not small_ids:
+            break
+        changed = False
+        for source_pid in small_ids:
+            if area_cache.get(source_pid, 0) >= min_pixels:
+                continue
+            coordinates = coordinate_groups.get(source_pid)
+            if coordinates is None or len(coordinates) == 0:
+                continue
+            coordinates = coordinates[flat_map[coordinates] == source_pid]
+            if len(coordinates) == 0:
+                continue
+            ys, xs = np.divmod(coordinates, province_map.shape[1])
+            target = _choose_same_type_neighbor_for_coordinates(
+                tile_map, province_map, ys, xs, source_pid, type_cache, area_cache
+            )
+            if target:
+                flat_map[coordinates] = target
+                coordinate_groups[target] = np.concatenate(
+                    (coordinate_groups.get(target, np.empty(0, dtype=np.intp)), coordinates)
+                )
+                coordinate_groups.pop(source_pid, None)
+                moved = len(coordinates)
+                area_cache[source_pid] = 0
+                area_cache[target] = area_cache.get(target, 0) + moved
+                _record_repair(reason_ids, "too_small_merged", (source_pid, target))
+                merged += 1
+                changed = True
+                continue
+            grown = _grow_small_province(tile_map, province_map, source_pid, min_pixels)
+            if grown:
+                _record_repair(reason_ids, "border_adjusted", source_pid)
+                changed = True
+        if not changed:
+            break
+    return merged
+
+
+def _remove_unrepairable_small_provinces(
+    tile_map: np.ndarray,
+    province_map: np.ndarray,
+    reason_ids: dict[str, set[int]],
+    min_pixels: int,
+) -> int:
+    """Clear isolated tiny remnants when no same-type province can receive them."""
+    removed = 0
+    areas = _province_area_cache(province_map)
+    type_cache = _province_type_lookup(tile_map, province_map)
+    for pid, area in sorted(areas.items(), key=lambda pair: (pair[1], pair[0])):
+        if area >= min_pixels:
+            continue
+        mask = province_map == pid
+        if not mask.any():
+            continue
+        ys, xs = np.where(mask)
+        target = _choose_same_type_neighbor_for_coordinates(
+            tile_map,
+            province_map,
+            ys,
+            xs,
+            pid,
+            type_cache,
+            areas,
+        )
+        if target:
+            continue
+        # Same-type merges were attempted first. If none exists, the safe
+        # repair is to leave those pixels unassigned instead of creating a
+        # province that crosses land, sea, or lake tile types.
+        province_map[mask] = 0
+        _record_repair(reason_ids, "too_small_removed", pid)
+        removed += 1
+    return removed
+
+
+def _repair_large_provinces(
+    tile_map: np.ndarray,
+    province_map: np.ndarray,
+    reason_ids: dict[str, set[int]],
+    min_pixels: int,
+) -> int:
+    """Split oversized provinces along their longest axis."""
+    del tile_map  # Kept in the signature for symmetry and future type checks.
+    repaired = 0
+    next_id = int(province_map.max()) + 1
+    for source_pid in detect_too_large_provinces(province_map):
+        mask = province_map == source_pid
+        ys, xs = np.where(mask)
+        if len(ys) == 0:
+            continue
+        y0, y1 = int(ys.min()), int(ys.max()) + 1
+        x0, x1 = int(xs.min()), int(xs.max()) + 1
+        local_mask = mask[y0:y1, x0:x1]
+        if ndimage.label(local_mask, structure=_CROSS)[1] != 1:
+            continue
+        labels = _partition_large_mask(local_mask, min_pixels)
+        if labels is None:
+            continue
+        local = province_map[y0:y1, x0:x1]
+        local[labels == 2] = next_id
+        _record_repair(reason_ids, "too_large_split", (source_pid, next_id))
+        next_id += 1
+        repaired += 1
+    return repaired
+
+
+def _compact_repaired_ids(province_map: np.ndarray) -> int:
+    present = sorted(int(pid) for pid in np.unique(province_map) if int(pid) > 0)
+    if not present:
+        return 0
+    gaps = len(set(range(1, present[-1] + 1)) - set(present))
+    if gaps == 0 and present == list(range(1, present[-1] + 1)):
+        return 0
+    lookup = np.zeros(present[-1] + 1, dtype=np.int32)
+    for new_id, old_id in enumerate(present, 1):
+        lookup[old_id] = new_id
+    province_map[:] = lookup[province_map]
+    return gaps
+
+
+def _province_type_counts(
+    tile_map: np.ndarray,
+    province_map: np.ndarray,
+) -> dict[str, int]:
+    names = {TILE_LAND: "land", TILE_SEA: "sea", TILE_LAKE: "lake"}
+    counts = {"land": 0, "sea": 0, "lake": 0, "unknown": 0}
+    for tile_type in _province_type_lookup(tile_map, province_map).values():
+        counts[names.get(int(tile_type), "unknown")] += 1
+    return counts
+
+
+def _province_issue_count(results: dict) -> int:
+    return int(
+        results.get("x_crossings", 0)
+        + results.get("too_small", 0)
+        + results.get("not_contiguous", 0)
+        + results.get("too_large", 0)
+        + len(results.get("id_gaps", []))
+    )
+
+
+def validate_and_repair_provinces(
+    tile_map: np.ndarray,
+    province_map: np.ndarray,
+    *,
+    min_pixels: int = MIN_PROVINCE_PIXELS,
+    max_iterations: int = 8,
+) -> tuple[np.ndarray, dict]:
+    """Validate and repair a generated province map without mutating input.
+
+    Border crossings and disconnected components are repaired by changing the
+    smallest possible set of pixels.  Provinces below ``min_pixels`` are
+    merged into a touching province of the same tile type, while oversized
+    provinces are split along their longest axis.  The returned report keeps
+    the original type counts, per-reason repair counts, and before/after
+    validator results so the UI can explain exactly what changed.
+    """
+    tile = np.asarray(tile_map)
+    original = np.asarray(province_map)
+    if tile.ndim != 2 or original.ndim != 2 or tile.shape != original.shape:
+        raise ValueError("tile_map and province_map must be matching 2-D arrays")
+    result = original.astype(np.int32, copy=True)
+    threshold = max(1, int(min_pixels))
+    before = validate_provinces(tile, result, min_pixels=threshold)
+    imported_counts = _province_type_counts(tile, result)
+    reason_ids = {reason: set() for reason in _REPAIR_REASON_KEYS}
+
+    for _ in range(max(1, int(max_iterations))):
+        changed = False
+        if _repair_x_crossings(tile, result, reason_ids):
+            changed = True
+        if _repair_disconnected_provinces(tile, result, reason_ids):
+            changed = True
+        if _repair_large_provinces(tile, result, reason_ids, threshold):
+            changed = True
+        if _merge_small_provinces(tile, result, reason_ids, threshold):
+            changed = True
+        if _remove_unrepairable_small_provinces(tile, result, reason_ids, threshold):
+            changed = True
+        if _repair_x_crossings(tile, result, reason_ids):
+            changed = True
+        if not changed:
+            break
+
+    compacted_gaps = _compact_repaired_ids(result)
+    after = validate_provinces(tile, result, min_pixels=threshold)
+    modified_ids: set[int] = set()
+    for values in reason_ids.values():
+        modified_ids.update(values)
+    reason_counts = {reason: len(values) for reason, values in reason_ids.items()}
+    reason_counts["id_gaps"] = int(compacted_gaps)
+    unresolved_by_reason = {
+        "border_adjusted": int(after.get("x_crossings", 0)),
+        "too_small_merged": int(after.get("too_small", 0)),
+        "not_contiguous": int(after.get("not_contiguous", 0)),
+        "too_large_split": int(after.get("too_large", 0)),
+        "id_gaps": len(after.get("id_gaps", [])),
+    }
+    report = {
+        "imported_counts": imported_counts,
+        "imported_total": int(sum(imported_counts.values()) - imported_counts.get("unknown", 0)),
+        "final_counts": _province_type_counts(tile, result),
+        "modified_count": len(modified_ids),
+        "modified_province_ids": sorted(modified_ids),
+        "repair_counts": reason_counts,
+        "validation_before": before,
+        "validation_after": after,
+        "initial_issue_count": _province_issue_count(before),
+        "remaining_issue_count": _province_issue_count(after),
+        "remaining_by_reason": unresolved_by_reason,
+    }
+    return result, report
