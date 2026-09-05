@@ -152,6 +152,12 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
         )
         return path
 
+    def _choose_reference_colors(self, path: str, operation: str):
+        """Open the shared image palette editor after a reference is picked."""
+        from views.reference_color_dialog import ReferenceColorMappingDialog
+
+        return ReferenceColorMappingDialog.choose(self, path, operation)
+
     def _run_reference_analysis(self, callback):
         QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
         try:
@@ -171,9 +177,15 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
             )
             from commands.map.apply_reference import ApplyReferenceLayersCommand
             map_data = self._project.map_data
+            selection = self._choose_reference_colors(path, "land")
+            if selection is None:
+                return
             new_tiles = self._run_reference_analysis(
                 lambda: generate_land_water_from_rgb(
-                    load_reference_rgb(path, map_data.tile_map.shape)
+                    load_reference_rgb(path, map_data.tile_map.shape),
+                    land_colors=selection.colors.get("land"),
+                    water_colors=selection.colors.get("water"),
+                    color_tolerance=selection.tolerance,
                 )
             )
             self._cmd_history.execute(ApplyReferenceLayersCommand(
@@ -218,10 +230,19 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
             )
             from commands.map.apply_reference import ApplyReferenceLayersCommand
             map_data = self._project.map_data
+            selection = self._choose_reference_colors(path, "province")
+            if selection is None:
+                return
 
             def generate():
                 rgb = load_reference_rgb(path, map_data.province_map.shape)
-                return generate_provinces_from_rgb(rgb, map_data.tile_map)
+                return generate_provinces_from_rgb(
+                    rgb,
+                    map_data.tile_map,
+                    land_province_colors=selection.colors.get("land_province"),
+                    sea_province_colors=selection.colors.get("sea_province"),
+                    color_tolerance=selection.tolerance,
+                )
 
             province_map, count = self._run_reference_analysis(generate)
             self._cmd_history.execute(ApplyReferenceLayersCommand(
@@ -312,10 +333,19 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
             )
             from commands.map.apply_reference import ApplyReferenceLayersCommand
             map_data = self._project.map_data
+            selection = self._choose_reference_colors(path, "hydrology")
+            if selection is None:
+                return
 
             def generate():
                 rgb = load_reference_rgb(path, map_data.tile_map.shape)
-                return generate_hydrology_from_rgb(rgb, map_data.tile_map)
+                return generate_hydrology_from_rgb(
+                    rgb,
+                    map_data.tile_map,
+                    lake_colors=selection.colors.get("lake"),
+                    river_colors=selection.colors.get("river"),
+                    color_tolerance=selection.tolerance,
+                )
 
             new_tiles, river_map, stats = self._run_reference_analysis(generate)
             self._cmd_history.execute(ApplyReferenceLayersCommand(

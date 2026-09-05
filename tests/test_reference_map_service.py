@@ -12,9 +12,11 @@ from domain.managers.river import RIVER_SOURCE
 from domain.managers.river import validate_rivers
 from model.project import Project
 from services.reference_map_service import (
+    extract_reference_colors,
     generate_hydrology_from_rgb,
     generate_land_water_from_rgb,
     generate_provinces_from_rgb,
+    suggest_reference_color_mapping,
     split_selected_provinces_randomly,
 )
 
@@ -35,6 +37,61 @@ def test_land_water_and_outline_import() -> None:
     assert set(np.unique(provinces)) == {0, 1, 2}
     assert np.all(provinces[tiles == TILE_SEA] == 0)
     assert np.all(provinces[tiles == TILE_LAND] > 0)
+
+
+def test_explicit_color_roles_drive_land_water_and_provinces() -> None:
+    rgb = np.full((24, 32, 3), (255, 255, 255), dtype=np.uint8)
+    rgb[2:22, 3:29] = (220, 140, 55)
+    rgb[2:22, 16] = (20, 20, 20)
+
+    tiles = generate_land_water_from_rgb(
+        rgb,
+        land_colors=[(220, 140, 55)],
+        water_colors=[(255, 255, 255)],
+    )
+    assert int(np.sum(tiles == TILE_LAND)) == 20 * 26
+
+    provinces, count = generate_provinces_from_rgb(
+        rgb,
+        tiles,
+        land_province_colors=[(20, 20, 20)],
+        sea_province_colors=[],
+        min_region_pixels=4,
+    )
+    assert count == 2
+    assert set(np.unique(provinces[tiles == TILE_LAND])) == {1, 2}
+
+
+def test_palette_preserves_rare_flat_map_colors_and_suggests_roles() -> None:
+    rgb = np.full((30, 40, 3), (221, 136, 57), dtype=np.uint8)
+    rgb[:, :4] = (255, 255, 255)
+    rgb[:, 20] = (185, 121, 50)
+    palette = extract_reference_colors(rgb, max_colors=8)
+    colors = {entry.rgb for entry in palette}
+    assert (185, 121, 50) in colors
+    mapping = suggest_reference_color_mapping(rgb, "province", max_colors=8)
+    assert (185, 121, 50) in mapping["land_province"]
+
+
+def test_explicit_hydrology_roles_are_respected() -> None:
+    rgb = np.full((48, 64, 3), (207, 213, 16), dtype=np.uint8)
+    rgb[:, :5] = 255
+    rgb[8:20, 15:29] = (190, 178, 151)
+    rgb[32, 20:55] = (164, 113, 88)
+    tiles = np.full((48, 64), TILE_LAND, dtype=np.uint8)
+    tiles[:, :5] = TILE_SEA
+
+    new_tiles, rivers, stats = generate_hydrology_from_rgb(
+        rgb,
+        tiles,
+        lake_colors=[(190, 178, 151)],
+        river_colors=[(164, 113, 88)],
+        min_feature_pixels=4,
+    )
+    assert stats["lake_pixels"] > 100
+    assert stats["river_pixels"] >= 20
+    assert np.all(new_tiles[10:18, 17:27] == TILE_LAKE)
+    assert np.any(rivers == RIVER_SOURCE)
 
 
 def test_hydrology_separates_broad_lakes_and_thin_rivers() -> None:

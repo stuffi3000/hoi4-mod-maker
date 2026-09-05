@@ -6,6 +6,7 @@ small synthetic images as well as full 5632x2048 QGIS exports.
 from __future__ import annotations
 
 from collections import deque
+from dataclasses import dataclass
 from pathlib import Path
 
 import cv2
@@ -25,6 +26,23 @@ from domain.managers.river import (
 _CROSS = np.array([[0, 1, 0], [1, 1, 1], [0, 1, 0]], dtype=bool)
 
 
+Color = tuple[int, int, int]
+
+
+@dataclass(frozen=True)
+class ReferenceColor:
+    """A representative color discovered in a reference image.
+
+    Palette colors are deliberately stored as plain RGB tuples so they can be
+    passed through Qt dialogs and serialized in tests without any image/UI
+    dependency.  ``count`` is the number of pixels represented in the sampled
+    palette image (and is therefore useful for ranking, not exact accounting).
+    """
+
+    rgb: Color
+    count: int
+
+
 def load_reference_rgb(path: str | Path, target_shape: tuple[int, int]) -> np.ndarray:
     """Load *path* as RGB and resize it to ``(height, width)`` when needed."""
     with Image.open(path) as source:
@@ -35,6 +53,203 @@ def load_reference_rgb(path: str | Path, target_shape: tuple[int, int]) -> np.nd
         return np.asarray(image, dtype=np.uint8)
 
 
+def extract_reference_colors(
+    rgb: np.ndarray,
+    *,
+    max_colors: int = 48,
+    max_sample_pixels: int = 1_500_000,
+) -> list[ReferenceColor]:
+    """Return the most useful representative colors found in ``rgb``.
+
+    Real map exports often contain thousands of anti-aliased shades.  Showing
+    every exact RGB value would make the editor unusable, so the image is
+    reduced to a bounded sample and quantized to a compact palette.  The
+    representative values are still RGB colors from the image's visual
+    gamut, and generation uses a configurable distance tolerance to include
+    anti-aliased neighbors.
+    """
+    if rgb.ndim != 3 or rgb.shape[2] != 3 or rgb.size == 0:
+        raise ValueError("Reference image must be a non-empty RGB array")
+    color_count = max(2, min(256, int(max_colors)))
+    height, width = rgb.shape[:2]
+    sample = Image.fromarray(np.asarray(rgb, dtype=np.uint8), mode="RGB")
+    pixels = height * width
+    # Flat GIS exports usually contain a small exact palette.  Preserve those
+    # colors (including thin province strokes) instead of letting downsampling
+    # blend them into the dominant fill color.
+    exact = sample.getcolors(maxcolors=max(4096, color_count * 16))
+    if exact is not None and len(exact) <= color_count * 4:
+        exact.sort(key=lambda pair: pair[0], reverse=True)
+        return [
+            ReferenceColor(tuple(map(int, color)), int(count))
+            for count, color in exact[:color_count]
+        ]
+    if pixels > max(1, int(max_sample_pixels)):
+        scale = (float(max_sample_pixels) / float(pixels)) ** 0.5
+        sample_size = (
+            max(1, int(round(width * scale))),
+            max(1, int(round(height * scale))),
+        )
+        sample = sample.resize(sample_size, Image.Resampling.BILINEAR)
+    quantized = sample.quantize(colors=color_count, method=Image.Quantize.MEDIANCUT)
+    indexes = np.asarray(quantized, dtype=np.uint8).reshape(-1)
+    counts = np.bincount(indexes, minlength=color_count)
+    palette = quantized.getpalette() or []
+    result: list[ReferenceColor] = []
+    for index in np.argsort(counts)[::-1]:
+        count = int(counts[index])
+        if count <= 0:
+            continue
+        offset = int(index) * 3
+        if offset + 2 >= len(palette):
+            continue
+        result.append(
+            ReferenceColor(
+                (int(palette[offset]), int(palette[offset + 1]), int(palette[offset + 2])),
+                count,
+            )
+        )
+    return result
+
+
+def extract_reference_colors_from_path(
+    path: str | Path,
+    *,
+    max_colors: int = 48,
+    max_sample_pixels: int = 1_500_000,
+) -> tuple[np.ndarray, list[ReferenceColor]]:
+    """Load an image once for the color editor and return a preview plus palette."""
+    with Image.open(path) as source:
+        image = source.convert("RGB")
+        rgb = np.asarray(image, dtype=np.uint8)
+    return rgb, extract_reference_colors(
+        rgb, max_colors=max_colors, max_sample_pixels=max_sample_pixels
+    )
+
+
+def _color_distance(rgb: np.ndarray, colors: list[Color] | tuple[Color, ...]) -> np.ndarray:
+    """Return each pixel's squared distance to its closest selected color."""
+    if not colors:
+        return np.full(rgb.shape[:2], np.inf, dtype=np.float32)
+    work = rgb.astype(np.float32, copy=False)
+    closest = np.full(rgb.shape[:2], np.inf, dtype=np.float32)
+    for color in colors:
+        sample = np.asarray(color, dtype=np.float32).reshape(1, 1, 3)
+        distance = np.sum((work - sample) ** 2, axis=2)
+        np.minimum(closest, distance, out=closest)
+    return closest
+
+
+def _color_mask(
+    rgb: np.ndarray,
+    colors: list[Color] | tuple[Color, ...] | None,
+    tolerance: float,
+) -> np.ndarray:
+    """Build a mask for pixels within ``tolerance`` RGB distance of a palette."""
+    if not colors:
+        return np.zeros(rgb.shape[:2], dtype=bool)
+    limit = max(0.0, float(tolerance)) ** 2
+    return _color_distance(rgb, list(colors)) <= limit
+
+
+def _normalise_colors(colors: object) -> list[Color]:
+    """Coerce a user-provided color list into bounded integer RGB tuples."""
+    if colors is None:
+        return []
+    result: list[Color] = []
+    try:
+        values = iter(colors)  # type: ignore[arg-type]
+    except TypeError:
+        return []
+    for value in values:
+        try:
+            if len(value) != 3:  # type: ignore[arg-type]
+                continue
+        except TypeError:
+            continue
+        result.append(
+            tuple(max(0, min(255, int(channel))) for channel in value)  # type: ignore[misc]
+        )
+    return list(dict.fromkeys(result))
+
+
+def suggest_reference_color_mapping(
+    rgb: np.ndarray,
+    operation: str,
+    *,
+    max_colors: int = 48,
+) -> dict[str, list[Color]]:
+    """Suggest sensible initial role assignments for the color editor.
+
+    Suggestions are intentionally conservative: they only pre-check likely
+    colors, while the user remains in control of every assignment.  ``operation``
+    is one of ``land``, ``province`` or ``hydrology``.
+    """
+    palette = extract_reference_colors(rgb, max_colors=max_colors)
+    colors = [entry.rgb for entry in palette]
+    counts_by_color = {entry.rgb: entry.count for entry in palette}
+    if not colors:
+        return {}
+    neutral = [
+        color for color in colors
+        if min(color) >= 180 and max(color) - min(color) <= 24
+    ]
+    non_neutral = [color for color in colors if color not in neutral]
+    dominant_land = non_neutral[:1] or colors[:1]
+    mapping: dict[str, list[Color]] = {}
+
+    if operation == "land":
+        mapping["land"] = dominant_land
+        mapping["water"] = neutral[:2] or colors[-1:]
+    elif operation == "province":
+        # Province imports need the dark stroke colors rather than the broad
+        # land fill.  Keep a few top candidates so anti-aliased stroke shades
+        # are available without selecting the dominant fill itself.
+        anchor = np.asarray(dominant_land[0], dtype=np.float32)
+        stroke: list[Color] = []
+        for color in non_neutral[1:]:
+            distance = float(np.linalg.norm(np.asarray(color, dtype=np.float32) - anchor))
+            if 18.0 <= distance <= 240.0:
+                stroke.append(color)
+        mapping["land_province"] = stroke[:8] or non_neutral[:2]
+        # A dark neutral is a common sea-outline convention; leave it empty if
+        # the reference contains only white sea, which is the usual case.
+        sea_candidates = [
+            color for color in colors
+            if 35 <= min(color) <= 210 and max(color) - min(color) <= 20
+        ]
+        # Thin grey artifacts are common in GIS exports but are not evidence
+        # of sea-province boundaries.  Preselect this role only when a visible
+        # amount of dark-neutral linework is present; it can always be enabled
+        # manually in the editor.
+        sea_pixels = sum(counts_by_color.get(color, 0) for color in sea_candidates)
+        mapping["sea_province"] = (
+            sea_candidates[:4]
+            if sea_pixels >= max(10_000, int(rgb.shape[0] * rgb.shape[1] * 0.002))
+            else []
+        )
+    elif operation == "hydrology":
+        inland = [
+            color for color in colors
+            if min(color) < 180
+            and color[2] >= 0.45 * color[1]
+            and color[1] >= 45
+        ]
+        inland = inland[:12]
+        mapping["lake"] = [
+            color for color in inland
+            if abs(color[0] - color[1]) <= 32
+        ][:3] or inland[:1]
+        # Keep the defaults disjoint.  If broad lake colors were also marked
+        # as river colors, the overlap resolver would classify most of the
+        # lake as thin river pixels and make the initial result surprisingly
+        # small.  Users can still re-check a color for both roles manually.
+        mapping["river"] = [color for color in inland if color not in mapping["lake"]]
+    else:
+        raise ValueError(f"Unknown reference color operation: {operation}")
+    return mapping
+
+
 def _neutral_sea_mask(rgb: np.ndarray) -> np.ndarray:
     """Detect the white/light-neutral sea used by common GIS print layouts."""
     work = rgb.astype(np.int16, copy=False)
@@ -42,8 +257,37 @@ def _neutral_sea_mask(rgb: np.ndarray) -> np.ndarray:
     return (work.min(axis=2) >= 180) & (chroma <= 15)
 
 
-def generate_land_water_from_rgb(rgb: np.ndarray) -> np.ndarray:
-    """Infer a TILE_LAND/TILE_SEA map from a colored land-on-white image."""
+def generate_land_water_from_rgb(
+    rgb: np.ndarray,
+    *,
+    land_colors: list[Color] | tuple[Color, ...] | None = None,
+    water_colors: list[Color] | tuple[Color, ...] | None = None,
+    color_tolerance: float = 18.0,
+) -> np.ndarray:
+    """Infer a TILE_LAND/TILE_SEA map from a colored reference image.
+
+    When role colors are supplied, every pixel is assigned to the closest
+    selected land or water color.  This handles anti-aliased coast pixels and
+    makes the result follow the visual editor's assignments.  With no colors,
+    the historical white/neutral-water heuristic is retained.
+    """
+    if rgb.ndim != 3 or rgb.shape[2] != 3:
+        raise ValueError("Reference image must be an RGB array")
+    land = _normalise_colors(land_colors)
+    water = _normalise_colors(water_colors)
+    if land or water:
+        if land and water:
+            land_distance = _color_distance(rgb, land)
+            water_distance = _color_distance(rgb, water)
+            result = np.where(land_distance <= water_distance, TILE_LAND, TILE_SEA)
+            return result.astype(np.uint8, copy=False)
+        if land:
+            result = np.full(rgb.shape[:2], TILE_SEA, dtype=np.uint8)
+            result[_color_mask(rgb, land, color_tolerance)] = TILE_LAND
+            return result
+        result = np.full(rgb.shape[:2], TILE_LAND, dtype=np.uint8)
+        result[_color_mask(rgb, water, color_tolerance)] = TILE_SEA
+        return result
     sea = _neutral_sea_mask(rgb)
     result = np.full(sea.shape, TILE_LAND, dtype=np.uint8)
     result[sea] = TILE_SEA
@@ -60,28 +304,65 @@ def _dominant_rgb(rgb: np.ndarray, mask: np.ndarray) -> np.ndarray:
     return np.array([(key >> 16) & 255, (key >> 8) & 255, key & 255], dtype=np.int16)
 
 
+def _label_region_map(
+    usable: np.ndarray,
+    boundary: np.ndarray,
+    min_region_pixels: int,
+) -> tuple[np.ndarray, int]:
+    """Label enclosed regions and assign their outline pixels to a region."""
+    interiors, _ = ndimage.label(usable & ~boundary, structure=_CROSS)
+    sizes = np.bincount(interiors.ravel())
+    valid_ids = np.flatnonzero(sizes >= max(1, int(min_region_pixels)))
+    valid_ids = valid_ids[valid_ids != 0]
+    if valid_ids.size == 0:
+        return np.zeros(usable.shape, dtype=np.int32), 0
+
+    keep = np.isin(interiors, valid_ids)
+    compact_lut = np.zeros(len(sizes), dtype=np.int32)
+    compact_lut[valid_ids] = np.arange(1, len(valid_ids) + 1, dtype=np.int32)
+    seeds = compact_lut[interiors]
+    nearest = ndimage.distance_transform_edt(
+        ~keep, return_distances=False, return_indices=True
+    )
+    region_map = seeds[nearest[0], nearest[1]].astype(np.int32, copy=False)
+    region_map[~usable] = 0
+    return region_map, int(len(valid_ids))
+
+
 def generate_provinces_from_rgb(
     rgb: np.ndarray,
     tile_map: np.ndarray | None = None,
     *,
     boundary_threshold: float = 20.0,
     min_region_pixels: int = 9,
+    land_province_colors: list[Color] | tuple[Color, ...] | None = None,
+    sea_province_colors: list[Color] | tuple[Color, ...] | None = None,
+    color_tolerance: float = 18.0,
 ) -> tuple[np.ndarray, int]:
     """Turn dark outlines on a mostly uniform land fill into province IDs.
 
     Boundary pixels are assigned to their nearest enclosed region, so the
-    returned map has no cracks. Sea remains ID 0 because a reference without
-    sea outlines contains no evidence from which to infer sea provinces.
-    Existing lake components are each assigned a separate province.
+    returned map has no cracks.  ``land_province_colors`` and
+    ``sea_province_colors`` are the outline colors selected in the visual
+    editor; when omitted, dark pixels are inferred from the dominant land fill.
+    Existing lake components are each assigned a separate province.  Sea
+    provinces are generated only when sea-outline colors are explicitly
+    selected.
     """
     if rgb.ndim != 3 or rgb.shape[2] != 3:
         raise ValueError("Reference image must be an RGB array")
 
-    image_land = ~_neutral_sea_mask(rgb)
+    image_water = _neutral_sea_mask(rgb)
+    image_land = ~image_water
     dominant = _dominant_rgb(rgb, image_land)
-    delta = rgb.astype(np.int16) - dominant
-    distance = np.sqrt(np.sum(delta.astype(np.float32) ** 2, axis=2))
-    boundary = image_land & (distance >= float(boundary_threshold))
+    if land_province_colors is None:
+        delta = rgb.astype(np.int16) - dominant
+        distance = np.sqrt(np.sum(delta.astype(np.float32) ** 2, axis=2))
+        boundary = image_land & (distance >= float(boundary_threshold))
+    else:
+        boundary = image_land & _color_mask(
+            rgb, _normalise_colors(land_province_colors), color_tolerance
+        )
 
     if tile_map is None:
         usable_land = image_land
@@ -92,23 +373,12 @@ def generate_provinces_from_rgb(
         usable_land = image_land & (tile_map == TILE_LAND)
         lakes = image_land & (tile_map == TILE_LAKE)
 
-    interiors, _ = ndimage.label(usable_land & ~boundary, structure=_CROSS)
-    sizes = np.bincount(interiors.ravel())
-    valid_ids = np.flatnonzero(sizes >= max(1, int(min_region_pixels)))
-    valid_ids = valid_ids[valid_ids != 0]
-    if valid_ids.size == 0:
+    land_map, count = _label_region_map(
+        usable_land, boundary, min_region_pixels
+    )
+    if count == 0:
         raise ValueError("No enclosed province regions were found in the reference image")
-
-    keep = np.isin(interiors, valid_ids)
-    compact_lut = np.zeros(len(sizes), dtype=np.int32)
-    compact_lut[valid_ids] = np.arange(1, len(valid_ids) + 1, dtype=np.int32)
-    seeds = compact_lut[interiors]
-
-    # Assign outline pixels and discarded specks to the nearest valid interior.
-    nearest = ndimage.distance_transform_edt(~keep, return_distances=False, return_indices=True)
-    province_map = seeds[nearest[0], nearest[1]].astype(np.int32, copy=False)
-    province_map[~usable_land] = 0
-    count = int(len(valid_ids))
+    province_map = land_map
 
     if lakes.any():
         lake_labels, lake_count = ndimage.label(lakes, structure=_CROSS)
@@ -116,6 +386,25 @@ def generate_provinces_from_rgb(
             lake_pixels = lake_labels > 0
             province_map[lake_pixels] = lake_labels[lake_pixels].astype(np.int32) + count
             count += int(lake_count)
+
+    # A sea-outline palette is optional.  Restrict dark outline pixels to the
+    # vicinity of neutral water so the same black color used for land borders
+    # is not accidentally interpreted as a sea province boundary.
+    if sea_province_colors is not None and _normalise_colors(sea_province_colors):
+        sea_boundary = _color_mask(
+            rgb, _normalise_colors(sea_province_colors), color_tolerance
+        )
+        sea_boundary &= ndimage.binary_dilation(
+            image_water, structure=np.ones((3, 3), dtype=bool), iterations=2
+        )
+        usable_sea = image_water | sea_boundary
+        sea_map, sea_count = _label_region_map(
+            usable_sea, sea_boundary, min_region_pixels
+        )
+        if sea_count:
+            sea_map[sea_map > 0] += count
+            province_map[sea_map > 0] = sea_map[sea_map > 0]
+            count += sea_count
 
     return province_map, count
 
@@ -269,30 +558,76 @@ def generate_hydrology_from_rgb(
     *,
     min_feature_pixels: int = 4,
     lake_radius: float = 3.0,
+    lake_colors: list[Color] | tuple[Color, ...] | None = None,
+    river_colors: list[Color] | tuple[Color, ...] | None = None,
+    color_tolerance: float = 18.0,
 ) -> tuple[np.ndarray, np.ndarray, dict[str, int]]:
     """Extract broad lakes and thin rivers from a colored inland-water image.
 
     The QGIS fixtures use yellow-green for land and grey/brown/blue for inland
     water. The blue-to-green ratio separates those families without requiring
-    callers to know an exact source color.
+    callers to know an exact source color.  When ``lake_colors`` or
+    ``river_colors`` is supplied, the selected palette roles take precedence;
+    this is what the visual color editor uses.
     """
     if base_tile_map.shape != rgb.shape[:2]:
         raise ValueError("base_tile_map and reference image must have the same size")
 
     work = rgb.astype(np.float32)
     sea = _neutral_sea_mask(rgb)
-    features = (~sea) & (work[:, :, 2] >= 0.45 * work[:, :, 1]) & (work[:, :, 1] >= 45)
+    selected_lakes = _normalise_colors(lake_colors)
+    selected_rivers = _normalise_colors(river_colors)
+    explicit_colors = lake_colors is not None or river_colors is not None
+    if explicit_colors:
+        lake_candidates = _color_mask(rgb, selected_lakes, color_tolerance)
+        river_candidates = _color_mask(rgb, selected_rivers, color_tolerance)
+        features = lake_candidates | river_candidates
+    else:
+        lake_candidates = np.zeros(rgb.shape[:2], dtype=bool)
+        river_candidates = np.zeros(rgb.shape[:2], dtype=bool)
+        features = (
+            (~sea)
+            & (work[:, :, 2] >= 0.45 * work[:, :, 1])
+            & (work[:, :, 1] >= 45)
+        )
     # Anti-aliased coast pixels are neutral too; exclude a small coastal halo.
-    coastal_halo = ndimage.binary_dilation(sea, structure=np.ones((3, 3), bool), iterations=2)
+    # Use the existing tile map as the source when explicit colors are in play:
+    # a user-selected light-grey lake must not itself be mistaken for ocean.
+    halo_source = sea & (base_tile_map == TILE_SEA) if explicit_colors else sea
+    coastal_halo = ndimage.binary_dilation(
+        halo_source, structure=np.ones((3, 3), bool), iterations=2
+    )
     features &= ~coastal_halo
     features &= base_tile_map == TILE_LAND
     features = _remove_small_components(features, min_feature_pixels)
 
-    distance = ndimage.distance_transform_edt(features)
-    lake_core = distance >= float(lake_radius)
-    lake_mask = ndimage.binary_dilation(lake_core, structure=np.ones((3, 3), bool), iterations=2)
-    lake_mask &= features
-    river_source_mask = features & ~lake_mask
+    if explicit_colors:
+        lake_mask = lake_candidates & features
+        river_source_mask = river_candidates & features
+        overlap = lake_mask & river_source_mask
+        if overlap.any():
+            # If a user assigns a color to both roles, preserve the broad
+            # portions as lakes and let the thin remainder become rivers.
+            distance = ndimage.distance_transform_edt(features)
+            broad = distance >= float(lake_radius)
+            lake_mask = (lake_mask & ~river_source_mask) | (overlap & broad)
+            river_source_mask &= ~lake_mask
+        if lake_colors is None:
+            distance = ndimage.distance_transform_edt(features)
+            lake_core = distance >= float(lake_radius)
+            lake_mask = ndimage.binary_dilation(
+                lake_core, structure=np.ones((3, 3), bool), iterations=2
+            ) & features
+        if river_colors is None:
+            river_source_mask = features & ~lake_mask
+    else:
+        distance = ndimage.distance_transform_edt(features)
+        lake_core = distance >= float(lake_radius)
+        lake_mask = ndimage.binary_dilation(
+            lake_core, structure=np.ones((3, 3), bool), iterations=2
+        )
+        lake_mask &= features
+        river_source_mask = features & ~lake_mask
 
     # OpenCV handles the sparse world-sized mask much faster in one pass than
     # thousands of tiny component calls.

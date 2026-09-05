@@ -73,7 +73,7 @@ STRINGS: dict[str, str] = {
     "land_paint_after_gen_msg": "Provinces already exist.\n\nPainting now will desync the land/sea border from province borders and may break the exported MOD.\n\nRegenerating provinces afterwards is recommended.\n\nContinue painting? (This warning won't repeat until provinces are regenerated.)",
     "land_ref_adjust_hint": "In adjust mode: left-drag moves the reference, wheel zooms; painting is paused meanwhile. You can also Ctrl+drag / Ctrl+wheel the custom image anytime.",
     "land_btn_auto_land_ref": "Generate Land / Water from Image...",
-    "land_btn_auto_land_ref_tip": "Choose a full-map image with colored land and white water. It is resized to the canvas, classified automatically, and applied as one undoable action.",
+    "land_btn_auto_land_ref_tip": "Choose a full-map image with colored land and water. A color-role editor opens so you can assign the detected colors before the image is resized and applied as one undoable action.",
     "land_auto_ref_dialog": "Generate Land and Water from Reference",
     "land_auto_ref_done": "Generated land and water from reference ({land} land pixels, {sea} sea pixels). Ctrl+Z to undo.",
 }

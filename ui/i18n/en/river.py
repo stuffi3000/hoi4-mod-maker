@@ -54,7 +54,7 @@ Flow-in (red) where rivers merge""",
     "river_section_auto_reference": "Generate from Inland-Water Reference",
     "river_auto_reference_hint": "Broad water shapes become lakes; thin shapes are skeletonized into 1px rivers with automatic source markers. Run this before province outline import for the cleanest province types.",
     "river_btn_auto_reference": "Generate Lakes + Rivers from Image...",
-    "river_btn_auto_reference_tip": "Choose a full-map image with yellow/green land, white sea, and grey/brown/blue inland water. Tile and river layers are changed and undone together.",
+    "river_btn_auto_reference_tip": "Choose a full-map image with inland water. A color-role editor opens to select lake and river colors; tile and river layers are changed and undone together.",
     "river_auto_ref_dialog": "Generate Lakes and Rivers from Reference",
     "river_auto_ref_done": "Generated {lakes} lake pixels and {rivers} river pixels in {networks} networks. Ctrl+Z undoes both layers.",
 }

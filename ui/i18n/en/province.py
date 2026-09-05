@@ -64,7 +64,7 @@ STRINGS: dict[str, str] = {
     "province_status_fill": "Province fill: click an unassigned area to give it to the selected province",
     "province_status_new": "New Province {pid} selected — draw its first pixels",
     "province_btn_auto_ref": "Generate Provinces from Outlines...",
-    "province_btn_auto_ref_tip": "Choose a full-map image with a uniform land fill and dark closed province outlines. Sea remains unassigned; lake components become separate provinces. Undoable with Ctrl+Z.",
+    "province_btn_auto_ref_tip": "Choose a full-map image with a uniform land fill and province outlines. A color-role editor opens to select land- and sea-province outline colors. Undoable with Ctrl+Z.",
     "province_auto_ref_dialog": "Generate Provinces from Reference Outlines",
     "province_auto_ref_confirm_title": "Replace Province Map?",
     "province_auto_ref_confirm": "This will replace all existing province IDs. Province-linked state and country data may no longer match. The map replacement itself is undoable. Continue?",
