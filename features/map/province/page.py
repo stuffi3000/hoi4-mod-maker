@@ -13,9 +13,10 @@ from PyQt5.QtWidgets import (
 
 from ui.styles import (
     make_section as _make_section,
+    make_hint as _make_hint,
     _DIM, _ACCENT, _BORDER, _SECTION_STYLE, _LABEL_STYLE, _DIM_LABEL_STYLE,
     _PRIMARY_BTN_STYLE, _SECONDARY_BTN_STYLE, _LINEEDIT_STYLE,
-    _TOOL_BTN_STYLE, _SLIDER_STYLE,
+    _TOOL_BTN_STYLE, _SLIDER_STYLE, _SPINBOX_STYLE,
 )
 from ui.i18n import tr, tr_pair
 
@@ -62,6 +63,8 @@ class ProvincePage(QWidget):
     province_paint_mode_changed = pyqtSignal(str)
     province_brush_size_changed = pyqtSignal(int)
     new_province_requested = pyqtSignal()
+    generate_provinces_requested = pyqtSignal(str, int)
+    validate_requested = pyqtSignal()
     import_ref_requested = pyqtSignal()
     auto_provinces_from_ref_requested = pyqtSignal()
     random_split_requested = pyqtSignal(int)
@@ -115,6 +118,87 @@ class ProvincePage(QWidget):
         self._stats_label.setWordWrap(True)
         self._stats_label.setStyleSheet(f"color: {_DIM}; font-size: 12px; padding: 4px 8px;")
         lay.addWidget(self._stats_label)
+
+        # ── Province generation (above manual province drawing) ──
+        generation_box = _make_section(tr("province_section_generation"))
+
+        count_row = QHBoxLayout()
+        count_label = QLabel(tr("province_label_generation_count"))
+        count_label.setStyleSheet(_LABEL_STYLE)
+        count_row.addWidget(count_label)
+        self._province_count_spin = QSpinBox()
+        self._province_count_spin.setRange(100, 20000)
+        self._province_count_spin.setSingleStep(500)
+        self._province_count_spin.setValue(12000)
+        self._province_count_spin.setStyleSheet(_SPINBOX_STYLE)
+        count_row.addWidget(self._province_count_spin)
+        generation_box.layout().addLayout(count_row)
+
+        sea_row = QHBoxLayout()
+        sea_label = QLabel(tr("province_label_sea_density"))
+        sea_label.setStyleSheet(_LABEL_STYLE)
+        sea_row.addWidget(sea_label)
+        self._sea_density_label = QLabel("15%")
+        self._sea_density_label.setStyleSheet(_DIM_LABEL_STYLE)
+        sea_row.addStretch()
+        sea_row.addWidget(self._sea_density_label)
+        generation_box.layout().addLayout(sea_row)
+
+        self._sea_density_slider = QSlider(Qt.Orientation.Horizontal)
+        self._sea_density_slider.setRange(5, 100)
+        self._sea_density_slider.setValue(15)
+        self._sea_density_slider.setStyleSheet(_SLIDER_STYLE)
+        self._sea_density_slider.valueChanged.connect(
+            lambda value: self._sea_density_label.setText(f"{value}%")
+        )
+        generation_box.layout().addWidget(self._sea_density_slider)
+
+        lake_row = QHBoxLayout()
+        lake_label = QLabel(tr("province_label_lake_density"))
+        lake_label.setStyleSheet(_LABEL_STYLE)
+        lake_row.addWidget(lake_label)
+        self._lake_density_label = QLabel("30%")
+        self._lake_density_label.setStyleSheet(_DIM_LABEL_STYLE)
+        lake_row.addStretch()
+        lake_row.addWidget(self._lake_density_label)
+        generation_box.layout().addLayout(lake_row)
+
+        self._lake_density_slider = QSlider(Qt.Orientation.Horizontal)
+        self._lake_density_slider.setRange(10, 100)
+        self._lake_density_slider.setValue(30)
+        self._lake_density_slider.setStyleSheet(_SLIDER_STYLE)
+        self._lake_density_slider.valueChanged.connect(
+            lambda value: self._lake_density_label.setText(f"{value}%")
+        )
+        generation_box.layout().addWidget(self._lake_density_slider)
+
+        generation_box.layout().addWidget(
+            _make_hint(tr("province_generation_hint"))
+        )
+        self._generation_buttons: dict[str, QPushButton] = {}
+        for scope, label_key, tip_key, style in (
+            ("all", "province_btn_generate_all", "province_btn_generate_all_tip", _PRIMARY_BTN_STYLE),
+            ("land", "province_btn_generate_land", "province_btn_generate_land_tip", _SECONDARY_BTN_STYLE),
+            ("sea", "province_btn_generate_sea", "province_btn_generate_sea_tip", _SECONDARY_BTN_STYLE),
+            ("lake", "province_btn_generate_lake", "province_btn_generate_lake_tip", _SECONDARY_BTN_STYLE),
+        ):
+            button = QPushButton(tr(label_key))
+            button.setStyleSheet(style)
+            button.setToolTip(tr(tip_key))
+            button.clicked.connect(
+                lambda _checked=False, selected_scope=scope: self._on_generate_provinces(
+                    selected_scope
+                )
+            )
+            self._generation_buttons[scope] = button
+            generation_box.layout().addWidget(button)
+
+        validate_button = QPushButton(tr("province_btn_validate"))
+        validate_button.setStyleSheet(_SECONDARY_BTN_STYLE)
+        validate_button.clicked.connect(self.validate_requested.emit)
+        self._validate_btn = validate_button
+        generation_box.layout().addWidget(validate_button)
+        lay.addWidget(generation_box)
 
         # ── 手动画省份（与自动生成共用同一 province_map）──
         draw_box = _make_section(tr("province_section_manual_draw"))
@@ -280,6 +364,17 @@ class ProvincePage(QWidget):
         self.province_paint_mode_changed.emit("brush")
         self.new_province_requested.emit()
         self._update_mode_visuals()
+
+    def _on_generate_provinces(self, scope: str) -> None:
+        self.generate_provinces_requested.emit(scope, self._province_count_spin.value())
+
+    def get_generation_params(self) -> dict:
+        """Return the province-generation controls shared by all scopes."""
+        return {
+            "target_count": self._province_count_spin.value(),
+            "sea_scale": self._sea_density_slider.value() / 100.0,
+            "lake_scale": self._lake_density_slider.value() / 100.0,
+        }
 
     def _on_brush_size(self, value: int) -> None:
         self._brush_value_label.setText(f"{value}px")

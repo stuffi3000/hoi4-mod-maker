@@ -9,7 +9,7 @@ STRINGS: dict[str, str] = {
     "density_clear_confirm_msg": "Clear all province density data? This action cannot be undone.",
     "density_btn_clear": "Clear Density Map",
     "density_btn_clear_tip": "Clear density map, restore uniform generation",
-    "density_hint": "🎨 The density map you paint here takes effect when you click [Generate Provinces] on the [Land/Sea] page. Bright = dense, dark = sparse. No paint = uniform.",
+    "density_hint": "🎨 The density map you paint here takes effect when you choose a province-generation option on the [Provinces] page. Bright = dense, dark = sparse. No paint = uniform.",
     "density_label_brush_size": "Brush Size:",
     "density_label_soft_edge": "Brush Feather:",
     "density_label_value": "Density:",

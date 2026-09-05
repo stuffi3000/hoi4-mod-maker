@@ -8,6 +8,7 @@ from commands.history import CommandHistory
 from commands.map.apply_reference import ApplyReferenceLayersCommand
 from commands.province.random_split import RandomSplitProvincesCommand
 from data.constants import TILE_LAKE, TILE_LAND, TILE_SEA
+from domain.generators.province import generate_provinces_for_type
 from domain.managers.river import RIVER_SOURCE
 from domain.managers.river import validate_rivers
 from model.project import Project
@@ -129,6 +130,25 @@ def test_random_split_total_count_and_connectivity() -> None:
     for pid in output_ids:
         _, components = ndimage.label(result == pid)
         assert components == 1
+
+
+def test_type_specific_generation_preserves_other_tile_types() -> None:
+    tile_map = np.full((48, 64), TILE_SEA, dtype=np.uint8)
+    tile_map[4:40, 4:60] = TILE_LAND
+    tile_map[20:30, 20:35] = TILE_LAKE
+    existing = np.zeros((48, 64), dtype=np.int32)
+    existing[tile_map == TILE_SEA] = 7
+    existing[tile_map == TILE_LAKE] = 8
+    existing[tile_map == TILE_LAND] = 3
+
+    generated, count = generate_provinces_for_type(
+        tile_map, existing, TILE_LAND, target_count=6
+    )
+
+    assert count == 6
+    assert set(np.unique(generated[tile_map == TILE_SEA])) == {7}
+    assert set(np.unique(generated[tile_map == TILE_LAKE])) == {8}
+    assert np.all(generated[tile_map == TILE_LAND] > 8)
 
 
 def test_reference_layer_command_undo_and_redo() -> None:

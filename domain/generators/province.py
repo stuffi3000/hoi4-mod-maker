@@ -164,6 +164,59 @@ def generate_provinces(
     return province_map, province_count
 
 
+def generate_provinces_for_type(
+    tile_map: np.ndarray,
+    existing_province_map: np.ndarray,
+    tile_type: int,
+    target_count: int = 12000,
+    *,
+    density_map: np.ndarray | None = None,
+) -> tuple[np.ndarray, int]:
+    """Regenerate one tile type while preserving the other province IDs.
+
+    The selected tile type is temporarily represented as land so the normal
+    generator can distribute exactly the requested number of seeds.  Pixels
+    belonging to other tile types, and their existing province IDs, are left
+    untouched.  New IDs are allocated after the highest preserved ID.
+    """
+    tile = np.asarray(tile_map)
+    existing = np.asarray(existing_province_map)
+    if tile.ndim != 2 or existing.ndim != 2 or tile.shape != existing.shape:
+        raise ValueError("tile_map and existing_province_map must be matching 2-D arrays")
+    if int(tile_type) not in (TILE_LAND, TILE_SEA, TILE_LAKE):
+        raise ValueError("tile_type must be TILE_LAND, TILE_SEA, or TILE_LAKE")
+
+    selected = tile == int(tile_type)
+    result = existing.astype(np.int32, copy=True)
+    result[selected] = 0
+    if not np.any(selected):
+        return result, 0
+
+    # Generate only the selected pixels.  Treating them as land avoids the
+    # sea/lake density multipliers, because this button's count is the target
+    # for the selected type rather than the whole-map total.
+    scoped_tiles = np.zeros(tile.shape, dtype=np.uint8)
+    scoped_tiles[selected] = TILE_LAND
+    generated, generated_count = generate_provinces(
+        scoped_tiles,
+        target_count=max(1, int(target_count)),
+        land_density_ratio=1.0,
+        sea_scale=1.0,
+        lake_scale=1.0,
+        lloyd_iterations=2 if int(tile_type) == TILE_LAND else 0,
+        density_map=density_map,
+    )
+
+    next_id = int(result.max()) + 1
+    generated_ids = generated[selected]
+    result[selected] = np.where(
+        generated_ids > 0,
+        generated_ids.astype(np.int32) + next_id - 1,
+        0,
+    )
+    return result, int(generated_count)
+
+
 def _poisson_disk_sample(
     pixel_ys: np.ndarray,
     pixel_xs: np.ndarray,

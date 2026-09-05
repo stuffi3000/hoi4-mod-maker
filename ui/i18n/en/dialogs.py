@@ -68,7 +68,7 @@ Go to download?""",
 • Use Transform tool to select, move, and scale regions
 • You can also import a reference image to trace over""",
     "guide_step1_title": "Draw Continents",
-    "guide_step2_desc": """After drawing continents, click 'Generate Provinces' to auto-split regions.
+    "guide_step2_desc": """After drawing continents, open the 'Provinces' page and choose a province-generation scope.
 
 • Adjust the province count slider (recommended: 3000-12000)
 • Sea and lake density can be set independently

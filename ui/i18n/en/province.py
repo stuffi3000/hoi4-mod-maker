@@ -42,6 +42,41 @@ STRINGS: dict[str, str] = {
     "province_info_terrain": "Terrain",
     "province_info_type": "Type",
     "province_section_info": "Province Info",
+    "province_section_generation": "Province Generation",
+    "province_label_generation_count": "Target province count:",
+    "province_label_sea_density": "Sea density:",
+    "province_label_lake_density": "Lake density:",
+    "province_scope_all": "all provinces",
+    "province_scope_land": "land provinces",
+    "province_scope_sea": "sea provinces",
+    "province_scope_lake": "lake provinces",
+    "province_generation_hint": (
+        "Choose a scope below. Generate All replaces every province type; "
+        "single-type generation preserves the other types."
+    ),
+    "province_btn_generate_all": "Generate All Provinces",
+    "province_btn_generate_land": "Generate Land Provinces",
+    "province_btn_generate_sea": "Generate Sea Provinces",
+    "province_btn_generate_lake": "Generate Lake Provinces",
+    "province_btn_generate_all_tip": (
+        "Generate land, sea, and lake provinces using the target count and density settings."
+    ),
+    "province_btn_generate_land_tip": (
+        "Generate only land provinces. Existing sea and lake provinces are preserved."
+    ),
+    "province_btn_generate_sea_tip": (
+        "Generate only sea provinces. Existing land and lake provinces are preserved."
+    ),
+    "province_btn_generate_lake_tip": (
+        "Generate only lake provinces. Existing land and sea provinces are preserved."
+    ),
+    "province_generation_scope_confirm_title": "Replace Province Type?",
+    "province_generation_scope_confirm": (
+        "Existing {scope} provinces will be regenerated while the other province types are preserved. Continue?"
+    ),
+    "province_generation_empty_title": "No Matching Tiles",
+    "province_generation_empty": "There are no {scope} tiles to generate provinces for.",
+    "province_btn_validate": "Validate Provinces",
     "province_section_tools": "Province Tools",
     "province_section_manual_draw": "Manual Province Drawing",
     "province_btn_import_ref": "Import reference…",

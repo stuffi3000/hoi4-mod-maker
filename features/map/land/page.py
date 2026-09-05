@@ -9,7 +9,7 @@ from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QSlider, QLabel, QButtonGroup, QRadioButton,
-    QSpinBox, QFrame,
+    QFrame,
 )
 
 from data.constants import (
@@ -22,7 +22,7 @@ from ui.styles import (
     make_hint as _make_hint,
     _DIM, _BORDER, _LABEL_STYLE, _DIM_LABEL_STYLE, _SLIDER_STYLE,
     _TOOL_BTN_STYLE, _TILE_BTN_STYLE, _PRIMARY_BTN_STYLE, _SECONDARY_BTN_STYLE,
-    _SPINBOX_STYLE, _color_icon,
+    _color_icon,
 )
 from ui.i18n import tr
 
@@ -45,8 +45,6 @@ class LandPage(QWidget):
     tool_changed = pyqtSignal(str)
     tile_type_changed = pyqtSignal(int)
     brush_size_changed = pyqtSignal(int)
-    generate_provinces_requested = pyqtSignal(int)
-    validate_requested = pyqtSignal()
     smooth_coast_requested = pyqtSignal()
     clear_new_land_mask_requested = pyqtSignal()
     import_ref_requested = pyqtSignal()          # 导入自定义参考图片
@@ -233,78 +231,6 @@ class LandPage(QWidget):
 
         lay.addWidget(draw_card)
 
-        # ══ ③ 生成省份 — 陆海画好之后 ══
-        gen_card = _make_card(tr("land_section_province_gen"), "③")
-
-        spin_row = QHBoxLayout()
-        spin_lbl = QLabel(tr("land_label_province_count"))
-        spin_lbl.setStyleSheet(_LABEL_STYLE)
-        spin_row.addWidget(spin_lbl)
-        self._province_count_spin = QSpinBox()
-        self._province_count_spin.setRange(100, 20000)
-        self._province_count_spin.setSingleStep(500)
-        self._province_count_spin.setValue(12000)
-        self._province_count_spin.setStyleSheet(_SPINBOX_STYLE)
-        spin_row.addWidget(self._province_count_spin)
-        gen_card.layout().addLayout(spin_row)
-
-        sea_row = QHBoxLayout()
-        sea_lbl = QLabel(tr("land_label_sea_density"))
-        sea_lbl.setStyleSheet(_LABEL_STYLE)
-        sea_row.addWidget(sea_lbl)
-        self._sea_density_label = QLabel("15%")
-        self._sea_density_label.setStyleSheet(_DIM_LABEL_STYLE)
-        sea_row.addStretch()
-        sea_row.addWidget(self._sea_density_label)
-        gen_card.layout().addLayout(sea_row)
-
-        self._sea_density_slider = QSlider(Qt.Orientation.Horizontal)
-        self._sea_density_slider.setRange(5, 100)
-        self._sea_density_slider.setValue(15)
-        self._sea_density_slider.setStyleSheet(_SLIDER_STYLE)
-        self._sea_density_slider.valueChanged.connect(
-            lambda v: self._sea_density_label.setText(f"{v}%")
-        )
-        gen_card.layout().addWidget(self._sea_density_slider)
-
-        lake_row = QHBoxLayout()
-        lake_lbl = QLabel(tr("land_label_lake_density"))
-        lake_lbl.setStyleSheet(_LABEL_STYLE)
-        lake_row.addWidget(lake_lbl)
-        self._lake_density_label = QLabel("30%")
-        self._lake_density_label.setStyleSheet(_DIM_LABEL_STYLE)
-        lake_row.addStretch()
-        lake_row.addWidget(self._lake_density_label)
-        gen_card.layout().addLayout(lake_row)
-
-        self._lake_density_slider = QSlider(Qt.Orientation.Horizontal)
-        self._lake_density_slider.setRange(10, 100)
-        self._lake_density_slider.setValue(30)
-        self._lake_density_slider.setStyleSheet(_SLIDER_STYLE)
-        self._lake_density_slider.valueChanged.connect(
-            lambda v: self._lake_density_label.setText(f"{v}%")
-        )
-        gen_card.layout().addWidget(self._lake_density_slider)
-
-        gen_btn_row = QHBoxLayout()
-        gen_btn_row.setSpacing(4)
-        gen_btn = QPushButton(tr("land_btn_generate"))
-        gen_btn.setStyleSheet(_PRIMARY_BTN_STYLE)
-        gen_btn.setToolTip(tr("land_btn_generate_tip"))
-        gen_btn.clicked.connect(self._on_generate_provinces)
-        gen_btn_row.addWidget(gen_btn)
-
-        validate_btn = QPushButton(tr("land_btn_validate"))
-        validate_btn.setStyleSheet(_SECONDARY_BTN_STYLE)
-        validate_btn.clicked.connect(self.validate_requested.emit)
-        gen_btn_row.addWidget(validate_btn)
-        gen_card.layout().addLayout(gen_btn_row)
-
-        gen_card.layout().addWidget(
-            _make_hint(tr("land_btn_generate_subhint")))
-
-        lay.addWidget(gen_card)
-
         lay.addStretch()
 
     # ── 参考底图卡片 helper ──
@@ -404,19 +330,7 @@ class LandPage(QWidget):
                 self.tool_changed.emit("brush")
                 break
 
-    def _on_generate_provinces(self) -> None:
-        count = self._province_count_spin.value()
-        self.generate_provinces_requested.emit(count)
-
     def _on_tip_link(self, href: str) -> None:
         """提示条 HTML 链接点击 — 当前只有清空扩展遮罩。"""
         if href == "clear_new_land_mask":
             self.clear_new_land_mask_requested.emit()
-
-    def get_generation_params(self) -> dict:
-        """返回省份生成的所有参数。"""
-        return {
-            "target_count": self._province_count_spin.value(),
-            "sea_scale": self._sea_density_slider.value() / 100.0,
-            "lake_scale": self._lake_density_slider.value() / 100.0,
-        }

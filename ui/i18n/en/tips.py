@@ -12,7 +12,7 @@ STRINGS: dict[str, str] = {
     "hint_mode_height": "Click 'Auto Generate' for heightmap, or adjust manually. Then switch to 'Terrain'.",
     "hint_mode_land": "Draw continent shapes with brush. Use Fill for large areas. Switch to 'Province' when done.",
     "hint_mode_logistics": "Set adjacencies, railways, and supply nodes. Optional — auto-generated on export.",
-    "hint_mode_province": "Click 'Generate Provinces' to auto-split. Use Merge/Split/Lasso to adjust borders.",
+    "hint_mode_province": "Choose a province-generation scope to auto-split the map. Use Merge/Split/Lasso to adjust borders.",
     "hint_mode_river": "Draw rivers along province borders, from high to low elevation (mountains → sea).",
     "hint_mode_state": "Click 'Auto Generate States' or select provinces manually. Double-click to set victory points.",
     "hint_mode_strategic_region": "Click 'Auto Generate' or create strategic regions from states.",

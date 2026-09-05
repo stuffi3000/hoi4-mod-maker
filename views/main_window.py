@@ -247,8 +247,8 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
 
         # 工具
         tools_menu = menubar.addMenu(tr("menu_tools"))
-        self._add_action(tools_menu, tr("action_generate_provinces"),
-                         lambda: self._on_generate_provinces(DEFAULT_PROVINCES), "Ctrl+G")
+        self._add_action(tools_menu, tr("action_generate_all_provinces"),
+                         lambda: self._on_generate_provinces("all", DEFAULT_PROVINCES), "Ctrl+G")
         self._add_action(tools_menu, tr("action_validate"), self._on_validate, "Ctrl+Shift+V")
         tools_menu.addSeparator()
         self._add_action(tools_menu, tr("action_quick_init"), self._on_quick_init)

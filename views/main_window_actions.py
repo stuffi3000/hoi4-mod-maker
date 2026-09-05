@@ -33,12 +33,13 @@ class _GenerateThread(QThread):
 
     def __init__(self, tile_map, count, province_map=None, incremental=False,
                  sea_scale=0.15, lake_scale=0.3, density_map=None,
-                 skip_mismatch_clear=False):
+                 skip_mismatch_clear=False, generation_scope="all"):
         super().__init__()
         self._tile_map = tile_map.copy()
         self._count = count
         self._province_map = province_map.copy() if province_map is not None else None
         self._incremental = incremental
+        self._generation_scope = generation_scope
         self._sea_scale = sea_scale
         self._lake_scale = lake_scale
         self._density_map = density_map.copy() if density_map is not None else None
@@ -52,11 +53,36 @@ class _GenerateThread(QThread):
                     self._tile_map, self._province_map,
                     skip_mismatch_clear=self._skip_mismatch_clear,
                 )
+            elif self._generation_scope != "all":
+                from data.constants import TILE_LAKE, TILE_LAND, TILE_SEA
+                from domain.generators.province import generate_provinces_for_type
+
+                type_by_scope = {
+                    "land": TILE_LAND,
+                    "sea": TILE_SEA,
+                    "lake": TILE_LAKE,
+                }
+                tile_type = type_by_scope.get(self._generation_scope)
+                if tile_type is None:
+                    raise ValueError(f"Unknown province generation scope: {self._generation_scope}")
+                existing = (
+                    self._province_map
+                    if self._province_map is not None
+                    else np.zeros_like(self._tile_map, dtype=np.int32)
+                )
+                pm, cnt = generate_provinces_for_type(
+                    self._tile_map,
+                    existing,
+                    tile_type,
+                    self._count,
+                    density_map=self._density_map,
+                )
             else:
                 from domain.generators.province import generate_provinces
                 pm, cnt = generate_provinces(
                     self._tile_map, self._count,
                     sea_scale=self._sea_scale,
+                    lake_scale=self._lake_scale,
                     density_map=self._density_map,
                 )
             self.finished.emit(pm, cnt)
@@ -409,7 +435,23 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
         mask[:] = False
         self._status_info.setText(tr("status_extend_mask_cleared"))
 
-    def _on_generate_provinces(self, count: int) -> None:
+    def _on_generate_provinces(
+        self, scope: str | int = "all", count: int | None = None
+    ) -> None:
+        # Keep the old one-argument call (used by the Tools menu and embedders)
+        # as an alias for generating all province types.
+        if isinstance(scope, int):
+            count = scope
+            scope = "all"
+        scope = str(scope).lower()
+        if scope not in {"all", "land", "sea", "lake"}:
+            QMessageBox.critical(self, tr("dlg_error"), f"Unknown province generation scope: {scope}")
+            return
+        if count is None:
+            from data.constants import DEFAULT_PROVINCES
+            count = DEFAULT_PROVINCES
+        count = max(1, int(count))
+
         incremental = False
         has_provinces = int(self._canvas.province_map.max()) > 0
 
@@ -418,7 +460,7 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
             self._canvas.new_land_mask[:] = False
             self._status_info.setText(tr("status_no_prov_mask_ignored"))
 
-        if has_provinces:
+        if scope == "all" and has_provinces:
             reply = QMessageBox.question(
                 self, tr("dlg_gen_mode_title"),
                 tr("dlg_gen_mode_body"),
@@ -430,15 +472,44 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
                 return
             incremental = (reply == QMessageBox.StandardButton.Yes)
 
-        self._status_info.setText(tr("status_generating_bg"))
+        if scope != "all":
+            from data.constants import TILE_LAKE, TILE_LAND, TILE_SEA
+            scope_tile_type = {
+                "land": TILE_LAND,
+                "sea": TILE_SEA,
+                "lake": TILE_LAKE,
+            }[scope]
+            selected = self._canvas.tile_map == scope_tile_type
+            if not np.any(selected):
+                QMessageBox.information(
+                    self,
+                    tr("province_generation_empty_title"),
+                    tr("province_generation_empty", scope=scope),
+                )
+                return
+            if np.any(selected & (self._canvas.province_map > 0)):
+                reply = QMessageBox.question(
+                    self,
+                    tr("province_generation_scope_confirm_title"),
+                    tr("province_generation_scope_confirm", scope=scope),
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.Yes,
+                )
+                if reply != QMessageBox.StandardButton.Yes:
+                    return
+
+        scope_label = tr(f"province_scope_{scope}")
+        self._status_info.setText(
+            tr("status_generating_scope_bg", scope=scope_label)
+        )
         QApplication.processEvents()
 
-        # 从 Land 页面读取密度参数
+        # Read density parameters from the Provinces page.
         sea_scale = 0.15
         lake_scale = 0.3
         density_map = self._project.map_data.density_map
-        if hasattr(self._tool_panel, '_land_page') and self._tool_panel._land_page is not None:
-            params = self._tool_panel._land_page.get_generation_params()
+        if hasattr(self._tool_panel, '_province_page') and self._tool_panel._province_page is not None:
+            params = self._tool_panel._province_page.get_generation_params()
             sea_scale = params.get("sea_scale", 0.15)
             lake_scale = params.get("lake_scale", 0.3)
 
@@ -453,6 +524,11 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
                 province_map_for_thread[mask] = 0
                 self._canvas.new_land_mask[:] = False
 
+        if scope != "all":
+            # The type-specific generator keeps all other tile types and
+            # allocates new IDs after the preserved map.
+            province_map_for_thread = self._canvas.province_map.copy()
+
         has_new_land_mask = incremental and getattr(self, '_new_land_mask_copy', None) is not None and self._new_land_mask_copy.any()
         self._gen_thread = _GenerateThread(
             self._canvas.tile_map, count,
@@ -462,6 +538,7 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
             lake_scale=lake_scale,
             density_map=density_map,
             skip_mismatch_clear=has_new_land_mask,
+            generation_scope=scope,
         )
         self._gen_thread.finished.connect(self._on_generate_done)
         self._gen_thread.error.connect(self._on_generate_error)
@@ -469,26 +546,30 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
 
     def _on_generate_done(self, province_map, count: int) -> None:
         was_incremental = getattr(self._gen_thread, '_incremental', False)
+        generation_scope = getattr(self._gen_thread, '_generation_scope', 'all')
+        is_partial = generation_scope != "all"
         self._canvas.province_map = province_map
         self._project.mark_dirty()
         self._update_province_count()
 
         # 发事件，级联清理由各 controller 自动处理
         self._event_bus.emit(
-            "province_map_regenerated", incremental=was_incremental,
+            "province_map_regenerated",
+            incremental=was_incremental or is_partial,
+            scope=generation_scope,
         )
 
         # 强制刷新画布（增量模式不切模式，保持新大陆画笔工具状态）
         self._canvas.refresh_display()
 
         # 增量生成后：同步 terrain + 清理被吞省份 + 自动分配 + 清空画笔 mask
-        if was_incremental:
+        if was_incremental or is_partial:
             import numpy as np
             from data.constants import TILE_LAND, TILE_SEA, TILE_LAKE
             from data.terrain_types import TERRAIN_PALETTE_INDEX, DEFAULT_TERRAIN_FOR_TILE
 
             # 同步 terrain_map（用保存的 mask 副本，不依赖 canvas.new_land_mask）
-            saved_mask = getattr(self, '_new_land_mask_copy', None)
+            saved_mask = getattr(self, '_new_land_mask_copy', None) if was_incremental else None
             if saved_mask is not None and saved_mask.any():
                 tm = self._canvas.tile_map
                 terrain_map = self._project.map_data.terrain_map
@@ -501,8 +582,16 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
                 self._new_land_mask_copy = None
 
             consumed = self._cleanup_consumed_provinces(province_map)
-            assigned = self._auto_assign_new_provinces(province_map)
-            msg = tr("status_gen_done").format(count=count)
+            assigned = (
+                self._auto_assign_new_provinces(province_map)
+                if generation_scope in {"all", "land"}
+                else 0
+            )
+            msg = tr(
+                "status_gen_scope_done",
+                scope=tr(f"province_scope_{generation_scope}"),
+                count=count,
+            )
             msg += tr_pair(f" ({assigned} 个新省份已自动分配)", f" ({assigned} new provinces assigned automatically)")
             if consumed:
                 ids_str = ", ".join(str(i) for i in sorted(consumed)[:10])
