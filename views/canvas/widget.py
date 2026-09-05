@@ -134,6 +134,7 @@ class MapCanvas(InputMixin, OverlayMixin, NameLabelsMixin, RefImageMixin, QGraph
         self._current_tile_type = TILE_LAND
         self._current_terrain_index = 0
         self._selected_province_id = 0  # 省份模式下选中的省份ID
+        self._selected_province_ids: set[int] = set()
         self._selected_province_tile = 0  # 选中省份的地块类型（边界编辑时只能影响同类型像素）
         self._has_provinces = False     # 是否有省份数据（避免每笔都扫描整张图）
         self._land_paint_confirmed = False  # 已生成省份后画陆海, 用户是否已确认过
@@ -378,6 +379,9 @@ class MapCanvas(InputMixin, OverlayMixin, NameLabelsMixin, RefImageMixin, QGraph
         self._height_map = map_data.height_map
         self._river_map = map_data.river_map
         self._has_provinces = int(self._province_map.max()) > 0
+        self._selected_province_id = 0
+        self._selected_province_ids.clear()
+        self._selected_province_tile = 0
         self._land_paint_confirmed = False  # 新数据 → 画陆海重新确认
         # 清除所有缓存
         self._border_cache = None
@@ -468,9 +472,38 @@ class MapCanvas(InputMixin, OverlayMixin, NameLabelsMixin, RefImageMixin, QGraph
             return 0
         pid = self._framework_tool.begin_new_province(self._framework_ctx)
         self._selected_province_id = pid
+        self._selected_province_ids = {pid} if pid > 0 else set()
         self._selected_province_tile = 0
         self._render_province_overlay()
         return pid
+
+    def select_province(
+        self, pid: int, tile_type: int | None = None, additive: bool = False
+    ) -> set[int]:
+        """Select a province, optionally adding it to the current selection."""
+        pid = int(pid)
+        if pid <= 0:
+            self._selected_province_id = 0
+            self._selected_province_ids.clear()
+            self._selected_province_tile = 0
+            return set()
+
+        if additive:
+            self._selected_province_ids.add(pid)
+        else:
+            self._selected_province_ids = {pid}
+        self._selected_province_id = pid
+        if tile_type is not None:
+            self._selected_province_tile = int(tile_type)
+        return set(self._selected_province_ids)
+
+    def selected_province_ids(self) -> set[int]:
+        """Return the selection while remaining compatible with legacy setters."""
+        if self._selected_province_id <= 0:
+            self._selected_province_ids.clear()
+        elif self._selected_province_id not in self._selected_province_ids:
+            self._selected_province_ids = {self._selected_province_id}
+        return set(self._selected_province_ids)
 
     def _set_layer(self, attr: str, data: np.ndarray, dtype) -> None:
         """统一的图层替换：写入 MapData，同步本地别名。
@@ -1068,6 +1101,11 @@ class MapCanvas(InputMixin, OverlayMixin, NameLabelsMixin, RefImageMixin, QGraph
             if not sel_existed:
                 # 选中省份被推没了
                 self._selected_province_id = 0
+        self._selected_province_ids = (
+            {self._selected_province_id}
+            if self._selected_province_id > 0
+            else set()
+        )
 
     def center_on_pixel(self, x: int, y: int, zoom: float | None = None) -> None:
         """让画布中心对准地图坐标 (x, y)，可选放大到 zoom 倍。
@@ -1089,6 +1127,7 @@ class MapCanvas(InputMixin, OverlayMixin, NameLabelsMixin, RefImageMixin, QGraph
         cx = int(xs.mean())
         cy = int(ys.mean())
         self._selected_province_id = pid
+        self._selected_province_ids = {pid}
         self._selected_province_tile = int(self._tile_map[cy, cx])
         self._render_province_overlay()
         self.center_on_pixel(cx, cy, zoom=2.0)
@@ -1125,6 +1164,7 @@ class MapCanvas(InputMixin, OverlayMixin, NameLabelsMixin, RefImageMixin, QGraph
         return True
 
     def refresh_display(self) -> None:
+        self._has_provinces = int(self._province_map.max()) > 0
         self._border_cache = None
         if hasattr(self, '_border_base_pixmap'):
             self._border_base_pixmap = None
@@ -1494,6 +1534,7 @@ class MapCanvas(InputMixin, OverlayMixin, NameLabelsMixin, RefImageMixin, QGraph
 
         # 省份选中
         self._selected_province_id = 0
+        self._selected_province_ids.clear()
 
         # lasso / overlay 清理
         self._clear_lasso_visual()

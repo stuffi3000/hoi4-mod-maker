@@ -107,6 +107,7 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
         self._context_menu = ProvinceContextMenu(
             self._project, self._controllers, self._canvas,
             open_state_detail=self._on_state_detail_requested,
+            delete_provinces=self._on_delete_provinces_requested,
         )
 
         # 启动时显示欢迎页
@@ -725,6 +726,12 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
                     pid, info["ptype"], info["terrain"],
                     info["pixels"], info["coastal"],
                 )
+                if self._canvas.display_mode == "province":
+                    selected_count = len(self._canvas.selected_province_ids())
+                    if selected_count > 1:
+                        self._status_info.setText(
+                            tr("context_provinces_selected", selected_count)
+                        )
         except Exception as e:
             self._status_info.setText(tr("status_operation_error").format(err=e))
             import traceback
@@ -740,6 +747,33 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
         if pid <= 0:
             return
         self._context_menu.show(pid, QPoint(screen_x, screen_y))
+
+    def _on_delete_provinces_requested(self, province_ids: set[int]) -> None:
+        """Confirm and delete the current province selection."""
+        pids = sorted(int(pid) for pid in province_ids if int(pid) > 0)
+        if not pids:
+            return
+        count = len(pids)
+        answer = QMessageBox.question(
+            self,
+            tr("context_delete_title"),
+            tr("context_delete_confirm", n=count),
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if answer != QMessageBox.Yes:
+            return
+
+        deleted = self._controllers["province"].delete_provinces(pids)
+        if not deleted:
+            return
+        self._canvas.select_province(0)
+        self._canvas.refresh_display()
+        self._tool_panel._province_page.update_manual_target(0)
+        self._update_province_count()
+        self._status_info.setText(
+            tr("context_delete_done", n=len(deleted))
+        )
 
     def _on_provinces_cleared(self) -> None:
         self._update_province_count()
@@ -864,8 +898,9 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
         cy = int(ys.mean())
         self._canvas.centerOn(float(cx), float(cy))
         # 复用省份模式的"选中"渲染做高亮
-        self._canvas._selected_province_id = pid
-        self._canvas._selected_province_tile = int(self._canvas._tile_map[cy, cx])
+        self._canvas.select_province(
+            pid, int(self._canvas._tile_map[cy, cx]), additive=False
+        )
         self._canvas._render_province_overlay()
         # 通过 province controller 触发信息更新（让信息条/统计自动刷新）
         pctrl = self._controllers.get("province")

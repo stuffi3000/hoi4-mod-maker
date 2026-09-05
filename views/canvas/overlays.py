@@ -61,9 +61,10 @@ class OverlayMixin:
         result = QPixmap(self._border_base_pixmap)
 
         # 高亮选中省份（用 QPainter 画黄色边框，不操作 numpy 数组）
-        sel = self._selected_province_id
-        if sel > 0:
-            ys, xs = np.where(self._province_map == sel)
+        selected = self.selected_province_ids()
+        if selected:
+            selected_mask = np.isin(self._province_map, tuple(sorted(selected)))
+            ys, xs = np.where(selected_mask)
             if len(ys) > 0:
                 y0 = max(0, int(ys.min()) - 1)
                 y1 = min(self.map_h, int(ys.max()) + 2)
@@ -72,12 +73,12 @@ class OverlayMixin:
 
                 # 在小区域内算高亮边界
                 sub = self._province_map[y0:y1, x0:x1]
-                sel_mask = sub == sel
+                sel_mask = selected_mask[y0:y1, x0:x1]
                 sel_border = np.zeros_like(sel_mask)
-                sel_border[:-1, :] |= sel_mask[:-1, :] != sel_mask[1:, :]
-                sel_border[1:, :]  |= sel_mask[:-1, :] != sel_mask[1:, :]
-                sel_border[:, :-1] |= sel_mask[:, :-1] != sel_mask[:, 1:]
-                sel_border[:, 1:]  |= sel_mask[:, :-1] != sel_mask[:, 1:]
+                sel_border[:-1, :] |= sel_mask[:-1, :] & ~sel_mask[1:, :]
+                sel_border[1:, :]  |= sel_mask[1:, :] & ~sel_mask[:-1, :]
+                sel_border[:, :-1] |= sel_mask[:, :-1] & ~sel_mask[:, 1:]
+                sel_border[:, 1:]  |= sel_mask[:, 1:] & ~sel_mask[:, :-1]
 
                 # 画黄色高亮到小区域
                 h_rgba = np.zeros((y1 - y0, x1 - x0, 4), dtype=np.uint8)

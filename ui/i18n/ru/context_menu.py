@@ -15,4 +15,9 @@ STRINGS: dict[str, str] = {
     "context_set_vp_title": "Установить очко победы",
     "context_unassigned_state": "(Регион не назначен)",
     "context_edit_state_detail": "Редактировать регион (ресурсы / здания)...",
+    "context_provinces_selected": "Выбрано провинций: {}",
+    "context_delete_provinces": "Удалить выбранные провинции ({n})",
+    "context_delete_title": "Удалить провинции",
+    "context_delete_confirm": "Удалить {n} выбранных провинций? Их пиксели станут неназначенными, и их можно будет нарисовать заново. Это действие можно отменить.",
+    "context_delete_done": "Удалено провинций: {n}",
 }

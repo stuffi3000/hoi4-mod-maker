@@ -11,6 +11,7 @@ import numpy as np
 from controllers.base import BaseController
 from commands.province.merge import MergeProvincesCommand
 from commands.province.split import SplitProvinceCommand
+from commands.province.delete import DeleteProvincesCommand
 
 if TYPE_CHECKING:
     from model.project import Project
@@ -71,6 +72,32 @@ class ProvinceController(BaseController):
             self._emit_status("扩张模式：点击省份后拖动扩张", "Expand mode: click a province, then drag to expand it")
         else:
             self._emit_status("回到查看模式", "Back to view mode")
+
+    def delete_provinces(self, province_ids) -> set[int]:
+        """Delete existing province IDs and all references as one undo step."""
+        province_map = self.project.map_data.province_map
+        requested = {int(pid) for pid in province_ids if int(pid) > 0}
+        existing = set(int(pid) for pid in np.unique(province_map)) - {0}
+        selected = requested & existing
+        if not selected:
+            return set()
+
+        cmd = DeleteProvincesCommand(self.project, selected)
+        self.history.execute(cmd)
+        self.project.mark_dirty()
+
+        max_id = int(province_map.max())
+        remaining = set(int(pid) for pid in np.unique(province_map)) - {0}
+        gaps = sorted(set(range(1, max_id + 1)) - remaining)
+        self.event_bus.emit("province_count_changed", count=max_id)
+        self.event_bus.emit("province_gaps_changed", gap_ids=gaps)
+        self.event_bus.emit("state_changed", state_id=0, action="refresh")
+        self.event_bus.emit("country_changed", tag="", action="refresh")
+        self.event_bus.emit("continent_changed", action="refresh")
+        self.event_bus.emit("sr_colors_dirty")
+        self.event_bus.emit("railway_changed")
+        self._emit_render(full=True)
+        return selected
 
     def split_selected(self, axis: str = "horizontal") -> bool:
         """切割当前选中的省份。

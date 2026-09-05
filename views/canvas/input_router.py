@@ -259,8 +259,15 @@ class InputMixin:
                 if 0 <= sx < self.map_w and 0 <= sy < self.map_h:
                     pid = int(self._province_map[int(sy), int(sx)])
                     if pid > 0:
-                        self._selected_province_id = pid
-                        self._selected_province_tile = int(self._tile_map[int(sy), int(sx)])
+                        additive = bool(
+                            event.modifiers()
+                            & (Qt.ControlModifier | Qt.ShiftModifier)
+                        )
+                        self.select_province(
+                            pid,
+                            int(self._tile_map[int(sy), int(sx)]),
+                            additive=additive,
+                        )
                         self.province_clicked.emit(pid)
                         self._render_province_overlay()
                 event.accept()
@@ -590,10 +597,12 @@ class InputMixin:
                     self._framework_tool.run_cleanup(self._framework_ctx)
                     self._framework_tool.end_undo(self._framework_ctx)
                     # 同步选中状态到 canvas
-                    self._selected_province_id = self._framework_ctx.selected_province_id
                     selected_tile = self._framework_ctx.state.get("tile")
-                    if selected_tile is not None:
-                        self._selected_province_tile = int(selected_tile)
+                    self.select_province(
+                        self._framework_ctx.selected_province_id,
+                        int(selected_tile) if selected_tile is not None else None,
+                        additive=False,
+                    )
                     # overlay 跟随：还有 pid 就保留显示，否则清掉
                     if self._framework_ctx.state.get("allowed_mask") is not None:
                         self._show_expand_overlay()
@@ -662,6 +671,13 @@ class InputMixin:
         if 0 <= sx < self.map_w and 0 <= sy < self.map_h:
             pid = int(self._province_map[sy, sx])
             if pid > 0:
+                if self._display_mode == "province":
+                    selected = self.selected_province_ids()
+                    if pid not in selected:
+                        self.select_province(
+                            pid, int(self._tile_map[sy, sx]), additive=False
+                        )
+                        self._render_province_overlay()
                 self.province_right_clicked.emit(pid)
                 # 传递屏幕坐标，供弹出菜单定位
                 global_pos = self.mapToGlobal(event.pos())

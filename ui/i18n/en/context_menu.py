@@ -17,4 +17,9 @@ STRINGS: dict[str, str] = {
     "context_set_vp_title": "Set Victory Point",
     "context_unassigned_state": "(Unassigned State)",
     "context_edit_state_detail": "Edit state details (resources / buildings)...",
+    "context_provinces_selected": "{} Provinces Selected",
+    "context_delete_provinces": "Delete Selected Province(s) ({n})",
+    "context_delete_title": "Delete Provinces",
+    "context_delete_confirm": "Delete {n} selected province(s)? Their pixels will become unassigned and can be redrawn. This action can be undone.",
+    "context_delete_done": "Deleted {n} province(s)",
 }

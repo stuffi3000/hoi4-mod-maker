@@ -28,12 +28,14 @@ class ProvinceContextMenu:
         controllers: dict[str, object],
         canvas: "MapCanvas",
         open_state_detail=None,
+        delete_provinces=None,
     ) -> None:
         self._project = project
         self._controllers = controllers
         self._canvas = canvas
         # 回调: (state_id) → 打开州详情对话框 (资源/建筑), 由 MainWindow 注入
         self._open_state_detail = open_state_detail
+        self._delete_provinces = delete_provinces
 
     def show(self, pid: int, screen_pos: QPoint) -> None:
         """在指定屏幕位置弹出菜单。"""
@@ -43,7 +45,21 @@ class ProvinceContextMenu:
         menu = QMenu()
 
         # ── 省份信息 ──
-        info_action = menu.addAction(tr("context_province_info", pid))
+        selected_pids = (
+            self._canvas.selected_province_ids()
+            if self._canvas.display_mode == "province"
+            else {pid}
+        )
+        if pid not in selected_pids:
+            selected_pids = {pid}
+
+        info_key = (
+            "context_provinces_selected"
+            if len(selected_pids) > 1
+            else "context_province_info"
+        )
+        info_value = len(selected_pids) if len(selected_pids) > 1 else pid
+        info_action = menu.addAction(tr(info_key, info_value))
         info_action.setEnabled(False)
         menu.addSeparator()
 
@@ -85,6 +101,13 @@ class ProvinceContextMenu:
         menu.addSeparator()
         copy_action = menu.addAction(tr("context_copy_province_id"))
 
+        delete_action = None
+        if self._canvas.display_mode == "province" and self._delete_provinces:
+            menu.addSeparator()
+            delete_action = menu.addAction(
+                tr("context_delete_provinces", n=len(selected_pids))
+            )
+
         # ── 执行 ──
         chosen = menu.exec_(screen_pos)
         if chosen is None:
@@ -93,6 +116,7 @@ class ProvinceContextMenu:
         self._handle_action(
             chosen, pid, terrain_actions, vp_action, capital_action,
             copy_action, detail_action, state_id,
+            delete_action, selected_pids,
         )
 
     def _handle_action(
@@ -105,6 +129,8 @@ class ProvinceContextMenu:
         copy_action: object | None,
         detail_action: object | None = None,
         state_id: int = 0,
+        delete_action: object | None = None,
+        selected_pids: set[int] | None = None,
     ) -> None:
         # 州详情 (资源/建筑)
         if action is detail_action and detail_action is not None:
@@ -133,6 +159,11 @@ class ProvinceContextMenu:
             clipboard = QApplication.clipboard()
             if clipboard is not None:
                 clipboard.setText(str(pid))
+            return
+
+        if action is delete_action and delete_action is not None:
+            if self._delete_provinces is not None:
+                self._delete_provinces(set(selected_pids or {pid}))
             return
 
     def _set_terrain(self, pid: int, palette_idx: int) -> None:

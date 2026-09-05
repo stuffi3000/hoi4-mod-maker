@@ -17,4 +17,9 @@ STRINGS: dict[str, str] = {
 (1=小镇, 5=中等, 10=城市, 20=首都):""",
     "context_set_vp_title": "设置胜利点",
     "context_unassigned_state": "(未分配 State)",
+    "context_provinces_selected": "已选择 {} 个省份",
+    "context_delete_provinces": "删除已选省份 ({n})",
+    "context_delete_title": "删除省份",
+    "context_delete_confirm": "删除已选择的 {n} 个省份？它们的像素将变为未分配，可以重新绘制。此操作可撤销。",
+    "context_delete_done": "已删除 {n} 个省份",
 }
