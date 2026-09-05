@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QColor, QPixmap
+from PyQt5.QtGui import QColor, QPalette, QPixmap
 from PyQt5.QtWidgets import (
     QAbstractItemView,
     QDialog,
@@ -155,6 +155,57 @@ class ReferenceColorMappingDialog(QDialog):
         table.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
         table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         table.setAlternatingRowColors(True)
+        # Keep the palette table readable when the global theme supplies a
+        # light alternate-row background.  Explicit item/header colors avoid
+        # white text disappearing on white rows in qdarktheme and native Qt
+        # styles alike.
+        table.setStyleSheet(
+            """
+            QTableWidget {
+                background-color: #151a21;
+                alternate-background-color: #222a35;
+                color: #f3f6fa;
+                gridline-color: #3c4654;
+                border: 1px solid #3c4654;
+                selection-background-color: #365f8a;
+                selection-color: #ffffff;
+            }
+            QTableWidget::item {
+                background-color: #151a21;
+                color: #f3f6fa;
+                padding: 4px 6px;
+            }
+            QTableWidget::item:alternate {
+                background-color: #222a35;
+                color: #f3f6fa;
+            }
+            QTableWidget::item:hover {
+                background-color: #2b3b50;
+                color: #ffffff;
+            }
+            QHeaderView::section {
+                background-color: #303a49;
+                color: #ffffff;
+                border: 1px solid #465160;
+                padding: 6px;
+                font-weight: 600;
+            }
+            QTableCornerButton::section {
+                background-color: #303a49;
+                border: 1px solid #465160;
+            }
+            """
+        )
+        palette = table.palette()
+        palette.setColor(QPalette.Base, QColor("#151a21"))
+        palette.setColor(QPalette.AlternateBase, QColor("#222a35"))
+        palette.setColor(QPalette.Text, QColor("#f3f6fa"))
+        palette.setColor(QPalette.WindowText, QColor("#f3f6fa"))
+        palette.setColor(QPalette.Highlight, QColor("#365f8a"))
+        palette.setColor(QPalette.HighlightedText, QColor("#ffffff"))
+        palette.setColor(QPalette.Button, QColor("#303a49"))
+        palette.setColor(QPalette.ButtonText, QColor("#ffffff"))
+        table.setPalette(palette)
         table.verticalHeader().setVisible(False)
         table.horizontalHeader().setStretchLastSection(True)
         table.setColumnWidth(0, 270)
