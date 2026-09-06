@@ -12,6 +12,13 @@ import re
 from collections import Counter
 
 
+_VALID_STATE_CATEGORIES = frozenset({
+    "wasteland", "enclave", "tiny_island", "small_island", "large_island",
+    "pastoral", "rural", "town", "large_town", "city", "large_city",
+    "metropolis", "megalopolis",
+})
+
+
 class ModVerifier:
     """逐文件检查 HOI4 MOD 输出，报告所有发现的问题"""
 
@@ -80,6 +87,19 @@ class ModVerifier:
 
     def _exists(self, *parts):
         return os.path.exists(self._path(*parts))
+
+    def _replaces_path(self, relative_path: str) -> bool:
+        """Return whether the internal descriptor replaces *relative_path*."""
+        descriptor = self._path("descriptor.mod")
+        if not os.path.isfile(descriptor):
+            return False
+        try:
+            with open(descriptor, "r", encoding="utf-8-sig", errors="replace") as file:
+                content = file.read()
+        except OSError:
+            return False
+        pattern = rf'^\s*replace_path\s*=\s*"{re.escape(relative_path)}"'
+        return re.search(pattern, content, re.MULTILINE) is not None
 
     # ──────────────── 检查项 ────────────────
 
@@ -183,6 +203,9 @@ class ModVerifier:
         valid_types = {"land", "sea", "lake"}
         self._province_ids = set()
         self._land_province_ids = set()
+        self._sea_province_ids = set()
+        self._coastal_province_ids = set()
+        self._province_color_to_id = {}
 
         for i, line in enumerate(lines):
             line = line.rstrip("\n")
@@ -205,6 +228,10 @@ class ModVerifier:
                 self._province_ids.add(pid)
                 if ptype == "land":
                     self._land_province_ids.add(pid)
+                    if parts[5].strip().lower() == "true":
+                        self._coastal_province_ids.add(pid)
+                elif ptype == "sea":
+                    self._sea_province_ids.add(pid)
 
                 color = (r, g, b)
                 if color == (0, 0, 0):
@@ -212,9 +239,12 @@ class ModVerifier:
                 if color in seen_colors:
                     self.errors.append(f"definition.csv province {pid}: color {color} duplicates another province")
                 seen_colors.add(color)
+                self._province_color_to_id[color] = pid
 
             if ptype not in valid_types:
                 self.warnings.append(f"definition.csv province {pid}: type='{ptype}' is non-standard")
+            elif ptype != "land" and parts[5].strip().lower() == "true":
+                self.errors.append(f"definition.csv province {pid}: only land provinces may be coastal")
 
         self._log(f"    → {len(self._province_ids)} provinces ({len(self._land_province_ids)} land)")
 
@@ -323,6 +353,12 @@ class ModVerifier:
             if id_match:
                 self._state_ids.add(int(id_match.group(1)))
 
+            category_match = re.search(r'state_category\s*=\s*(\S+)', content)
+            if category_match and category_match.group(1) not in _VALID_STATE_CATEGORIES:
+                self.errors.append(
+                    f"{fn}: undefined state_category '{category_match.group(1)}'"
+                )
+
             # 提取省份列表
             prov_match = re.search(r'provinces\s*=\s*\{([^}]+)\}', content)
             if prov_match:
@@ -334,6 +370,22 @@ class ModVerifier:
                     self._state_provinces.add(p)
                 if id_match:
                     self._state_prov_lists[int(id_match.group(1))] = provs
+
+            # A provincial naval base or coastal bunker on an inland province
+            # is rejected by map loading.  definition.csv has already been
+            # parsed, so the coastal set is available here.
+            for building_match in re.finditer(
+                r'^\s*(\d+)\s*=\s*\{([^{}]*)\}', content,
+                re.MULTILINE | re.DOTALL,
+            ):
+                province_id = int(building_match.group(1))
+                block = building_match.group(2)
+                if ("naval_base" in block or "coastal_bunker" in block) and (
+                    province_id not in getattr(self, "_coastal_province_ids", set())
+                ):
+                    self.errors.append(
+                        f"{fn}: province {province_id} has a naval/coastal building but is not coastal"
+                    )
 
             # 检查 owner
             if "owner" not in content:
@@ -406,6 +458,96 @@ class ModVerifier:
             else:
                 self.errors.append(f"Missing map/{fname}")
 
+        self._check_coastal_port_spawns()
+
+    def _check_coastal_port_spawns(self):
+        """Ensure each definition.csv coastal province has a valid port spawn.
+
+        HOI4 discovers coastlines while loading the province map.  A province
+        marked coastal without a matching ``naval_base_spawn`` is a known
+        startup-crash condition, so this is deliberately an error rather than
+        a cosmetic warning.
+        """
+        coastal = getattr(self, "_coastal_province_ids", set())
+        if not coastal:
+            return
+
+        path = self._path("map", "buildings.txt")
+        bmp_path = self._path("map", "provinces.bmp")
+        if not os.path.isfile(path) or not os.path.isfile(bmp_path):
+            return
+
+        try:
+            with open(path, "r", encoding="utf-8-sig", errors="replace") as port_file:
+                port_lines = port_file.readlines()
+            with open(bmp_path, "rb") as bmp:
+                if bmp.read(2) != b"BM":
+                    return
+                bmp.seek(10)
+                offset = struct.unpack("<I", bmp.read(4))[0]
+                bmp.seek(18)
+                width = struct.unpack("<i", bmp.read(4))[0]
+                height = abs(struct.unpack("<i", bmp.read(4))[0])
+                row_bytes = width * 3
+                row_stride = row_bytes + ((4 - row_bytes % 4) % 4)
+
+                port_provinces: set[int] = set()
+                for line_number, line in enumerate(port_lines, start=1):
+                    parts = line.strip().split(";")
+                    if len(parts) < 7 or parts[1] != "naval_base_spawn":
+                        continue
+                    try:
+                        x = float(parts[2])
+                        z = float(parts[4])
+                        sea_id = int(parts[6])
+                        pixel_x = int(x)
+                        pixel_y = height - 1 - int(z)
+                    except ValueError:
+                        self.errors.append(
+                            f"map/buildings.txt line {line_number}: malformed naval_base_spawn"
+                        )
+                        continue
+                    if not (0 <= pixel_x < width and 0 <= pixel_y < height):
+                        self.errors.append(
+                            f"map/buildings.txt line {line_number}: naval_base_spawn is outside the map"
+                        )
+                        continue
+                    bmp.seek(offset + (height - 1 - pixel_y) * row_stride + pixel_x * 3)
+                    bgr = bmp.read(3)
+                    if len(bgr) != 3:
+                        self.errors.append(
+                            f"map/buildings.txt line {line_number}: cannot read port province pixel"
+                        )
+                        continue
+                    province_id = getattr(self, "_province_color_to_id", {}).get(
+                        (bgr[2], bgr[1], bgr[0])
+                    )
+                    if province_id is None:
+                        self.errors.append(
+                            f"map/buildings.txt line {line_number}: port is not over a defined province"
+                        )
+                        continue
+                    if province_id not in coastal:
+                        self.errors.append(
+                            f"map/buildings.txt line {line_number}: port province {province_id} is not coastal"
+                        )
+                    else:
+                        port_provinces.add(province_id)
+                    if sea_id not in getattr(self, "_sea_province_ids", set()):
+                        self.errors.append(
+                            f"map/buildings.txt line {line_number}: port sea province {sea_id} is not sea"
+                        )
+        except OSError as exc:
+            self.errors.append(f"Could not validate naval_base_spawn entries: {exc}")
+            return
+
+        missing = coastal - port_provinces
+        if missing:
+            sample = sorted(missing)[:10]
+            self.errors.append(
+                f"{len(missing)} coastal provinces have no naval_base_spawn: {sample}"
+            )
+
     def _check_countries(self):
         """检查国家文件"""
         self._log("[11/16] Checking countries...")
@@ -451,7 +593,8 @@ class ModVerifier:
         self._log("[12/16] Checking ideologies...")
         path = self._path("common", "ideologies", "00_ideologies.txt")
         if not os.path.exists(path):
-            self.warnings.append("Missing ideology file (the game will crash if common/ideologies is replaced)")
+            if self._replaces_path("common/ideologies"):
+                self.warnings.append("Missing ideology file (the game will crash if common/ideologies is replaced)")
             return
 
         with open(path, "r", encoding="utf-8-sig", errors="replace") as f:
@@ -470,7 +613,8 @@ class ModVerifier:
         self._log("[13/16] Checking state categories...")
         sc_dir = self._path("common", "state_category")
         if not os.path.isdir(sc_dir):
-            self.warnings.append("Missing common/state_category/ (the game will crash if this path is replaced)")
+            if self._replaces_path("common/state_category"):
+                self.warnings.append("Missing common/state_category/ (the game will crash if this path is replaced)")
             return
 
         files = [f for f in os.listdir(sc_dir) if f.endswith(".txt")]

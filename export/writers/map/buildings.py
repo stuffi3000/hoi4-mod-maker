@@ -78,7 +78,10 @@ def write_buildings(states, province_map, tile_map, output_dir, sea_ids=None,
                 iy, ix = int(round(cy_p)), int(round(cx_p))
                 # 严格校验坐标落在 LAND 像素上 (避免 mapbuildings.cpp:679 not over land)
                 if 0 <= iy < map_h and 0 <= ix < map_w and tile_map[iy, ix] == TILE_LAND:
-                    valid_centroids.append((cx_p, cy_p))
+                    # Write the centre of the validated pixel, not a floating
+                    # centroid near a pixel edge.  The engine floors building
+                    # coordinates when it checks the terrain below them.
+                    valid_centroids.append((ix + 0.5, iy + 0.5))
 
         # 没有合法 land 中心: 退回到老逻辑 (provs[0] 中心, 不分散但保证有坐标)
         if not valid_centroids:
@@ -86,7 +89,13 @@ def write_buildings(states, province_map, tile_map, output_dir, sea_ids=None,
             if pid >= n or pid_count[pid] == 0:
                 continue
             cx, cy = _safe_coord(pid, province_map, pid_count, sum_x, sum_y)
-            valid_centroids = [(cx, cy)]
+            iy, ix = int(round(cy)), int(round(cx))
+            if not (0 <= iy < map_h and 0 <= ix < map_w and tile_map[iy, ix] == TILE_LAND):
+                ys, xs = np.where((province_map == pid) & (tile_map == TILE_LAND))
+                if len(ys) == 0:
+                    continue
+                iy, ix = int(ys[0]), int(xs[0])
+            valid_centroids = [(ix + 0.5, iy + 0.5)]
 
         btypes = list(REQUIRED_STATE_ENTITIES)
         if sid in coastal_states:
@@ -170,4 +179,3 @@ def write_empty_unitstacks(output_dir):
         f.write('types_source = "map/cities.bmp"\n')
         f.write("pixel_step_x = 2\n")
         f.write("pixel_step_y = 2\n")
-

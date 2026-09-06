@@ -9,6 +9,7 @@ from __future__ import annotations
 import numpy as np
 from dataclasses import dataclass, field
 
+from domain.managers.state import normalize_state_category
 from ui.i18n import get_language, tr_pair
 
 
@@ -488,11 +489,16 @@ def fill_default_state_data(
         # 确定主要地形
         dominant = max(terrain_counts, key=terrain_counts.get) if terrain_counts else "plains"
 
+        # Normalize legacy editor aliases before deriving export defaults.
+        # HOI4 does not define ``tiny``/``small`` state categories; the
+        # equivalent vanilla keys are ``pastoral``/``rural``.
+        state.category = normalize_state_category(state.category)
+
         # 基于 state_category 设置基础设施
         cat_infra = {
-            "wasteland": 0, "pastoral": 1, "tiny": 1, "small": 1,
+            "wasteland": 0, "pastoral": 1, "rural": 1,
             "town": 2, "large_town": 2, "city": 3,
-            "large_city": 4, "megalopolis": 5,
+            "large_city": 4, "metropolis": 5, "megalopolis": 5,
         }
 
         # ── 填充资源 ──
@@ -535,9 +541,9 @@ def fill_default_state_data(
             province_count = len(state.provinces)
             base = province_count * 50000
             cat_multiplier = {
-                "wasteland": 0, "pastoral": 0.5, "tiny": 0.8, "small": 1.0,
+                "wasteland": 0, "pastoral": 0.5, "rural": 1.0,
                 "town": 1.5, "large_town": 2.0, "city": 3.0,
-                "large_city": 5.0, "megalopolis": 10.0,
+                "large_city": 5.0, "metropolis": 7.0, "megalopolis": 10.0,
             }
             state.manpower = int(base * cat_multiplier.get(state.category, 1.0))
 

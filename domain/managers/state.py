@@ -7,6 +7,45 @@ from scipy.ndimage import label
 from data.constants import MAP_WIDTH, MAP_HEIGHT, TILE_LAND
 
 
+# These are the state-category identifiers shipped by current HOI4 versions.
+# ``tiny`` and ``small`` were used by an older editor preset, but are not
+# valid game identifiers (the corresponding vanilla categories are
+# ``pastoral`` and ``rural``).  Keep aliases so existing projects load safely.
+VALID_STATE_CATEGORIES = frozenset({
+    "wasteland",
+    "enclave",
+    "tiny_island",
+    "small_island",
+    "large_island",
+    "pastoral",
+    "rural",
+    "town",
+    "large_town",
+    "city",
+    "large_city",
+    "metropolis",
+    "megalopolis",
+})
+
+STATE_CATEGORY_ALIASES = {
+    "tiny": "pastoral",
+    "small": "rural",
+}
+
+
+def normalize_state_category(category: str) -> str:
+    """Return a vanilla state-category key suitable for a history file.
+
+    Projects created by older releases may still contain the retired editor
+    aliases ``tiny`` and ``small``.  Unknown values intentionally fall back
+    to ``rural`` rather than producing an invalid ``state_category`` that
+    leaves the game without building-slot data.
+    """
+    value = str(category or "").strip().lower()
+    value = STATE_CATEGORY_ALIASES.get(value, value)
+    return value if value in VALID_STATE_CATEGORIES else "rural"
+
+
 @dataclass
 class StateData:
     """一个 State 的数据"""
@@ -15,7 +54,7 @@ class StateData:
     name_en: str = ""                   # 可选英文名 — 导出到 english yml；空则用 "State {id}"
     provinces: list[int] = field(default_factory=list)
     manpower: int = 100000
-    category: str = "town"  # wasteland/pastoral/tiny/small/town/large_town/city/large_city/megalopolis
+    category: str = "town"
     owner_tag: str = ""
     victory_points: dict[int, int] = field(default_factory=dict)  # {province_id: vp_value}
     vp_names: dict[int, str] = field(default_factory=dict)  # {province_id: city_name 主显示名}
@@ -42,6 +81,7 @@ class StateData:
     def __post_init__(self):
         if not self.name:
             self.name = f"STATE_{self.id}"
+        self.category = normalize_state_category(self.category)
 
 
 class StateManager:
@@ -49,8 +89,9 @@ class StateManager:
 
     # State 类别选项
     CATEGORIES = [
-        "wasteland", "pastoral", "tiny", "small", "town",
-        "large_town", "city", "large_city", "megalopolis",
+        "wasteland", "enclave", "tiny_island", "small_island",
+        "large_island", "pastoral", "rural", "town", "large_town",
+        "city", "large_city", "metropolis", "megalopolis",
     ]
 
     def __init__(self):

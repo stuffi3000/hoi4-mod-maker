@@ -1198,13 +1198,13 @@ def _state_category(manpower: int, largest_city: int) -> str:
     if manpower >= 50_000:
         return "town"
     if manpower >= 20_000:
-        return "small"
-    return "tiny"
+        return "rural"
+    return "pastoral"
 
 
 def _state_buildings(manpower: int, largest_city: int, coastal: bool, city_pid: int | None) -> tuple[dict[str, int], dict[int, dict[str, int]]]:
     category_infrastructure = {
-        "tiny": 1, "small": 1, "town": 2, "large_town": 2,
+        "pastoral": 1, "rural": 1, "town": 2, "large_town": 2,
         "city": 3, "large_city": 4, "megalopolis": 5,
     }
     category = _state_category(manpower, largest_city)

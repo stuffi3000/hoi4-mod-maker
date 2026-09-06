@@ -197,6 +197,22 @@ def is_vanilla_tag(tag: str) -> bool:
 # 只替换我们实际提供内容的目录，避免清空引擎必需文件导致崩溃
 # 未替换的目录会使用原版内容（bookmarks、game_rules、modifiers 等）
 REPLACE_PATHS = [
+    # The exporter produces complete replacements only for these map and
+    # history directories.  Keeping the remaining vanilla systems intact is
+    # essential: an incomplete replace_path can remove definitions that the
+    # engine expects during startup.
+    "map/strategicregions",
+    "map/supplyareas",
+    "history/states",
+    "history/countries",
+    "history/units",
+]
+
+# Retained historical notes about the old total-conversion experiment.  They
+# are deliberately not part of REPLACE_PATHS: the exporter does not ship a
+# complete replacement for those directories.
+_LEGACY_REPLACE_PATH_NOTES = r"""
+REPLACE_PATHS = [
     # ════════════════════════════════════════════════════════════
     # 最小集合 — 只替换"我们必须自己定义"的目录
     # 其他全部保留 vanilla（包括 ideas/scripted_effects/decisions 等）
@@ -339,3 +355,4 @@ REPLACE_PATHS = [
     # events                       → 引用原版国家但不崩溃
     # ...以及所有 vanilla 的音乐/UI/脚本/music 等
 ]
+"""

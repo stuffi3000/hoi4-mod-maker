@@ -294,6 +294,13 @@ def detect_coastal_mismatch(
     # 右方
     coastal_right = land_mask[:, :-1] & sea_mask[:, 1:]
 
+    # HOI4's world map wraps horizontally, so x=0 and x=width-1 are also
+    # adjacent.  Treat this seam exactly like the ordinary four-neighbour
+    # checks; otherwise definition.csv and buildings.txt disagree at the map
+    # edge and the game can crash while loading the map.
+    coastal_wrap_left = land_mask[:, 0] & sea_mask[:, -1]
+    coastal_wrap_right = land_mask[:, -1] & sea_mask[:, 0]
+
     # 收集沿海陆地像素对应的省份ID
     if np.any(coastal_up):
         ys, xs = np.where(coastal_up)
@@ -316,6 +323,16 @@ def detect_coastal_mismatch(
     if np.any(coastal_right):
         ys, xs = np.where(coastal_right)
         for pid in np.unique(province_map[ys, xs]):
+            if pid > 0:
+                coastal_provinces.add(int(pid))
+
+    if np.any(coastal_wrap_left):
+        for pid in np.unique(province_map[np.where(coastal_wrap_left)[0], 0]):
+            if pid > 0:
+                coastal_provinces.add(int(pid))
+
+    if np.any(coastal_wrap_right):
+        for pid in np.unique(province_map[np.where(coastal_wrap_right)[0], -1]):
             if pid > 0:
                 coastal_provinces.add(int(pid))
 
@@ -373,6 +390,29 @@ def build_coastal_land_to_sea(
         ys, xs = np.where(m_right)
         lp = province_map[ys, xs]
         sp = province_map[ys, xs + 1]
+        for i in range(len(lp)):
+            pid = int(lp[i])
+            if pid > 0 and pid not in out:
+                out[pid] = int(sp[i])
+
+    # The world wraps horizontally: land at either bitmap edge is adjacent to
+    # sea at the opposite edge.  Keep this mapping in lock-step with
+    # detect_coastal_mismatch so every coastal province receives a port spawn.
+    m_wrap_left = land_mask[:, 0] & sea_mask[:, -1]
+    if np.any(m_wrap_left):
+        ys = np.where(m_wrap_left)[0]
+        lp = province_map[ys, 0]
+        sp = province_map[ys, -1]
+        for i in range(len(lp)):
+            pid = int(lp[i])
+            if pid > 0 and pid not in out:
+                out[pid] = int(sp[i])
+
+    m_wrap_right = land_mask[:, -1] & sea_mask[:, 0]
+    if np.any(m_wrap_right):
+        ys = np.where(m_wrap_right)[0]
+        lp = province_map[ys, -1]
+        sp = province_map[ys, 0]
         for i in range(len(lp)):
             pid = int(lp[i])
             if pid > 0 and pid not in out:

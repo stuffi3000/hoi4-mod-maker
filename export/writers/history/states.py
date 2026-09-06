@@ -9,6 +9,7 @@ history/states/ — State 历史文件生成器.
 
 import os
 
+from domain.managers.state import normalize_state_category
 from domain.validators.province import get_coastal_provinces
 
 
@@ -96,6 +97,10 @@ def write_states_from_mgr(
         user_prov_buildings = getattr(state, "province_buildings", {}) or {}
         extra_cores = list(getattr(state, "extra_cores", []) or [])
         claims = list(getattr(state, "claims", []) or [])
+        # Projects written by older editor versions can still contain the
+        # retired ``tiny``/``small`` category aliases.  Never emit an
+        # undefined state category into a history file.
+        category = normalize_state_category(getattr(state, "category", "rural"))
 
         with open(os.path.join(d, f"{sid}-{safe_name}.txt"), "w", encoding="utf-8") as f:
             f.write("state = {\n")
@@ -103,7 +108,7 @@ def write_states_from_mgr(
             # BUG-6: 用 WT_ 前缀避开 vanilla 的 STATE_X 命名空间 (否则 "热那亚→Krakow")
             f.write(f'\tname = "STATE_WT_{sid}"\n')
             f.write(f"\tmanpower = {state.manpower}\n")
-            f.write(f"\tstate_category = {state.category}\n")
+            f.write(f"\tstate_category = {category}\n")
             if impassable:
                 f.write("\timpassable = yes\n")
             if local_supplies > 0:
@@ -127,13 +132,12 @@ def write_states_from_mgr(
             if controller_tag and controller_tag != owner:
                 f.write(f"\t\tcontroller = {controller_tag}\n")
 
-            infra, arms, indu, dock, air = _CAT_BUILDINGS.get(
-                state.category, (2, 1, 1, 0, 0)
-            )
+            infra, arms, indu, dock, air = _CAT_BUILDINGS[category]
             state_coastal_provs = [p for p in land_provs if p in coastal_set]
+            state_coastal_set = set(state_coastal_provs)
             is_coastal_state = bool(state_coastal_provs)
             if is_coastal_state:
-                dock = max(dock, _COASTAL_DOCKYARDS.get(state.category, 1))
+                dock = max(dock, _COASTAL_DOCKYARDS.get(category, 1))
 
             final_buildings: dict[str, int] = {
                 "infrastructure": max(infra, 1),
@@ -148,12 +152,16 @@ def write_states_from_mgr(
                 final_buildings["air_base"] = air
             for bname, bval in user_buildings.items():
                 bv = int(bval or 0)
+                # These state buildings are valid only in a coastal state.
+                # Do not let stale editor data create an inland naval base.
+                if bname in {"dockyard", "coastal_bunker"} and not is_coastal_state:
+                    continue
                 if bv > 0:
                     final_buildings[bname] = bv
                 elif bname in final_buildings:
                     final_buildings.pop(bname)
 
-            if impassable or state.category == "wasteland":
+            if impassable or category == "wasteland":
                 final_buildings = {}
 
             f.write("\t\tbuildings = {\n")
@@ -161,14 +169,35 @@ def write_states_from_mgr(
                 f.write(f"\t\t\t{bname} = {bval}\n")
 
             prov_blocks: dict[int, dict[str, int]] = {}
-            for pid, bmap in user_prov_buildings.items():
-                if pid in land_provs:
-                    prov_blocks[pid] = {k: int(v) for k, v in bmap.items() if int(v or 0) > 0}
+            for raw_pid, bmap in user_prov_buildings.items():
+                try:
+                    pid = int(raw_pid)
+                except (TypeError, ValueError):
+                    continue
+                if pid not in land_provs or not isinstance(bmap, dict):
+                    continue
+
+                cleaned: dict[str, int] = {}
+                for bname, bval in bmap.items():
+                    try:
+                        level = int(bval or 0)
+                    except (TypeError, ValueError):
+                        continue
+                    if level <= 0:
+                        continue
+                    # map.cpp rejects provincial naval bases and coastal
+                    # bunkers assigned to inland provinces.  Remove only
+                    # those invalid entries; all other editor buildings stay.
+                    if bname in {"naval_base", "coastal_bunker"} and pid not in state_coastal_set:
+                        continue
+                    cleaned[bname] = level
+                if cleaned:
+                    prov_blocks[pid] = cleaned
             has_user_nb = any(
                 "naval_base" in bmap for bmap in prov_blocks.values()
             )
             if is_coastal_state and not has_user_nb and not impassable:
-                nb_level = 3 if state.category in (
+                nb_level = 3 if category in (
                     "city", "large_city", "metropolis", "megalopolis"
                 ) else 2
                 # state 里只给一个沿海省份放 naval_base 建筑（和 vanilla 一致）

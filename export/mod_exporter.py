@@ -401,16 +401,10 @@ def export_full_mod(
     if _enabled("descriptor"):
         _write_descriptor(mod_name, output_dir)
 
-    # === replace_path 清洗目录 + tutorial 屏蔽 ===
+    # === replace_path 目录 ===
     if _enabled("replace_path"):
         from export.writers.replace_path.scrubber import write_replace_path_dirs
         write_replace_path_dirs(output_dir)
-
-        # tutorial 屏蔽（属于 replace_path 范畴）
-        tut_dir = os.path.join(output_dir, "tutorial")
-        os.makedirs(tut_dir, exist_ok=True)
-        with open(os.path.join(tut_dir, "tutorial.txt"), "w", encoding="utf-8") as f:
-            f.write("tutorial = { }\n")
 
     # === 导出后校验（只检查已启用模块的文件）===
     if _enabled("map"):
@@ -482,6 +476,15 @@ def _compute_coastal_province_level(province_map, land_ids, sea_ids):
         coastal.update(int(x) for x in np.unique(left[m1]))
     if m2.any():
         coastal.update(int(x) for x in np.unique(right[m2]))
+    # The game wraps horizontally, so the two bitmap edges are neighbours.
+    wrap_lr = province_map[:, -1]
+    wrap_rl = province_map[:, 0]
+    m_wrap_lr = is_land[wrap_lr] & is_sea[wrap_rl]
+    m_wrap_rl = is_sea[wrap_lr] & is_land[wrap_rl]
+    if m_wrap_lr.any():
+        coastal.update(int(x) for x in np.unique(wrap_lr[m_wrap_lr]))
+    if m_wrap_rl.any():
+        coastal.update(int(x) for x in np.unique(wrap_rl[m_wrap_rl]))
     # 垂直邻接
     up = province_map[:-1, :].ravel()
     down = province_map[1:, :].ravel()
@@ -533,6 +536,12 @@ def _compute_coastal_once(province_map, land_ids, sea_ids):
     # 4 个方向
     _scan_dir(province_map[:, :-1], province_map[:, 1:])   # 右
     _scan_dir(province_map[:, 1:], province_map[:, :-1])   # 左
+    # The Clausewitz map wraps horizontally: the left and right bitmap edges
+    # are neighbours.  Omitting this pair marks edge provinces coastal in the
+    # game but leaves them without a naval_base_spawn, which can crash during
+    # map initialisation.
+    _scan_dir(province_map[:, -1:], province_map[:, :1])   # right edge -> left edge
+    _scan_dir(province_map[:, :1], province_map[:, -1:])   # left edge -> right edge
     _scan_dir(province_map[:-1, :], province_map[1:, :])   # 下
     _scan_dir(province_map[1:, :], province_map[:-1, :])   # 上
 
