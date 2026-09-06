@@ -51,11 +51,21 @@ def save_project(
             states_data[str(sid)] = {
                 "id": s.id,
                 "name": s.name,
+                "name_en": getattr(s, "name_en", "") or "",
                 "provinces": s.provinces,
                 "manpower": s.manpower,
                 "category": s.category,
                 "owner_tag": s.owner_tag,
                 "victory_points": {str(k): v for k, v in s.victory_points.items()},
+                # City/state English names are independent localisation fields.
+                # Preserve them here so a saved project does not silently lose
+                # its authored victory-point labels on the next reload.
+                "vp_names": {
+                    str(k): v for k, v in (getattr(s, "vp_names", {}) or {}).items()
+                },
+                "vp_names_en": {
+                    str(k): v for k, v in (getattr(s, "vp_names_en", {}) or {}).items()
+                },
                 # 进阶字段
                 "impassable": bool(getattr(s, "impassable", False)),
                 "controller_tag": getattr(s, "controller_tag", "") or "",
@@ -178,11 +188,19 @@ def load_project(
             state = StateData(
                 id=data["id"],
                 name=data["name"],
+                name_en=data.get("name_en", "") or "",
                 provinces=data["provinces"],
                 manpower=data["manpower"],
                 category=data["category"],
                 owner_tag=data.get("owner_tag", ""),
                 victory_points={int(k): v for k, v in data.get("victory_points", {}).items()},
+                vp_names={
+                    int(k): str(v) for k, v in (data.get("vp_names") or {}).items()
+                },
+                vp_names_en={
+                    int(k): str(v)
+                    for k, v in (data.get("vp_names_en") or {}).items()
+                },
                 impassable=bool(data.get("impassable", False)),
                 controller_tag=data.get("controller_tag", ""),
                 local_supplies=float(data.get("local_supplies", 0.0) or 0.0),
