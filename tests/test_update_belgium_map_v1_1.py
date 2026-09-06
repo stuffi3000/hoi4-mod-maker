@@ -82,7 +82,7 @@ def test_height_normalisation_preserves_relief_without_invalid_terrain():
 
     land = tiles == TILE_LAND
     assert int(height[land].min()) >= SEA_LEVEL + 1
-    assert int(height[land].max()) <= 255
+    assert int(height[land].max()) <= 164
     assert np.all(height[tiles == TILE_SEA] < SEA_LEVEL)
     assert np.all(height[tiles == TILE_LAKE] == SEA_LEVEL - 5)
     assert np.all(np.diff(height[2].astype(np.int16)) >= 0)
@@ -92,9 +92,10 @@ def test_height_normalisation_preserves_relief_without_invalid_terrain():
             TERRAIN_PALETTE_INDEX["plains"],
             TERRAIN_PALETTE_INDEX["forest"],
             TERRAIN_PALETTE_INDEX["hills"],
-            TERRAIN_PALETTE_INDEX["mountain"],
             TERRAIN_PALETTE_INDEX["lakes"],
             TERRAIN_PALETTE_INDEX["ocean"],
         }
     )
+    assert not np.any(terrain == TERRAIN_PALETTE_INDEX["mountain"])
     assert report["normalisation"]["method"] == "gamma"
+    assert report["normalisation"]["mountain_cap_applied"] is True

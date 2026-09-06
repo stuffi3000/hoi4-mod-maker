@@ -76,6 +76,7 @@ DEFAULT_PROJECT = Path(r"C:\Users\stuff\Documents\HOI4\Belgium_Map_v1_1.hoi4proj
 DEFAULT_SOURCE_DIR = Path(r"C:\Users\stuff\Documents\HOI4\Belgium\base map\qgis\EU data")
 TARGET_SIZE = (5632, 2048)  # width, height
 MIN_LAKE_PIXELS = 50
+MAX_HILL_HEIGHT = 164  # TerrainGenConfig.mountain_min is 165.
 LAND_FILL = np.asarray((207, 213, 16), dtype=np.float32)
 
 SOURCE_FILES = {
@@ -1338,12 +1339,13 @@ def _prepare_height_and_terrain(
     # HOI4 reserves values <=95 for water.  A hard clip would flatten roughly
     # 29% of this map's land at exactly 96.  Instead preserve the complete
     # ordering and local detail with a gamma curve into the engine-safe
-    # 96..255 land range.  Gamma 2 keeps Belgium's broad lowlands low while
-    # retaining the Ardennes/Eifel relief in the bright source values.
+    # 96..164 land range.  Gamma 2 keeps Belgium's broad lowlands low while
+    # retaining the Ardennes/Eifel relief as large hills.  Keeping the maximum
+    # at 164 is deliberate: the program's mountain threshold starts at 165.
     height = np.zeros_like(raw, dtype=np.uint8)
     normalised_land = (raw[land].astype(np.float32) / 255.0) ** 2.0
     height[land] = np.rint(
-        (SEA_LEVEL + 1) + normalised_land * (255 - (SEA_LEVEL + 1))
+        (SEA_LEVEL + 1) + normalised_land * (MAX_HILL_HEIGHT - (SEA_LEVEL + 1))
     ).astype(np.uint8)
     height[sea] = np.minimum(raw[sea], SEA_LEVEL - 1)
     height[lake] = SEA_LEVEL - 5
@@ -1351,9 +1353,10 @@ def _prepare_height_and_terrain(
     # The generic world terrain generator deliberately includes latitude
     # bands for deserts and jungles, which are inappropriate for this regional
     # map.  Preserve the existing satellite-derived forest footprint and use
-    # the revised height data to classify the upper 30% as hills and upper 5%
-    # as mountains.  The output palette is therefore geographically plausible
-    # for Belgium and its surrounding area, with no tropical/desert artefacts.
+    # the revised height data to classify the upper 30% as hills.  Even the
+    # highest source relief remains hills: this map's Belgium/Luxembourg/
+    # northern-France/western-Germany extent does not require mountain terrain.
+    # The output palette has no mountain, tropical, or desert artefacts.
     terrain = np.full(tile_map.shape, TERRAIN_PALETTE_INDEX["plains"], dtype=np.uint8)
     forest = np.zeros_like(land)
     if previous_terrain is not None:
@@ -1363,12 +1366,8 @@ def _prepare_height_and_terrain(
     terrain[forest] = TERRAIN_PALETTE_INDEX["forest"]
     land_heights = height[land]
     hills_threshold = int(np.ceil(np.percentile(land_heights, 70.0)))
-    mountain_threshold = int(np.ceil(np.percentile(land_heights, 95.0)))
-    mountain_threshold = max(mountain_threshold, hills_threshold + 1)
     hills = land & (height >= hills_threshold)
-    mountains = land & (height >= mountain_threshold)
     terrain[hills] = TERRAIN_PALETTE_INDEX["hills"]
-    terrain[mountains] = TERRAIN_PALETTE_INDEX["mountain"]
     terrain[sea] = TERRAIN_PALETTE_INDEX["ocean"]
     terrain[lake] = TERRAIN_PALETTE_INDEX["lakes"]
     report = {
@@ -1376,7 +1375,9 @@ def _prepare_height_and_terrain(
         "normalisation": {
             "method": "gamma",
             "gamma": 2.0,
-            "land_output_range": [SEA_LEVEL + 1, 255],
+            "land_output_range": [SEA_LEVEL + 1, MAX_HILL_HEIGHT],
+            "mountain_threshold": 165,
+            "mountain_cap_applied": True,
             "land_source_pixels_at_or_below_sea_level": int(
                 (raw[land] <= SEA_LEVEL).sum()
             ),
@@ -1387,8 +1388,7 @@ def _prepare_height_and_terrain(
         "terrain_thresholds": {
             "hills_percentile": 70,
             "hills_height": hills_threshold,
-            "mountain_percentile": 95,
-            "mountain_height": mountain_threshold,
+            "mountains_enabled": False,
         },
         "height_ranges": {
             "land": [int(height[land].min()), int(height[land].max())],
@@ -1530,6 +1530,7 @@ def update_project(
     source_dir: Path,
     *,
     minimum_lake_pixels: int = MIN_LAKE_PIXELS,
+    relief_only: bool = False,
     dry_run: bool = False,
     report_path: Path | None = None,
 ) -> dict[str, Any]:
@@ -1545,37 +1546,72 @@ def update_project(
         str(project_path), state_mgr, country_mgr, continent_mgr
     )
     source_meta = _validate_sources(source_dir, tile_map.shape)
-    source = {key: _load_rgb(source_dir / filename) for key, filename in SOURCE_FILES.items()}
-
-    new_tile_map, lake_mask, lake_stats = _build_lake_surface(
-        tile_map, source["inland_water"], minimum_lake_pixels
-    )
-    new_province_map, province_repair = _repair_surface_provinces(
-        tile_map, new_tile_map, province_map
-    )
-    lake_stats.update({
-        "final_surface_pixels": int((new_tile_map == TILE_LAKE).sum()),
-        "topology_added_pixels": int(
-            ((new_tile_map == TILE_LAKE) & ~lake_mask).sum()
-        ),
-        "source_pixels_removed_for_topology": int(
-            (lake_mask & (new_tile_map != TILE_LAKE)).sum()
-        ),
-    })
     source_height = np.asarray(
         Image.open(source_dir / SOURCE_FILES["heightmap"]).convert("L"), dtype=np.uint8
     )
+    if relief_only:
+        if old_rivers is None:
+            raise UpdateError("Relief-only update requires an existing river map")
+        new_tile_map = tile_map.copy()
+        new_province_map = province_map.copy()
+        river_map = old_rivers.copy()
+        lake_pixels = int((new_tile_map == TILE_LAKE).sum())
+        lake_stats = {
+            "mode": "preserved",
+            "candidate_pixels": lake_pixels,
+            "final_surface_pixels": lake_pixels,
+            "components": int(
+                ndimage.label(new_tile_map == TILE_LAKE, structure=CROSS)[1]
+            ),
+        }
+        province_repair = {
+            "mode": "preserved",
+            "changed_pixels": 0,
+        }
+        line = np.isin(river_map, list(VALID_RIVER_VALUES))
+        river_stats = {
+            "mode": "preserved",
+            "line_pixels": int(line.sum()),
+            "networks": int(ndimage.label(line, structure=CROSS)[1]),
+        }
+        removed_state_refs = 0
+    else:
+        source = {
+            key: _load_rgb(source_dir / filename)
+            for key, filename in SOURCE_FILES.items()
+        }
+        new_tile_map, lake_mask, lake_stats = _build_lake_surface(
+            tile_map, source["inland_water"], minimum_lake_pixels
+        )
+        new_province_map, province_repair = _repair_surface_provinces(
+            tile_map, new_tile_map, province_map
+        )
+        lake_stats.update({
+            "final_surface_pixels": int((new_tile_map == TILE_LAKE).sum()),
+            "topology_added_pixels": int(
+                ((new_tile_map == TILE_LAKE) & ~lake_mask).sum()
+            ),
+            "source_pixels_removed_for_topology": int(
+                (lake_mask & (new_tile_map != TILE_LAKE)).sum()
+            ),
+        })
+        removed_state_refs = _repair_state_references(
+            state_mgr, new_province_map, new_tile_map
+        )
+
     new_height, new_terrain, terrain_stats = _prepare_height_and_terrain(
         source_height, new_tile_map, old_terrain
     )
-
-    river_map, river_stats = _build_river_map(
-        new_tile_map,
-        new_height,
-        _blend_mask(source["rivers"], SOURCE_COLOURS["rivers"]),
-        _blend_mask(source["canals"], SOURCE_COLOURS["canals"]),
-        _blend_mask(source["rivers_full"], SOURCE_COLOURS["rivers_full"]),
-    )
+    if not relief_only:
+        # Source placement depends on elevation; rebuild with the normalized
+        # heightmap rather than the raw grayscale raster.
+        river_map, river_stats = _build_river_map(
+            new_tile_map,
+            new_height,
+            _blend_mask(source["rivers"], SOURCE_COLOURS["rivers"]),
+            _blend_mask(source["canals"], SOURCE_COLOURS["canals"]),
+            _blend_mask(source["rivers_full"], SOURCE_COLOURS["rivers_full"]),
+        )
     river_validation = _strict_river_validation(river_map, new_tile_map)
     layer_validation = _validate_project_layers(
         new_tile_map, new_province_map, new_terrain, new_height, river_map
@@ -1583,9 +1619,20 @@ def update_project(
     provincial_terrain = compute_provincial_terrain_from_bmp(
         new_terrain, new_province_map, new_tile_map
     )
-    removed_state_refs = _repair_state_references(
-        state_mgr, new_province_map, new_tile_map
-    )
+    preservation_validation: dict[str, bool] | None = None
+    if relief_only:
+        preservation_validation = {
+            "tile_map_unchanged": bool(np.array_equal(new_tile_map, tile_map)),
+            "province_map_unchanged": bool(
+                np.array_equal(new_province_map, province_map)
+            ),
+            "river_map_unchanged": bool(np.array_equal(river_map, old_rivers)),
+        }
+        if not all(preservation_validation.values()):
+            raise UpdateError(
+                f"Relief-only mode changed a protected layer: "
+                f"{preservation_validation}"
+            )
 
     before_stats = {
         "surface_pixels": {
@@ -1600,6 +1647,7 @@ def update_project(
     report: dict[str, Any] = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "project": str(project_path),
+        "mode": "relief_only" if relief_only else "full",
         "source": source_meta,
         "before": before_stats,
         "after": {
@@ -1611,6 +1659,7 @@ def update_project(
             "layer_validation": layer_validation,
             "provincial_terrain_entries": len(provincial_terrain),
             "removed_state_province_references": removed_state_refs,
+            "preservation_validation": preservation_validation,
         },
         "dry_run": bool(dry_run),
     }
@@ -1690,6 +1739,11 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--project", type=Path, default=DEFAULT_PROJECT)
     parser.add_argument("--source-dir", type=Path, default=DEFAULT_SOURCE_DIR)
     parser.add_argument("--minimum-lake-pixels", type=int, default=MIN_LAKE_PIXELS)
+    parser.add_argument(
+        "--relief-only",
+        action="store_true",
+        help="preserve provinces/lakes/rivers and update only height/terrain",
+    )
     parser.add_argument("--report", type=Path, default=None)
     parser.add_argument("--dry-run", action="store_true")
     return parser.parse_args()
@@ -1705,6 +1759,7 @@ def main() -> int:
             args.project,
             args.source_dir,
             minimum_lake_pixels=args.minimum_lake_pixels,
+            relief_only=args.relief_only,
             dry_run=args.dry_run,
             report_path=report_path,
         )
