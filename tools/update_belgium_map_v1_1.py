@@ -68,9 +68,7 @@ from services.reference_map_service import (
     _remove_solid_blocks_topologically,
 )
 from services.terrain_service import (
-    TerrainGenConfig,
     compute_provincial_terrain_from_bmp,
-    smart_auto_terrain,
 )
 
 
@@ -182,6 +180,40 @@ def _remove_small_components(mask: np.ndarray, minimum_pixels: int) -> np.ndarra
     return keep[labels]
 
 
+def _drop_endpointless_micro_loops(
+    mask: np.ndarray,
+    maximum_pixels: int = 16,
+) -> tuple[np.ndarray, int, int]:
+    """Remove tiny closed cycles that cannot carry source/mouth endpoints.
+
+    A river network must have actual graph endpoints for its source and mouth
+    markers.  Small cycles at the cropped raster edge are antialias/skeleton
+    artefacts rather than hydrologically meaningful rivers.  Larger cycles are
+    rejected instead of silently deleting potentially important source data.
+    """
+
+    result = mask.astype(bool, copy=True)
+    labels, count = ndimage.label(result, structure=CROSS)
+    if count == 0:
+        return result, 0, 0
+    degrees = ndimage.convolve(result.astype(np.uint8), CROSS.astype(np.uint8)) - result
+    removed_components = 0
+    removed_pixels = 0
+    for network_id in range(1, count + 1):
+        component = labels == network_id
+        if np.any(component & (degrees <= 1)):
+            continue
+        pixel_count = int(component.sum())
+        if pixel_count > int(maximum_pixels):
+            raise UpdateError(
+                f"River network {network_id} is a closed {pixel_count}-pixel loop"
+            )
+        result[component] = False
+        removed_components += 1
+        removed_pixels += pixel_count
+    return result, removed_components, removed_pixels
+
+
 def _pure_diagonal_locations(mask: np.ndarray) -> list[tuple[tuple[int, int], tuple[int, int]]]:
     result: list[tuple[tuple[int, int], tuple[int, int]]] = []
     for direction in (1, -1):
@@ -280,7 +312,7 @@ def _build_lake_surface(
     tile_map[lake_candidates] = TILE_LAKE
     return tile_map, lake_candidates, {
         "candidate_pixels": int(lake_candidates.sum()),
-        "components": int(ndimage.label(lake_candidates, structure=EIGHT)[1]),
+        "components": int(ndimage.label(lake_candidates, structure=CROSS)[1]),
         "minimum_component_pixels": int(minimum_pixels),
     }
 
@@ -499,10 +531,11 @@ def _repair_remaining_components(
                 cy, cx = np.where(labels == component_id)
                 gy, gx = cy + y0, cx + x0
                 contacts: dict[int, int] = {}
-                for dy, dx in (
-                    (-1, -1), (-1, 0), (-1, 1), (0, -1),
-                    (0, 1), (1, -1), (1, 0), (1, 1),
-                ):
+                # Province connectivity is strictly orthogonal.  Counting
+                # diagonal contacts here can assign a detached fragment to a
+                # province it does not actually touch, recreating the exact
+                # non-contiguous ID this helper is meant to remove.
+                for dy, dx in ((-1, 0), (1, 0), (0, -1), (0, 1)):
                     ny, nx = gy + dy, gx + dx
                     valid = (
                         (ny >= 0) & (ny < province_map.shape[0])
@@ -515,15 +548,95 @@ def _repair_remaining_components(
                     for pid, ptype in zip(pids, types):
                         if int(pid) > 0 and int(pid) != source_pid and int(ptype) == source_type:
                             contacts[int(pid)] = contacts.get(int(pid), 0) + 1
+
+                def creates_local_x_crossing(target_pid: int) -> bool:
+                    """Return whether assigning this component creates a 4-ID X."""
+
+                    old_values = province_map[gy, gx].copy()
+                    province_map[gy, gx] = target_pid
+                    affected_blocks: set[tuple[int, int]] = set()
+                    for py, px in zip(gy.tolist(), gx.tolist()):
+                        for top in (py - 1, py):
+                            if top < 0 or top >= province_map.shape[0] - 1:
+                                continue
+                            affected_blocks.add((top, (px - 1) % province_map.shape[1]))
+                            affected_blocks.add((top, px))
+                    creates_crossing = False
+                    for top, left in affected_blocks:
+                        right = (left + 1) % province_map.shape[1]
+                        values = {
+                            int(province_map[top, left]),
+                            int(province_map[top, right]),
+                            int(province_map[top + 1, left]),
+                            int(province_map[top + 1, right]),
+                        }
+                        if len(values) == 4:
+                            creates_crossing = True
+                            break
+                    province_map[gy, gx] = old_values
+                    return creates_crossing
+
                 if contacts:
-                    target = max(
+                    ranked_targets = sorted(
                         contacts,
                         key=lambda pid: (
                             contacts[pid],
                             int(area_counts[pid]) if pid < len(area_counts) else 0,
                             -pid,
                         ),
+                        reverse=True,
                     )
+                    target = next(
+                        (
+                            pid for pid in ranked_targets
+                            if not creates_local_x_crossing(pid)
+                        ),
+                        None,
+                    )
+                    if target is None and int(sizes[component_id]) < MIN_LAKE_PIXELS:
+                        # A single raster hole can be the pixel that prevents
+                        # an X crossing.  If every same-surface merge would
+                        # recreate that crossing, absorb the tiny component
+                        # into an orthogonally adjacent opposite surface.
+                        opposite_type = (
+                            TILE_LAKE if source_type == TILE_LAND else TILE_LAND
+                        )
+                        opposite_contacts: dict[int, int] = {}
+                        if source_type in (TILE_LAND, TILE_LAKE):
+                            for dy, dx in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+                                ny, nx = gy + dy, gx + dx
+                                valid = (
+                                    (ny >= 0) & (ny < province_map.shape[0])
+                                    & (nx >= 0) & (nx < province_map.shape[1])
+                                )
+                                for pid, ptype in zip(
+                                    province_map[ny[valid], nx[valid]],
+                                    tile_map[ny[valid], nx[valid]],
+                                ):
+                                    if int(pid) > 0 and int(ptype) == opposite_type:
+                                        opposite_contacts[int(pid)] = (
+                                            opposite_contacts.get(int(pid), 0) + 1
+                                        )
+                        ranked_opposite = sorted(
+                            opposite_contacts,
+                            key=lambda pid: (
+                                opposite_contacts[pid],
+                                int(area_counts[pid]) if pid < len(area_counts) else 0,
+                                -pid,
+                            ),
+                            reverse=True,
+                        )
+                        target = next(
+                            (
+                                pid for pid in ranked_opposite
+                                if not creates_local_x_crossing(pid)
+                            ),
+                            None,
+                        )
+                        if target is not None:
+                            tile_map[gy, gx] = opposite_type
+                    if target is None:
+                        target = ranked_targets[0]
                 elif int(sizes[component_id]) >= MIN_LAKE_PIXELS:
                     target = next_id
                     next_id += 1
@@ -735,7 +848,7 @@ def _repair_surface_provinces(
     # Allocate new lake IDs into old gaps first (the moved project has a lake
     # block immediately before its sea IDs), then append if necessary.  This
     # avoids remapping all existing province/state references.
-    lake_labels, lake_count = ndimage.label(lake, structure=EIGHT)
+    lake_labels, lake_count = ndimage.label(lake, structure=CROSS)
     used = set(np.unique(province_map[province_map > 0]).tolist())
     next_candidate = 1
     allocated = 0
@@ -878,6 +991,16 @@ def _repair_surface_provinces(
         topology_repairs += fixed
         if not fixed:
             break
+    # The final crossing edit can leave a one-pixel source-province remnant
+    # surrounded orthogonally by valid same-surface neighbours.  Reassign
+    # those remnants using the orthogonal-only rule above.  Do not follow
+    # this with another crossing pass: the selected target already touches
+    # the component along an edge, so the reassignment removes a diagonal
+    # artefact rather than creating one.
+    remaining_repairs, next_id = _repair_remaining_components(
+        new_tile_map, province_map, repair_reasons, next_id
+    )
+    topology_repairs += remaining_repairs
     # If the old map had an unusual gap pattern, compacting is the safest
     # fallback.  Normal Belgium v1.1 input uses all IDs except its old lake
     # block, so this branch is not expected and is reported if encountered.
@@ -1032,6 +1155,9 @@ def _build_river_map(
     # the image border.  They are not usable HOI4 rivers and cannot carry both
     # source and mouth markers, so discard only these sub-8-pixel fragments.
     line_mask = _remove_small_components(line_mask, 8)
+    line_mask, closed_loops_removed, closed_loop_pixels_removed = (
+        _drop_endpointless_micro_loops(line_mask)
+    )
 
     water = (tile_map == TILE_SEA) | (tile_map == TILE_LAKE)
     river_map = np.full(tile_map.shape, RIVER_BG_LAND, dtype=np.uint8)
@@ -1057,12 +1183,20 @@ def _build_river_map(
             ey, ex = ys, xs
         eyg, exg = ey + bounds[0].start, ex + bounds[1].start
 
-        # Highest endpoint is the source; this is consistent with the DEM
-        # while remaining deterministic when elevations tie.
-        order = np.lexsort((exg, eyg, -height_map[eyg, exg]))
-        source_y, source_x = int(eyg[order[0]]), int(exg[order[0]])
-
         touches_water = water_halo[eyg, exg]
+        # A water-facing endpoint is a mouth, never a source when any inland
+        # endpoint exists.  Among inland endpoints, use the highest elevation
+        # and deterministic raster order to identify the source.
+        source_candidates = ~touches_water
+        if not source_candidates.any():
+            source_candidates = np.ones_like(touches_water, dtype=bool)
+        source_ys = eyg[source_candidates]
+        source_xs = exg[source_candidates]
+        order = np.lexsort(
+            (source_xs, source_ys, -height_map[source_ys, source_xs])
+        )
+        source_y, source_x = int(source_ys[order[0]]), int(source_xs[order[0]])
+
         mouth_coords = [
             (int(y), int(x))
             for y, x, touches in zip(eyg, exg, touches_water)
@@ -1099,6 +1233,8 @@ def _build_river_map(
         "mouth_markers": int(mouth_total),
         "confluence_markers": int(confluence_total),
         "fallback_mouth_markers": int(fallback_mouths),
+        "closed_micro_loops_removed": int(closed_loops_removed),
+        "closed_micro_loop_pixels_removed": int(closed_loop_pixels_removed),
         "main_source_pixels": int(main.sum()),
         "canal_source_pixels": int(canals.sum()),
         "detailed_source_pixels": int(detailed.sum()),
@@ -1121,6 +1257,12 @@ def _strict_river_validation(
         errors.append(f"{int(invalid.sum())} invalid river-map values")
     if np.any(line & (tile_map != TILE_LAND)):
         errors.append(f"{int((line & (tile_map != TILE_LAND)).sum())} river pixels on water")
+    if np.any((~line) & (tile_map == TILE_LAND) & (river_map != RIVER_BG_LAND)):
+        errors.append("non-river land pixels do not use the land background")
+    if np.any((~line) & (tile_map != TILE_LAND) & (river_map != RIVER_BG_SEA)):
+        errors.append("non-river water pixels do not use the water background")
+    if np.any(np.isin(river_map, (5, 8))):
+        errors.append("river map uses forbidden vanilla width indices 5 or 8")
     blocks = line[:-1, :-1] & line[:-1, 1:] & line[1:, :-1] & line[1:, 1:]
     diagonal_count = _pure_diagonal_count(line)
     if blocks.any():
@@ -1136,10 +1278,25 @@ def _strict_river_validation(
         sources = int((river_map[component] == RIVER_SOURCE).sum())
         mouths = int((river_map[component] == RIVER_MOUTH).sum())
         confluences = int((river_map[component] == RIVER_MARKER).sum())
+        source_positions = component & (river_map == RIVER_SOURCE)
+        mouth_positions = component & (river_map == RIVER_MOUTH)
+        confluence_positions = component & (river_map == RIVER_MARKER)
         if sources != 1:
             errors.append(f"river network {network_id} has {sources} source markers")
         if mouths < 1:
             errors.append(f"river network {network_id} has no mouth marker")
+        if np.any(source_positions & (degrees > 1)):
+            errors.append(f"river network {network_id} has a source away from an endpoint")
+        if np.any(mouth_positions & (degrees > 1)):
+            errors.append(f"river network {network_id} has a mouth away from an endpoint")
+        if np.any(confluence_positions & (degrees < 3)):
+            errors.append(f"river network {network_id} has a confluence away from a junction")
+        unmarked_junctions = component & (degrees >= 3) & ~confluence_positions
+        if np.any(unmarked_junctions):
+            errors.append(
+                f"river network {network_id} has {int(unmarked_junctions.sum())} "
+                "unmarked junction pixels"
+            )
         network_details.append(
             {
                 "pixels": int(component.sum()),
@@ -1170,33 +1327,69 @@ def _strict_river_validation(
 def _prepare_height_and_terrain(
     source_height: np.ndarray,
     tile_map: np.ndarray,
+    previous_terrain: np.ndarray | None = None,
 ) -> tuple[np.ndarray, np.ndarray, dict[str, Any]]:
     raw = source_height.astype(np.uint8, copy=True)
-    height = raw.copy()
     land = tile_map == TILE_LAND
     sea = tile_map == TILE_SEA
     lake = tile_map == TILE_LAKE
-    # Keep the source relief values intact wherever valid; only enforce the
-    # engine's waterline contracts and flatten lakes to a stable water level.
-    height[land] = np.maximum(height[land], SEA_LEVEL + 1)
-    height[sea] = np.minimum(height[sea], SEA_LEVEL - 1)
+
+    # Print_heightmap is a physically meaningful 0..255 relief render, but
+    # HOI4 reserves values <=95 for water.  A hard clip would flatten roughly
+    # 29% of this map's land at exactly 96.  Instead preserve the complete
+    # ordering and local detail with a gamma curve into the engine-safe
+    # 96..255 land range.  Gamma 2 keeps Belgium's broad lowlands low while
+    # retaining the Ardennes/Eifel relief in the bright source values.
+    height = np.zeros_like(raw, dtype=np.uint8)
+    normalised_land = (raw[land].astype(np.float32) / 255.0) ** 2.0
+    height[land] = np.rint(
+        (SEA_LEVEL + 1) + normalised_land * (255 - (SEA_LEVEL + 1))
+    ).astype(np.uint8)
+    height[sea] = np.minimum(raw[sea], SEA_LEVEL - 1)
     height[lake] = SEA_LEVEL - 5
 
-    terrain = smart_auto_terrain(
-        height,
-        tile_map,
-        TerrainGenConfig(seed=42, noise_amplitude=10.0),
-    ).astype(np.uint8, copy=False)
-    terrain[tile_map == TILE_SEA] = TERRAIN_PALETTE_INDEX["ocean"]
-    terrain[tile_map == TILE_LAKE] = TERRAIN_PALETTE_INDEX["lakes"]
-    terrain[tile_map == TILE_LAND] = np.where(
-        np.isin(terrain[tile_map == TILE_LAND],
-                (TERRAIN_PALETTE_INDEX["ocean"], TERRAIN_PALETTE_INDEX["lakes"])),
-        TERRAIN_PALETTE_INDEX["plains"],
-        terrain[tile_map == TILE_LAND],
-    )
+    # The generic world terrain generator deliberately includes latitude
+    # bands for deserts and jungles, which are inappropriate for this regional
+    # map.  Preserve the existing satellite-derived forest footprint and use
+    # the revised height data to classify the upper 30% as hills and upper 5%
+    # as mountains.  The output palette is therefore geographically plausible
+    # for Belgium and its surrounding area, with no tropical/desert artefacts.
+    terrain = np.full(tile_map.shape, TERRAIN_PALETTE_INDEX["plains"], dtype=np.uint8)
+    forest = np.zeros_like(land)
+    if previous_terrain is not None:
+        if previous_terrain.shape != tile_map.shape:
+            raise UpdateError("Previous terrain is not aligned with the project")
+        forest = land & (previous_terrain == TERRAIN_PALETTE_INDEX["forest"])
+    terrain[forest] = TERRAIN_PALETTE_INDEX["forest"]
+    land_heights = height[land]
+    hills_threshold = int(np.ceil(np.percentile(land_heights, 70.0)))
+    mountain_threshold = int(np.ceil(np.percentile(land_heights, 95.0)))
+    mountain_threshold = max(mountain_threshold, hills_threshold + 1)
+    hills = land & (height >= hills_threshold)
+    mountains = land & (height >= mountain_threshold)
+    terrain[hills] = TERRAIN_PALETTE_INDEX["hills"]
+    terrain[mountains] = TERRAIN_PALETTE_INDEX["mountain"]
+    terrain[sea] = TERRAIN_PALETTE_INDEX["ocean"]
+    terrain[lake] = TERRAIN_PALETTE_INDEX["lakes"]
     report = {
         "source_range": [int(raw.min()), int(raw.max())],
+        "normalisation": {
+            "method": "gamma",
+            "gamma": 2.0,
+            "land_output_range": [SEA_LEVEL + 1, 255],
+            "land_source_pixels_at_or_below_sea_level": int(
+                (raw[land] <= SEA_LEVEL).sum()
+            ),
+            "land_pixels_at_minimum_after_normalisation": int(
+                (height[land] == SEA_LEVEL + 1).sum()
+            ),
+        },
+        "terrain_thresholds": {
+            "hills_percentile": 70,
+            "hills_height": hills_threshold,
+            "mountain_percentile": 95,
+            "mountain_height": mountain_threshold,
+        },
         "height_ranges": {
             "land": [int(height[land].min()), int(height[land].max())],
             "sea": [int(height[sea].min()), int(height[sea].max())],
@@ -1287,6 +1480,51 @@ def _archive_entries(path: Path) -> list[str]:
         return archive.namelist()
 
 
+def _validate_saved_archive(
+    path: Path,
+    *,
+    expected_entries: list[str],
+    tile_map: np.ndarray,
+    province_map: np.ndarray,
+    terrain_map: np.ndarray,
+    height_map: np.ndarray,
+    river_map: np.ndarray,
+    provincial_terrain: dict[int, str],
+    state_mgr: StateManager,
+    country_mgr: CountryManager,
+    continent_mgr: ContinentManager,
+) -> dict[str, Any]:
+    """Reload every serialized layer and metadata collection independently."""
+
+    check_state = StateManager()
+    check_country = CountryManager()
+    check_continent = ContinentManager()
+    reloaded = load_project(str(path), check_state, check_country, check_continent)
+    checks = {
+        "tile_equal": bool(np.array_equal(reloaded[0], tile_map)),
+        "province_equal": bool(np.array_equal(reloaded[1], province_map)),
+        "terrain_equal": bool(np.array_equal(reloaded[2], terrain_map)),
+        "height_equal": bool(np.array_equal(reloaded[3], height_map)),
+        "river_equal": bool(np.array_equal(reloaded[4], river_map)),
+        "provincial_terrain_equal": reloaded[5] == provincial_terrain,
+        "tile_snapshot_equal": bool(np.array_equal(reloaded[6], tile_map)),
+        "states_equal": check_state.states == state_mgr.states,
+        "countries_equal": check_country.countries == country_mgr.countries,
+        "state_owners_equal": check_country._state_owner == country_mgr._state_owner,
+        "continents_equal": check_continent.to_dict() == continent_mgr.to_dict(),
+        "entries_equal": set(_archive_entries(path)) == set(expected_entries),
+        "shape": list(reloaded[0].shape),
+    }
+    required = [key for key in checks if key.endswith("_equal")]
+    if not all(bool(checks[key]) for key in required):
+        raise UpdateError(f"Reloaded archive differs from generated data: {checks}")
+    _validate_project_layers(
+        reloaded[0], reloaded[1], reloaded[2], reloaded[3], reloaded[4]
+    )
+    _strict_river_validation(reloaded[4], reloaded[0])
+    return checks
+
+
 def update_project(
     project_path: Path,
     source_dir: Path,
@@ -1315,11 +1553,20 @@ def update_project(
     new_province_map, province_repair = _repair_surface_provinces(
         tile_map, new_tile_map, province_map
     )
+    lake_stats.update({
+        "final_surface_pixels": int((new_tile_map == TILE_LAKE).sum()),
+        "topology_added_pixels": int(
+            ((new_tile_map == TILE_LAKE) & ~lake_mask).sum()
+        ),
+        "source_pixels_removed_for_topology": int(
+            (lake_mask & (new_tile_map != TILE_LAKE)).sum()
+        ),
+    })
     source_height = np.asarray(
         Image.open(source_dir / SOURCE_FILES["heightmap"]).convert("L"), dtype=np.uint8
     )
     new_height, new_terrain, terrain_stats = _prepare_height_and_terrain(
-        source_height, new_tile_map
+        source_height, new_tile_map, old_terrain
     )
 
     river_map, river_stats = _build_river_map(
@@ -1369,17 +1616,10 @@ def update_project(
     }
 
     if not dry_run:
-        backup = project_path.with_suffix(project_path.suffix + ".bak")
-        if backup.exists():
-            index = 2
-            while project_path.with_suffix(project_path.suffix + f".bak{index}").exists():
-                index += 1
-            backup = project_path.with_suffix(project_path.suffix + f".bak{index}")
-        shutil.copy2(project_path, backup)
+        entries_before = _archive_entries(project_path)
         temporary = project_path.with_suffix(project_path.suffix + ".tmp")
         if temporary.exists():
             temporary.unlink()
-        entries_before = _archive_entries(project_path)
         save_project(
             str(temporary),
             tile_map=new_tile_map,
@@ -1393,27 +1633,51 @@ def update_project(
             provincial_terrain=provincial_terrain,
             tile_snapshot=new_tile_map.copy(),
         )
+        try:
+            preflight_checks = _validate_saved_archive(
+                temporary,
+                expected_entries=entries_before,
+                tile_map=new_tile_map,
+                province_map=new_province_map,
+                terrain_map=new_terrain,
+                height_map=new_height,
+                river_map=river_map,
+                provincial_terrain=provincial_terrain,
+                state_mgr=state_mgr,
+                country_mgr=country_mgr,
+                continent_mgr=continent_mgr,
+            )
+        except Exception:
+            temporary.unlink(missing_ok=True)
+            raise
+
+        # Only create the recovery copy and replace the requested archive
+        # after the independently reloaded temporary archive passes every
+        # array, metadata, member-list, province, and river check.
+        backup = project_path.with_suffix(project_path.suffix + ".bak")
+        if backup.exists():
+            index = 2
+            while project_path.with_suffix(project_path.suffix + f".bak{index}").exists():
+                index += 1
+            backup = project_path.with_suffix(project_path.suffix + f".bak{index}")
+        shutil.copy2(project_path, backup)
         os.replace(temporary, project_path)
         report["backup"] = str(backup)
         report["project_sha256"] = _sha256(project_path)
-
-        # Reload the written archive independently; this catches serialization
-        # and shape errors that an in-memory validation cannot see.
-        check_state = StateManager()
-        check_country = CountryManager()
-        check_continent = ContinentManager()
-        reloaded = load_project(str(project_path), check_state, check_country, check_continent)
-        checks = {
-            "tile_equal": bool(np.array_equal(reloaded[0], new_tile_map)),
-            "province_equal": bool(np.array_equal(reloaded[1], new_province_map)),
-            "terrain_equal": bool(np.array_equal(reloaded[2], new_terrain)),
-            "height_equal": bool(np.array_equal(reloaded[3], new_height)),
-            "river_equal": bool(np.array_equal(reloaded[4], river_map)),
-            "shape": list(reloaded[0].shape),
-        }
-        if not all(checks[key] for key in ("tile_equal", "province_equal", "terrain_equal", "height_equal", "river_equal")):
-            raise UpdateError(f"Reloaded archive differs from generated layers: {checks}")
-        report["reload_validation"] = checks
+        report["preflight_validation"] = preflight_checks
+        report["reload_validation"] = _validate_saved_archive(
+            project_path,
+            expected_entries=entries_before,
+            tile_map=new_tile_map,
+            province_map=new_province_map,
+            terrain_map=new_terrain,
+            height_map=new_height,
+            river_map=river_map,
+            provincial_terrain=provincial_terrain,
+            state_mgr=state_mgr,
+            country_mgr=country_mgr,
+            continent_mgr=continent_mgr,
+        )
 
     if report_path is not None:
         report_path.parent.mkdir(parents=True, exist_ok=True)
