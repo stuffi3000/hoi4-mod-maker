@@ -403,8 +403,12 @@ def export_full_mod(
 
     # === replace_path 目录 ===
     if _enabled("replace_path"):
-        from export.writers.replace_path.scrubber import write_replace_path_dirs
+        from export.writers.replace_path.scrubber import (
+            write_ai_strategy_overrides,
+            write_replace_path_dirs,
+        )
         write_replace_path_dirs(output_dir)
+        write_ai_strategy_overrides(output_dir)
 
     # === 导出后校验（只检查已启用模块的文件）===
     if _enabled("map"):

@@ -68,14 +68,31 @@ def write_country_characters(tag, output_dir, country_name="Fantasy"):
     """
     d = os.path.join(output_dir, "common", "characters")
     os.makedirs(d, exist_ok=True)
+    # Older exporter versions used ``<TAG>.txt``.  Remove that file only when
+    # its distinctive generated shape proves it was exporter-owned, so a
+    # user-authored character file is never deleted during re-export.
+    legacy_path = os.path.join(d, f"{tag}.txt")
+    if os.path.isfile(legacy_path):
+        try:
+            with open(legacy_path, "r", encoding="utf-8-sig", errors="replace") as legacy_file:
+                legacy_head = legacy_file.read(4096)
+        except OSError:
+            legacy_head = ""
+        generated_signature = (
+            "characters = {" in legacy_head
+            and f"{tag}_leader_despotism" in legacy_head
+            and "GFX_Portrait_Europe_Generic_1" in legacy_head
+        )
+        if generated_signature:
+            os.remove(legacy_path)
     # name 字段用 character ID 作为 localisation key (vanilla 做法 `name=CHI_chiang_kaishek`),
     # 不能直接写 country_name 字符串 — country_name 可能含中文 + open() 默认 GBK + 无 BOM,
     # 三重 bug 叠加导致 HOI4 parse 失败 → 引擎自动生成 character 时除零崩溃.
     # 文件用 UTF-8 BOM 编码与 vanilla character 文件保持一致 (HOI4 parser 对 BOM 容忍).
     # 显示名走 localisation/*_l_<lang>.yml (yml.py 已写 leader/marshal/general/admiral key,
     # scientist 这里也保留 key, yml 没翻译就显示 raw key, 不会崩).
-    with open(os.path.join(d, f"{tag}.txt"), "w", encoding="utf-8") as f:
-        f.write("﻿")  # UTF-8 BOM
+    with open(os.path.join(d, f"zz_fantasy_{tag}.txt"), "w", encoding="utf-8") as f:
+        f.write("# Generated - TC MOD character definitions\n")
         f.write("characters = {\n\n")
 
         # 1. 国家领袖 (4种意识形态子类型各一个, 对齐 vanilla 最小格式;

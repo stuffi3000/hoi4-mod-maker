@@ -11,11 +11,17 @@ from domain.validators.province import (
     get_coastal_provinces,
 )
 from export.mod_exporter import _compute_coastal_once, _compute_coastal_province_level
-from export.writers.common.countries import write_dynamic_countries
+from export.writers.common.countries import (
+    write_country_characters,
+    write_dynamic_countries,
+)
 from export.writers.history.states import write_states_from_mgr
 from export.writers.map.buildings import write_buildings
 from export.writers.map.descriptor import write_descriptor
-from export.writers.replace_path.scrubber import write_replace_path_dirs
+from export.writers.replace_path.scrubber import (
+    write_ai_strategy_overrides,
+    write_replace_path_dirs,
+)
 
 
 def _seam_map() -> tuple[np.ndarray, np.ndarray]:
@@ -124,19 +130,10 @@ def test_replace_path_cleanup_removes_only_legacy_generated_overlays(tmp_path):
     assert custom.exists()
 
 
-def test_requested_replace_paths_are_declared_and_created(tmp_path):
-    requested = {
-        "events",
-        "common/countries",
-        "common/bookmarks",
-        "common/characters",
-        "common/country_tags",
-    }
-    assert requested.issubset(REPLACE_PATHS)
-
+def test_replace_paths_are_declared_and_created(tmp_path):
     write_replace_path_dirs(str(tmp_path))
 
-    for relative_path in requested:
+    for relative_path in REPLACE_PATHS:
         assert (tmp_path / relative_path).is_dir()
 
     mod_root = tmp_path / "fantasy"
@@ -144,8 +141,36 @@ def test_requested_replace_paths_are_declared_and_created(tmp_path):
     write_descriptor("Fantasy", str(mod_root))
     for descriptor in (mod_root / "descriptor.mod", tmp_path / "fantasy.mod"):
         descriptor_text = descriptor.read_text(encoding="utf-8")
-        for relative_path in requested:
+        for relative_path in REPLACE_PATHS:
             assert f'replace_path="{relative_path}"' in descriptor_text
+
+
+def test_ai_strategy_overrides_shadow_map_incompatible_vanilla_files(tmp_path):
+    write_ai_strategy_overrides(str(tmp_path))
+
+    hol = tmp_path / "common" / "ai_strategy" / "HOL.txt"
+    sov = tmp_path / "common" / "ai_strategy" / "SOV.txt"
+    assert hol.read_text(encoding="utf-8").startswith("# Empty - TC MOD")
+    assert sov.read_text(encoding="utf-8").startswith("# Empty - TC MOD")
+
+
+def test_generated_characters_do_not_shadow_vanilla_tag_files(tmp_path):
+    legacy = tmp_path / "common" / "characters" / "BEL.txt"
+    legacy.parent.mkdir(parents=True)
+    legacy.write_text(
+        "characters = { BEL_leader_despotism = { "
+        "portraits = { civilian = { large = GFX_Portrait_Europe_Generic_1 } } } }\n",
+        encoding="utf-8",
+    )
+
+    write_country_characters("BEL", str(tmp_path))
+
+    assert not legacy.exists()
+    generated = tmp_path / "common" / "characters" / "zz_fantasy_BEL.txt"
+    assert generated.exists()
+    assert generated.read_text(encoding="utf-8").startswith(
+        "# Generated - TC MOD character definitions"
+    )
 
 
 def test_dynamic_country_pool_writes_independent_tags_and_files(tmp_path):

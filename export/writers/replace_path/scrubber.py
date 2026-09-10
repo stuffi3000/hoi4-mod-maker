@@ -86,6 +86,45 @@ _LEGACY_GENERATED_DIRS = (
     "events",
 )
 
+# These country-specific vanilla strategy files target states and ideas that
+# do not exist in an exported map.  A file at the same relative path in the
+# mod shadows the vanilla file without replacing the whole AI-strategy
+# directory (which would also remove safe generic strategies).
+_AI_STRATEGY_OVERRIDES = {
+    # These files contain hard-coded vanilla state/strategic-region IDs.
+    # SOV additionally checks ideas that are absent from the exported set.
+    "common/ai_strategy/ENG.txt": (
+        "# Empty - TC MOD: vanilla ENG strategy targets states/regions outside the exported map.\n"
+    ),
+    "common/ai_strategy/ETH.txt": (
+        "# Empty - TC MOD: vanilla ETH strategy targets states/regions outside the exported map.\n"
+    ),
+    "common/ai_strategy/FRA.txt": (
+        "# Empty - TC MOD: vanilla FRA strategy targets states/regions outside the exported map.\n"
+    ),
+    "common/ai_strategy/GER.txt": (
+        "# Empty - TC MOD: vanilla GER strategy targets states/regions outside the exported map.\n"
+    ),
+    "common/ai_strategy/HOL.txt": (
+        "# Empty - TC MOD: vanilla HOL strategy targets states outside the exported map.\n"
+    ),
+    "common/ai_strategy/ITA.txt": (
+        "# Empty - TC MOD: vanilla ITA strategy targets states/regions outside the exported map.\n"
+    ),
+    "common/ai_strategy/JAP.txt": (
+        "# Empty - TC MOD: vanilla JAP strategy targets states outside the exported map.\n"
+    ),
+    "common/ai_strategy/ROM.txt": (
+        "# Empty - TC MOD: vanilla ROM strategy targets states outside the exported map.\n"
+    ),
+    "common/ai_strategy/SOV.txt": (
+        "# Empty - TC MOD: vanilla SOV strategy references ideas not shipped by the mod.\n"
+    ),
+    "common/ai_strategy/USA.txt": (
+        "# Empty - TC MOD: vanilla USA strategy targets states outside the exported map.\n"
+    ),
+}
+
 
 def _is_legacy_generated_file(path: str) -> bool:
     try:
@@ -123,3 +162,18 @@ def write_replace_path_dirs(output_dir: str) -> None:
 
     for relative_path in REPLACE_PATHS:
         os.makedirs(os.path.join(output_dir, *relative_path.split("/")), exist_ok=True)
+
+
+def write_ai_strategy_overrides(output_dir: str) -> None:
+    """Shadow vanilla strategies that reference unavailable map databases.
+
+    The exporter intentionally does not add ``common/ai_strategy`` to
+    ``REPLACE_PATHS``.  Directory replacement would discard the remaining
+    vanilla generic strategies, while these country files are known to
+    reference removed state/region/idea IDs during map startup.
+    """
+    for relative_path, content in _AI_STRATEGY_OVERRIDES.items():
+        path = os.path.join(output_dir, *relative_path.split("/"))
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as file:
+            file.write(content)
