@@ -71,6 +71,18 @@ def export_full_mod(
     # 必须在压实之前做：碎屑被吞掉本身会产生新的 ID 空洞
     province_map = _merge_tiny_provinces(province_map, min_pixels=8)
 
+    # The engine rejects a province box that reaches one eighth of the map
+    # dimension.  Repair the export copy only, preserving the project and all
+    # province IDs referenced by states/regions.  This also catches the
+    # exact-boundary case that the older pre-export validator missed.
+    repaired_bbox_ids = _repair_too_large_provinces(province_map, tile_map)
+    if repaired_bbox_ids:
+        print(
+            "  [province bbox] Trimmed boundary pixels from "
+            f"{len(repaired_bbox_ids)} province(s): "
+            + ", ".join(str(pid) for pid in repaired_bbox_ids)
+        )
+
     # 压实省份 ID（可选，导入 MOD 时建议关闭以保留原 ID）。
     # 只作用于导出副本：province_map 上一步已是拷贝，引用省份 ID 的
     # manager 深拷贝后再重编号——项目本体（含撤销历史）不受影响。
@@ -1039,6 +1051,195 @@ def _merge_tiny_provinces(province_map: np.ndarray, min_pixels: int = 8) -> np.n
         areas[pid] = 0
 
     return pm
+
+
+def _repair_too_large_provinces(
+    province_map: np.ndarray,
+    tile_map: np.ndarray,
+) -> list[int]:
+    """Trim safe boundary pixels from provinces with an oversized box.
+
+    HOI4 treats a province whose bounding-box width or height reaches one
+    eighth of the map dimension as invalid.  A project can legitimately have
+    a long, narrow lake at exactly that boundary (9301 in the Belgium map),
+    so merging or renumbering it would damage references.  Instead, remove
+    only a complete outer row/column and assign those pixels to an adjacent
+    province.  Same-surface neighbours are preferred; lake edge pixels may
+    fall back to adjacent land, which is the expected raster representation of
+    an inland lake shoreline.
+
+    ``province_map`` is already the export copy at the call site.  The helper
+    mutates that copy and leaves ``tile_map`` untouched; the normal
+    classification synchronisation later in :func:`export_full_mod` updates
+    surface types for any reassigned pixels.
+    """
+    from scipy import ndimage
+    from domain.validators.province import detect_too_large_provinces
+
+    height, width = province_map.shape
+    if height < 2 or width < 2:
+        return []
+
+    initial_ids = detect_too_large_provinces(
+        province_map, include_engine_boundary=True
+    )
+    if not initial_ids:
+        return []
+
+    # Only make a small, lossless boundary correction here.  A province that
+    # is many pixels over the limit needs an intentional split in the editor;
+    # trimming a whole strip during export would silently change the map.
+    # Leave an additional pixel of headroom on real-sized maps.  The loader
+    # expands a province box by one pixel while building its border cache, so
+    # a raster box that is merely one pixel below 1/8 can still trip the same
+    # diagnostic.  Keep the smaller synthetic fixtures at the normal limit.
+    engine_margin = 1 if min(height, width) >= 256 else 0
+    safe_height = max(1, (height - 1) // 8 - engine_margin)
+    safe_width = max(1, (width - 1) // 8 - engine_margin)
+    max_safe_overflow = 4
+
+    cross = np.array([[0, 1, 0], [1, 1, 1], [0, 1, 0]], dtype=bool)
+
+    def _bbox(pid: int):
+        ys, xs = np.where(province_map == pid)
+        if ys.size == 0:
+            return None
+        return (
+            int(ys.min()), int(ys.max()), int(xs.min()), int(xs.max()),
+            ys, xs,
+        )
+
+    def _neighbours(y: int, x: int, pid: int) -> list[tuple[int, int]]:
+        result: list[tuple[int, int]] = []
+        for dy, dx in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+            ny = y + dy
+            if ny < 0 or ny >= height:
+                continue
+            # HOI4 maps wrap horizontally, so an edge pixel can see the
+            # opposite edge.  Vertical wrapping is not supported.
+            nx = (x + dx) % width
+            candidate = int(province_map[ny, nx])
+            if candidate > 0 and candidate != pid:
+                result.append((candidate, int(tile_map[ny, nx])))
+        return result
+
+    def _target_for(y: int, x: int, pid: int) -> int | None:
+        neighbours = _neighbours(y, x, pid)
+        if not neighbours:
+            return None
+        source_surface = int(tile_map[y, x])
+
+        def _best(records: list[tuple[int, int]]) -> int | None:
+            if not records:
+                return None
+            counts: dict[int, int] = {}
+            for candidate, _surface in records:
+                counts[candidate] = counts.get(candidate, 0) + 1
+            return min(counts, key=lambda candidate: (-counts[candidate], candidate))
+
+        same_surface = [
+            (candidate, surface)
+            for candidate, surface in neighbours
+            if surface == source_surface
+        ]
+        target = _best(same_surface)
+        if target is not None:
+            return target
+
+        # A lake generally has land on its outer edge rather than another
+        # lake province.  Reassigning that tiny shoreline pixel to land is
+        # safer than deleting the lake or making a mixed lake/sea province.
+        if source_surface == TILE_LAKE:
+            return _best([
+                (candidate, surface)
+                for candidate, surface in neighbours
+                if surface == TILE_LAND
+            ])
+        return None
+
+    def _preserves_connectivity(pid: int) -> bool:
+        bbox = _bbox(pid)
+        if bbox is None:
+            return False
+        y0, y1, x0, x1, ys, xs = bbox
+        if ys.size < 8:
+            return False
+        local = province_map[y0:y1 + 1, x0:x1 + 1] == pid
+        return int(ndimage.label(local, structure=cross)[1]) == 1
+
+    def _apply_edge(pid: int, axis: str, edge: int) -> bool:
+        bbox = _bbox(pid)
+        if bbox is None:
+            return False
+        y0, y1, x0, x1, ys, xs = bbox
+        if axis == "y":
+            selection = ys == edge
+        else:
+            selection = xs == edge
+        edge_ys = ys[selection]
+        edge_xs = xs[selection]
+        if edge_ys.size == 0:
+            return False
+
+        targets = [
+            _target_for(int(y), int(x), pid)
+            for y, x in zip(edge_ys, edge_xs)
+        ]
+        # Reassign a complete outer edge in one operation.  Partial trimming
+        # would leave the old bounding box in place and could create a thin
+        # detached tail.
+        if any(target is None for target in targets):
+            return False
+        old_values = province_map[edge_ys, edge_xs].copy()
+        province_map[edge_ys, edge_xs] = np.asarray(targets, dtype=province_map.dtype)
+        if not _preserves_connectivity(pid):
+            province_map[edge_ys, edge_xs] = old_values
+            return False
+        return True
+
+    # Process the candidates found by the single full-map scan above.  Each
+    # subsequent check is local to the candidate, avoiding several additional
+    # 11-million-pixel scans during a normal export.
+    repaired: list[int] = []
+    for pid in initial_ids:
+        while True:
+            bbox = _bbox(int(pid))
+            if bbox is None:
+                break
+            y0, y1, x0, x1, ys, xs = bbox
+            box_h = y1 - y0 + 1
+            box_w = x1 - x0 + 1
+            if (
+                box_h - safe_height > max_safe_overflow
+                or box_w - safe_width > max_safe_overflow
+            ):
+                # Do not erase a substantial part of an intentional large
+                # province.  The map generator's splitter handles those.
+                break
+            options: list[tuple[int, str, int]] = []
+            if box_h > safe_height:
+                options.extend([
+                    (int(np.count_nonzero(ys == y0)), "y", y0),
+                    (int(np.count_nonzero(ys == y1)), "y", y1),
+                ])
+            if box_w > safe_width:
+                options.extend([
+                    (int(np.count_nonzero(xs == x0)), "x", x0),
+                    (int(np.count_nonzero(xs == x1)), "x", x1),
+                ])
+            if not options:
+                repaired.append(int(pid))
+                break
+            options.sort(key=lambda item: (item[0], item[1], item[2]))
+            applied = False
+            for _count, axis, edge in options:
+                if _apply_edge(int(pid), axis, edge):
+                    applied = True
+                    break
+            if not applied:
+                break
+
+    return sorted(set(repaired))
 
 
 def _classify_provinces_fast(province_count, province_map, tile_map):

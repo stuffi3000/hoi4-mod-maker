@@ -122,9 +122,16 @@ class Hoi4Rules:
     def violates_too_large_box(cls, bbox_w: int, bbox_h: int,
                                 map_w: int = MAP_WIDTH,
                                 map_h: int = MAP_HEIGHT) -> bool:
-        """单省份的 bbox 是否超过地图 1/8（TOO LARGE BOX 错误）。"""
-        return (bbox_w > map_w * cls.PROVINCE_MAX_BBOX_RATIO
-                or bbox_h > map_h * cls.PROVINCE_MAX_BBOX_RATIO)
+        """Return whether a province reaches the engine's one-eighth limit.
+
+        Although the documentation says ``more than`` one eighth, the game
+        rejects the exact boundary for some map sizes (notably 256 pixels on
+        a 2048-pixel map).  Use the largest integer box that stays strictly
+        below one eighth so validators and exports agree with the loader.
+        """
+        max_w = max(1, (int(map_w) - 1) // 8)
+        max_h = max(1, (int(map_h) - 1) // 8)
+        return bbox_w > max_w or bbox_h > max_h
 
     @classmethod
     def province_count_warning(cls, count: int) -> str:

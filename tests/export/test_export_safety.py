@@ -4,13 +4,17 @@ from __future__ import annotations
 
 import numpy as np
 
-from data.constants import REPLACE_PATHS, TILE_LAND, TILE_SEA
+from data.constants import REPLACE_PATHS, TILE_LAKE, TILE_LAND, TILE_SEA
 from domain.managers.state import StateData, StateManager
 from domain.validators.province import (
     build_coastal_land_to_sea,
     get_coastal_provinces,
 )
-from export.mod_exporter import _compute_coastal_once, _compute_coastal_province_level
+from export.mod_exporter import (
+    _compute_coastal_once,
+    _compute_coastal_province_level,
+    _repair_too_large_provinces,
+)
 from export.writers.common.countries import (
     write_country_characters,
     write_dynamic_countries,
@@ -100,6 +104,28 @@ def test_state_writer_clamps_coastal_buildings_to_category_slots(tmp_path):
     )
     assert "\t\t\tindustrial_complex = 1" in text
     assert "\t\t\tdockyard =" not in text
+
+
+def test_export_repairs_exact_province_bbox_boundary():
+    """Trim an edge pixel when a province reaches the engine's 1/8 limit."""
+    province_map = np.zeros((64, 64), dtype=np.int32)
+    province_map[9, 23] = 1
+    province_map[10, 23] = 3
+    province_map[11:17, 20:27] = 3
+    province_map[17, 23] = 3
+    province_map[18, 23] = 2
+
+    tile_map = np.full_like(province_map, TILE_SEA, dtype=np.uint8)
+    tile_map[province_map == 1] = TILE_LAND
+    tile_map[province_map == 2] = TILE_LAND
+    tile_map[province_map == 3] = TILE_LAKE
+
+    changed = _repair_too_large_provinces(province_map, tile_map)
+
+    assert changed == [3]
+    ys, xs = np.where(province_map == 3)
+    assert (ys.max() - ys.min() + 1) == 7
+    assert (xs.max() - xs.min() + 1) == 7
 
 
 def test_buildings_writer_places_a_seam_port_on_a_land_pixel(tmp_path):
