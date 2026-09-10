@@ -1776,11 +1776,30 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
             lst.setCurrentRow(0)
         else:
             self._on_sr_selected(lst.currentRow())
+        if hasattr(self, "_refresh_feature_statuses"):
+            self._refresh_feature_statuses()
 
     def _refresh_logistics_counts(self) -> None:
         self._tool_panel._logi_adj_status.setText(tr("logistics_adj_count", self._project.adjacency_mgr.count()))
         self._tool_panel._logi_rail_status.setText(tr("logistics_rail_count", self._project.railway_mgr.count()))
         self._tool_panel._logi_sup_status.setText(tr("logistics_supply_count", self._project.supply_mgr.count()))
+        if hasattr(self, "_refresh_feature_statuses"):
+            self._refresh_feature_statuses()
+
+    def _refresh_feature_statuses(self) -> None:
+        """Refresh live completion dots for the logistics group tabs."""
+        regions = self._project.strategic_region_mgr.regions.values()
+        strategic_ready = any(bool(region.province_ids) for region in regions)
+        logistics_ready = any(
+            manager.count() > 0
+            for manager in (
+                self._project.adjacency_mgr,
+                self._project.railway_mgr,
+                self._project.supply_mgr,
+            )
+        )
+        self._tool_panel.set_feature_ready("strategic_region", strategic_ready)
+        self._tool_panel.set_feature_ready("logistics", logistics_ready)
 
     def _open_logistics_generation(self) -> None:
         from features.map.logistics.generation_dialog import LogisticsGenerationDialog
@@ -1803,6 +1822,7 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
             province_map=self._canvas.province_map,
             tile_map=self._canvas.tile_map,
         )
+        dlg.changed.connect(self._refresh_logistics_counts)
         dlg.pick_mode_changed.connect(self._on_adjacency_pick_mode)
         dlg.finished.connect(self._on_adjacency_dialog_closed)
         self._adjacency_dialog = dlg
@@ -1826,6 +1846,7 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
             return
         from features.map.logistics.railway_dialog import RailwayDialog
         dlg = RailwayDialog(self._project.railway_mgr, parent=self)
+        dlg.changed.connect(self._refresh_logistics_counts)
         dlg.finished.connect(self._on_railway_dialog_closed)
         self._railway_dialog = dlg
         dlg.show()

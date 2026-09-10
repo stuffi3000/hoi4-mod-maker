@@ -7,7 +7,7 @@
 
 from __future__ import annotations
 
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QListWidget,
     QListWidgetItem, QPushButton,
@@ -18,6 +18,8 @@ from ui.i18n import tr
 
 
 class RailwayDialog(QDialog):
+
+    changed = pyqtSignal()
 
     def __init__(self, railway_mgr: RailwayManager, parent=None) -> None:
         super().__init__(parent)
@@ -74,7 +76,9 @@ class RailwayDialog(QDialog):
             return
         if self._mgr.remove_at(row):
             self._refresh_list()
+            self.changed.emit()
 
     def _on_clear(self) -> None:
         self._mgr.clear()
         self._refresh_list()
+        self.changed.emit()

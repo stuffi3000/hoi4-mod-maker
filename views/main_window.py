@@ -121,6 +121,7 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
         # 挂管理器到 canvas，让后勤 overlay 能读到数据
         self._canvas._supply_mgr = self._project.supply_mgr
         self._canvas._railway_mgr = self._project.railway_mgr
+        self._refresh_feature_statuses()
 
         # 初始模式
         self._on_mode_changed("land")
@@ -565,6 +566,8 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
         bus.subscribe("logistics_province_picked", self._on_evt_logistics_picked)
         bus.subscribe("sr_select_in_list", self._on_evt_sr_select_in_list)
         bus.subscribe("railway_changed", lambda event: self._refresh_logistics_counts())
+        bus.subscribe("sr_colors_dirty", lambda event: self._refresh_feature_statuses())
+        bus.subscribe("province_map_regenerated", lambda event: self._refresh_feature_statuses())
 
     def _on_evt_status(self, event) -> None:
         self._status_info.setText(event.data.get("text", ""))
@@ -638,6 +641,7 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
             self._refresh_sr_list()
         elif mode == "logistics":
             self._refresh_logistics_counts()
+        self._refresh_feature_statuses()
         # 进入省份模式时检测 ID 空洞
         if mode == "province":
             self._check_province_gaps()

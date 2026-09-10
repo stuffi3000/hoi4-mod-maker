@@ -6,6 +6,7 @@ from features.map.strategic_region.page import StrategicRegionPage
 from features.map.logistics.page import LogisticsPage
 from views.main_window_actions import MainWindowActionsMixin
 from ui.i18n import tr
+from ui.tool_panel import _SubModeTabBar
 
 
 def test_strategic_region_refresh_populates_and_preserves_selection(qtbot):
@@ -37,3 +38,28 @@ def test_logistics_generation_button_emits_request(qtbot):
                   if b.text() == tr("logistics_generate_button"))
     with qtbot.waitSignal(page.generate_logistics_requested):
         button.click()
+
+
+def test_logistics_group_status_dots_reflect_feature_readiness(qtbot):
+    bar = _SubModeTabBar()
+    qtbot.addWidget(bar)
+    tabs = [
+        ("strategic_region", "tab_strategic_region", "🟠"),
+        ("logistics", "tab_logistics", "🟠"),
+    ]
+    bar.set_tabs(tabs)
+    assert bar._buttons[0].text().startswith("🟠")
+    assert bar._buttons[1].text().startswith("🟠")
+
+    bar.set_feature_ready("strategic_region", True)
+    bar.set_feature_ready("logistics", True)
+    assert bar._buttons[0].text().startswith("🟢")
+    assert bar._buttons[1].text().startswith("🟢")
+
+    # Switching away and back recreates the buttons; readiness persists.
+    bar.set_tabs([("land", "tab_land", "🟢")])
+    bar.set_tabs(tabs)
+    assert all(button.text().startswith("🟢") for button in bar._buttons)
+
+    bar.set_feature_ready("logistics", False)
+    assert bar._buttons[1].text().startswith("🟠")

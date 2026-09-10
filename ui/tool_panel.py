@@ -183,6 +183,10 @@ class _SubModeTabBar(QWidget):
         self._btn_group.setExclusive(True)
         self._btn_group.buttonClicked.connect(self._on_tab_clicked)
         self._buttons: list[QPushButton] = []
+        self._current_tabs: list[tuple[str, str, str]] = []
+        # Some tabs use the risk dot as a live completion indicator.  Keep the
+        # catalogue risk as the fallback for modes without a readiness rule.
+        self._feature_ready: dict[str, bool] = {}
 
         self.hide()
 
@@ -196,6 +200,7 @@ class _SubModeTabBar(QWidget):
             btn.setParent(None)
             btn.deleteLater()
         self._buttons.clear()
+        self._current_tabs = list(tabs)
 
         # 清除 stretch items
         while self._layout.count():
@@ -210,6 +215,8 @@ class _SubModeTabBar(QWidget):
         self._layout.addStretch()
         for mode_id, label_key, risk in visible_tabs:
             # 风险标签作为前缀显示
+            if mode_id in self._feature_ready:
+                risk = "🟢" if self._feature_ready[mode_id] else "🟠"
             btn_text = f"{risk} {tr(label_key)}" if risk else tr(label_key)
             btn = QPushButton(btn_text)
             btn.setCheckable(True)
@@ -225,6 +232,20 @@ class _SubModeTabBar(QWidget):
             self._buttons[0].setChecked(True)
 
         self.show()
+
+    def set_feature_ready(self, mode_id: str, ready: bool) -> None:
+        """Update a live readiness dot without changing other tab risk labels."""
+        self._feature_ready[mode_id] = bool(ready)
+        for button in self._buttons:
+            if button.property("sub_mode_id") == mode_id:
+                label = next(
+                    (label_key for mid, label_key, _risk in self._current_tabs
+                     if mid == mode_id),
+                    "",
+                )
+                if label:
+                    button.setText(f"{'🟢' if ready else '🟠'} {tr(label)}")
+                break
 
     def _on_tab_clicked(self, btn: QPushButton) -> None:
         mid = btn.property("sub_mode_id")
@@ -882,6 +903,10 @@ class ToolPanel(QWidget):
     def _on_sub_mode_changed(self, mode: str) -> None:
         """子标签切换 → 切页面 + 发射信号。"""
         self._switch_to_mode(mode)
+
+    def set_feature_ready(self, mode_id: str, ready: bool) -> None:
+        """Set the live readiness dot for a feature sub-tab."""
+        self._sub_tabs.set_feature_ready(mode_id, ready)
 
     def _switch_to_mode(self, mode: str) -> None:
         """切换到指定 mode_id，更新 stack、hint、信号。"""

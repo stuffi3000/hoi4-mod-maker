@@ -79,6 +79,8 @@ def _auto_strait_params(
 
 
 class AdjacencyDialog(QDialog):
+
+    changed = pyqtSignal()
     """相邻关系编辑器.
 
     pick_mode_changed 信号参数: (开关, 目标字段名) — 字段名 'from' / 'to' / 'through'
@@ -223,6 +225,7 @@ class AdjacencyDialog(QDialog):
             e = entries[row]
             self._mgr.remove(e.from_id, e.to_id, e.type)
             self._refresh_list()
+            self.changed.emit()
 
     # ─────────── 表单 ───────────
 
@@ -266,6 +269,7 @@ class AdjacencyDialog(QDialog):
         )
         self._mgr.add(entry)
         self._refresh_list()
+        self.changed.emit()
         coord_info = f" ({start_x},{start_y})→({stop_x},{stop_y})" if start_x >= 0 else ""
         self._status.setText(tr("adj_dlg_saved_fmt", from_id, to_id, t, coord_info))
 
