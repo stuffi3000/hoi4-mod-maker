@@ -129,28 +129,28 @@ DEFAULT_MOD_OUTPUT_PATH = "D:/Documents/Paradox Interactive/Hearts of Iron IV/mo
 #   - vanilla 的 localisation key (TAG=Germany 等) 可能覆盖我们的国名
 # Fallback 列表是 HOI4 1.17 截至 2026-05 的全部 vanilla TAG (含 D01-D75 dynamic slot)
 _VANILLA_TAGS_FALLBACK = frozenset((
-    "ABK ADU AFA AFG ALB ALG ALT ANG ANU AOI ARG ARM AST ASY AUS AZR BAH BAN BAR "
+    "ABK ADU AFA AFG ALB ALG ALT ANG ANU AOI ARG ARM AST ASY ATJ AUS AZR BAH BAN BAR "
     "BAS BAY BEG BEL BHR BHU BIA BLC BLR BLZ BOL BOS BOT BRA BRD BRI BRM BRN BSK "
-    "BUK BUL BYA CAM CAN CAR CAT CAY CBV CHA CHI CHL CHM CHR CHU CIN CIP CKK CMR "
-    "COG COL COR COS CRC CRI CRO CSA CUB CYP CZE D01 D02 D03 D04 D05 D06 D07 D08 "
+    "BLI BOU BUK BUL BYA CAM CAN CAR CAT CAY CBV CHA CHI CHL CHM CHR CHU CIN CIP CKK CMR "
+    "COG COL COR COS CPS CRC CRI CRO CSA CUB CYP CZE D01 D02 D03 D04 D05 D06 D07 D08 "
     "D09 D10 D11 D12 D13 D14 D15 D16 D17 D18 D19 D20 D21 D22 D23 D24 D25 D26 D27 "
     "D28 D29 D30 D31 D32 D33 D34 D35 D36 D37 D38 D39 D40 D41 D42 D43 D44 D45 D46 "
     "D47 D48 D49 D50 D51 D52 D53 D54 D55 D56 D57 D58 D59 D60 D61 D62 D63 D64 D65 "
     "D66 D67 D68 D69 D70 D71 D72 D73 D74 D75 DAG DAH DDR DEN DIP DJI DNZ DOM DON "
     "ECU EGY ELS ENG EQG ERI EST ETH EVE EZO FER FIJ FIN FOR FRA FSA FSM GAB GAL "
-    "GAM GAR GBA GDC GDL GEN GEO GER GHA GLC GNA GNB GRE GRN GSM GUA GUM GXC GYA "
+    "GAM GAR GBA GDC GDL GEN GEO GER GHA GLC GNA GNB GOW GRE GRN GSM GUA GUM GXC GYA "
     "HAI HAN HAR HAW HBC HES HOL HON HRZ HUN HYD IAS ICE IMO INC INS INU IRE IRQ "
     "ISR ITA ITZ IVO JAM JAN JAP JOR KAL KAR KAS KAT KAZ KBK KEN KHA KHI KHL KHM "
     "KKP KLT KOL KOM KOR KOS KSH KUB KUM KUR KUW KYR LAO LAT LBA LBV LEB LIB LIT "
     "LUX MAC MAD MAL MAN MAY MEK MEL MEN MEX MIS MLD MLI MLT MLW MNT MOL MON MOR "
     "MPU MRT MYS MZB NAH NAV NEN NEP NGA NGR NIC NIR NMB NOA NOR NWF NXM NZL OCC "
-    "OKN OMA ORO OVO PAK PAL PAN PAP PAR PER PHI PLU PNG POL POR PRC PRE PRU PSH "
+    "OKN OMA ORO OVO PAK PAL PAN PAP PAR PER PHI PLU PNG POK POL POR PRC PRE PRU PSH "
     "PSR PUE QAT QEM QUE RAA RAJ RAN RAP RAR RAS RCG RCO RGB RHD RHI RIF RIG RJP "
     "RKA RKB RKC RKG RKH RKI RKK RKL RKM RKN RKO RKT RKU RKV RNA RNG ROA ROM RUS "
     "RUT RWA SAB SAF SAM SAR SAU SAX SCO SDL SEN SER SHL SHX SIA SIC SID SIE SIK "
-    "SIL SIN SKK SLO SLV SMI SND SNG SOK SOL SOM SOV SPM SPR SRL SUD SUR SWE SWI "
-    "SYR TAH TAJ TAN TAT TAY THU TIB TIG TML TMS TOG TOS TRA TRI TTS TUN TUR TZN "
-    "UAE UBD UDM UGA UKR URG USA USB UZB VEN VGE VIN VLA VOL WES WGR WIS WLA WLS "
+    "SIL SIN SKK SLO SLV SMI SND SNG SOK SOL SOM SOV SPM SPR SRL SSI SUD SUR SWE SWI "
+    "SYR TAH TAJ TAN TAT TAY THU TIB TIG TML TMS TNE TOG TOS TRA TRI TTS TUN TUR TZN "
+    "UAE UBD UDM UGA UKR URG USA USB UZB VAN VEN VGE VIN VLA VOL WES WGR WIS WLA WLS "
     "WPG WUR XIC XSM YAK YAM YEM YUC YUG YUN ZAM ZIM"
 ).split())
 
@@ -167,24 +167,43 @@ def get_vanilla_tags() -> frozenset[str]:
     if _VANILLA_TAGS_CACHE is not None:
         return _VANILLA_TAGS_CACHE
 
+    import json
     import os
     import re
     tags = set(_VANILLA_TAGS_FALLBACK)
-    tags_dir = os.path.join(DEFAULT_HOI4_PATH, "common", "country_tags")
-    if os.path.isdir(tags_dir):
-        tag_pat = re.compile(r"^\s*([A-Z][A-Z0-9]{2})\s*=")
-        for fn in os.listdir(tags_dir):
-            if not fn.endswith(".txt"):
-                continue
-            try:
-                with open(os.path.join(tags_dir, fn), "r",
-                          encoding="utf-8", errors="ignore") as f:
-                    for line in f:
-                        m = tag_pat.match(line)
-                        if m:
-                            tags.add(m.group(1))
-            except OSError:
-                pass
+    tags_dirs = [os.path.join(DEFAULT_HOI4_PATH, "common", "country_tags")]
+    # The editor stores the selected Steam installation separately from this
+    # module's historical default path.  Read it here as well so exports see
+    # country tags added by the installed game/DLC and can provide matching
+    # histories when ``history/countries`` is replaced.
+    config_path = os.path.join(os.path.expanduser("~"), ".hoi4_map_maker.json")
+    try:
+        with open(config_path, "r", encoding="utf-8") as config_file:
+            configured_path = json.load(config_file).get("hoi4_game_dir")
+        if configured_path:
+            configured_tags_dir = os.path.join(
+                os.fspath(configured_path), "common", "country_tags"
+            )
+            if configured_tags_dir not in tags_dirs:
+                tags_dirs.insert(0, configured_tags_dir)
+    except (OSError, TypeError, ValueError):
+        pass
+
+    for tags_dir in tags_dirs:
+        if os.path.isdir(tags_dir):
+            tag_pat = re.compile(r"^\s*([A-Z][A-Z0-9]{2})\s*=")
+            for fn in os.listdir(tags_dir):
+                if not fn.endswith(".txt"):
+                    continue
+                try:
+                    with open(os.path.join(tags_dir, fn), "r",
+                              encoding="utf-8", errors="ignore") as f:
+                        for line in f:
+                            m = tag_pat.match(line)
+                            if m:
+                                tags.add(m.group(1))
+                except OSError:
+                    pass
     _VANILLA_TAGS_CACHE = frozenset(tags)
     return _VANILLA_TAGS_CACHE
 

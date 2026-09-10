@@ -3,6 +3,7 @@ import os
 from data.constants import (
     VALID_MAIN_IDEOLOGIES, DEFAULT_IDEOLOGY_SUBTYPE,
     DEFAULT_MOD_VERSION, DEFAULT_SUPPORTED_VERSION, REPLACE_PATHS,
+    get_vanilla_tags,
 )
 from export.writers.gfx.portraits import write_country_portraits
 from export.writers.gfx.flags import write_country_flags
@@ -158,7 +159,13 @@ def write_country_characters(tag, output_dir, country_name="Fantasy"):
         f.write("\t}\n\n")
 
         # 5. 科学家 (4种专业, 避免自动生成失败)
-        specializations = ["air", "industry", "naval", "army"]
+        #
+        # The scientist database uses the facility specializations
+        # ``air``, ``land``, ``naval`` and ``nuclear``.  ``industry`` and
+        # ``army`` look plausible but are not registered specialization
+        # identifiers; emitting either leaves a dangling role in the
+        # character database and is reported during map startup.
+        specializations = ["air", "land", "naval", "nuclear"]
         for i, spec in enumerate(specializations, 1):
             f.write(f"\t{tag}_scientist_{i} = {{\n")
             f.write(f"\t\tname = {tag}_scientist_{i}\n")
@@ -257,6 +264,12 @@ def write_country(tag, capital_state_id, output_dir):
 
     with open(os.path.join(output_dir, "history", "units", f"{tag}_1936.txt"), "w", encoding="utf-8") as f:
         f.write("units = { }\n\n")
+
+    write_neutral_country_histories(
+        output_dir,
+        exported_tags={tag},
+        capital_state_id=capital_state_id,
+    )
 
 
 def write_countries_from_mgr(country_mgr, output_dir, states):
@@ -387,6 +400,84 @@ def write_countries_from_mgr(country_mgr, output_dir, states):
     # （D01-D75 在 country_tags/zz_dynamic_countries.txt 里注册但没有 history/units/Dxx_1936.txt
     #  → AI 5x 多线程评估它们的军队时 null → tbb race → 崩）
     write_dynamic_country_oobs(output_dir)
+
+    write_neutral_country_histories(
+        output_dir,
+        exported_tags=set(country_mgr.countries),
+        capital_state_id=fallback_state,
+    )
+
+
+_NEUTRAL_HISTORY_MARKER = "# Generated - TC MOD neutral country history"
+
+
+def write_neutral_country_histories(
+    output_dir: str,
+    exported_tags: set[str] | None = None,
+    capital_state_id: int = 1,
+) -> list[str]:
+    """Give still-visible vanilla tags a valid history under ``replace_path``.
+
+    The exporter intentionally keeps ``common/country_tags`` additive: replacing
+    that directory removes definitions required by vanilla scripted systems.
+    ``history/countries`` is different, however; it is replaced so vanilla
+    state IDs cannot leak into the custom map.  Without a history file for each
+    additive vanilla tag, the engine reports hundreds of missing histories and
+    later dereferences an incompletely initialized country while entering a
+    session.  A neutral, unowned country is enough to keep the database
+    consistent; only tags explicitly exported by the project receive gameplay
+    history and OOB data.
+
+    Dynamic ``D01``…``D75`` tags are excluded because the game provisions those
+    slots separately and the exporter already supplies their country/OOB files.
+    Existing files (including user-authored histories) are never overwritten.
+    The returned list is useful to callers/tests for reporting.
+    """
+    history_dir = os.path.join(output_dir, "history", "countries")
+    os.makedirs(history_dir, exist_ok=True)
+
+    exported = {str(tag).upper() for tag in (exported_tags or ())}
+    try:
+        fallback_state = max(1, int(capital_state_id))
+    except (TypeError, ValueError):
+        fallback_state = 1
+
+    # History files are matched by their three-character country-tag prefix.
+    # Respect any file already present in an output folder, including files
+    # supplied by a user or a previous exporter run.
+    existing_prefixes: set[str] = set()
+    for filename in os.listdir(history_dir):
+        if not filename.lower().endswith(".txt"):
+            continue
+        stem = os.path.splitext(filename)[0]
+        if len(stem) >= 3:
+            existing_prefixes.add(stem[:3].upper())
+
+    generated: list[str] = []
+    for tag in sorted(get_vanilla_tags()):
+        tag = str(tag).upper()
+        if tag in exported or (len(tag) == 3 and tag.startswith("D") and tag[1:].isdigit()):
+            continue
+        if tag in existing_prefixes:
+            continue
+
+        path = os.path.join(history_dir, f"{tag}.txt")
+        with open(path, "w", encoding="utf-8") as file:
+            file.write(f"{_NEUTRAL_HISTORY_MARKER}: {tag}\n")
+            file.write(f"capital = {fallback_state}\n")
+            file.write("set_research_slots = 1\n")
+            file.write("set_politics = {\n")
+            file.write("\truling_party = neutrality\n")
+            file.write('\tlast_election = "1932.1.1"\n')
+            file.write("\telection_frequency = 48\n")
+            file.write("\telections_allowed = no\n")
+            file.write("}\n")
+            file.write("set_popularities = {\n\tneutrality = 100\n}\n")
+            file.write("\n# end of neutral country history\n")
+        generated.append(tag)
+        existing_prefixes.add(tag)
+
+    return generated
 
 
 def write_dynamic_country_oobs(output_dir, count=75):

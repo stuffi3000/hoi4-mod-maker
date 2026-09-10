@@ -18,6 +18,7 @@ from export.mod_exporter import (
 from export.writers.common.countries import (
     write_country_characters,
     write_dynamic_countries,
+    write_neutral_country_histories,
 )
 from export.writers.history.states import write_states_from_mgr
 from export.writers.map.buildings import write_buildings
@@ -179,6 +180,52 @@ def test_ai_strategy_overrides_shadow_map_incompatible_vanilla_files(tmp_path):
     assert hol.read_text(encoding="utf-8").startswith("# Empty - TC MOD")
     assert sov.read_text(encoding="utf-8").startswith("# Empty - TC MOD")
 
+    theaters = tmp_path / "common" / "ai_faction_theaters" / "ai_faction_theaters.txt"
+    theater_text = theaters.read_text(encoding="utf-8")
+    assert theater_text.startswith("# Empty - TC MOD")
+    assert "regions = { 1 }" in theater_text
+
+    tutorial = tmp_path / "tutorial" / "tutorial.txt"
+    tutorial_text = tutorial.read_text(encoding="utf-8")
+    assert tutorial_text.startswith("# Empty - TC MOD")
+    assert tutorial_text.rstrip().endswith("tutorial = { }")
+
+    on_actions = tmp_path / "common" / "on_actions" / "14_sea_on_actions.txt"
+    on_actions_text = on_actions.read_text(encoding="utf-8")
+    assert on_actions_text.startswith("# Empty - TC MOD")
+    assert on_actions_text.rstrip().endswith("on_actions = { }")
+
+    decisions = tmp_path / "common" / "decisions" / "ENG.txt"
+    assert decisions.read_text(encoding="utf-8").startswith("# Empty - TC MOD")
+    formables = tmp_path / "common" / "decisions" / "formable_nation_decisions.txt"
+    assert formables.read_text(encoding="utf-8").startswith("# Empty - TC MOD")
+
+
+def test_neutral_histories_cover_visible_vanilla_tags_without_shadowing_exported(
+    tmp_path, monkeypatch
+):
+    import export.writers.common.countries as countries_writer
+
+    monkeypatch.setattr(
+        countries_writer,
+        "get_vanilla_tags",
+        lambda: frozenset({"BEL", "SOV", "D01", "TST"}),
+    )
+    history_dir = tmp_path / "history" / "countries"
+    history_dir.mkdir(parents=True)
+    (history_dir / "BEL.txt").write_text("# project history\n", encoding="utf-8")
+
+    generated = write_neutral_country_histories(
+        str(tmp_path), exported_tags={"BEL", "TST"}, capital_state_id=7
+    )
+
+    assert generated == ["SOV"]
+    text = (history_dir / "SOV.txt").read_text(encoding="utf-8")
+    assert "capital = 7" in text
+    assert "neutrality = 100" in text
+    assert not (history_dir / "D01.txt").exists()
+    assert (history_dir / "BEL.txt").read_text(encoding="utf-8") == "# project history\n"
+
 
 def test_generated_characters_do_not_shadow_vanilla_tag_files(tmp_path):
     legacy = tmp_path / "common" / "characters" / "BEL.txt"
@@ -194,9 +241,14 @@ def test_generated_characters_do_not_shadow_vanilla_tag_files(tmp_path):
     assert not legacy.exists()
     generated = tmp_path / "common" / "characters" / "zz_fantasy_BEL.txt"
     assert generated.exists()
-    assert generated.read_text(encoding="utf-8").startswith(
+    generated_text = generated.read_text(encoding="utf-8")
+    assert generated_text.startswith(
         "# Generated - TC MOD character definitions"
     )
+    assert "specialization_industry" not in generated_text
+    assert "specialization_army" not in generated_text
+    for specialization in ("air", "land", "naval", "nuclear"):
+        assert f"specialization_{specialization} = 2" in generated_text
 
 
 def test_dynamic_country_pool_writes_independent_tags_and_files(tmp_path):

@@ -1,10 +1,10 @@
-"""Create only the complete replace_path directories an export owns.
+"""Prepare owned replace-path directories and narrow compatibility shadows.
 
 ``replace_path`` is directory-wide.  Creating placeholders for engine systems
 such as decisions, on_actions, AI, or unit-name groups silently removes their
-vanilla definitions and is less safe than retaining the vanilla content.  This
-module therefore limits itself to generated map/history directories and clears
-the known legacy overlays from an existing exporter output folder.
+vanilla definitions.  The exporter therefore keeps those directories
+additive and shadows only the exact vanilla files whose fixed map references
+would otherwise run during a custom-map session.
 """
 
 from __future__ import annotations
@@ -125,6 +125,63 @@ _AI_STRATEGY_OVERRIDES = {
     ),
 }
 
+# These vanilla decision files are evaluated continuously for countries
+# that still exist in an additive country-tag database.  Their availability
+# checks use fixed vanilla state IDs (Maryland and Haiti) and therefore emit a
+# tight invalid-state loop on a compact exported map.  Shadowing the exact
+# files preserves the rest of the vanilla decision database without a
+# directory-wide replace_path.
+_DECISION_OVERRIDES = {
+    "common/decisions/ENG.txt": (
+        "# Empty - TC MOD: vanilla ENG decisions target states absent from the exported map.\n"
+    ),
+    "common/decisions/CHL.txt": (
+        "# Empty - TC MOD: vanilla CHL decisions target states absent from the exported map.\n"
+    ),
+    "common/decisions/formable_nation_decisions.txt": (
+        "# Empty - TC MOD: vanilla formable decisions target states absent from the exported map.\n"
+    ),
+    "common/decisions/TOA_formable_nation_decisions.txt": (
+        "# Empty - TC MOD: vanilla TOA formable decisions target states absent from the exported map.\n"
+    ),
+}
+
+_AI_FACTION_THEATER_OVERRIDE = (
+    "# Empty - TC MOD: vanilla theaters target strategic regions that are not in the exported map.\n"
+    "# Keep one inert definition so the database remains non-empty without invalid region IDs.\n"
+    "exported_map = {\n"
+    "\tname = theater_exported_map\n"
+    "\tregions = { 1 }\n"
+    "\tcancel = { has_war = no }\n"
+    "\tai_will_do = { base = 0 }\n"
+    "}\n"
+)
+
+_TUTORIAL_OVERRIDE = (
+    "# Empty - TC MOD: vanilla tutorial targets states and provinces absent from the exported map.\n"
+    "tutorial = { }\n"
+)
+
+_ON_ACTION_FILE_NAMES = (
+    "00_on_actions.txt",
+    "00_testing_on_actions.txt",
+    "01_tfv_on_actions.txt",
+    "02_dod_on_actions.txt",
+    "03_wtt_on_actions.txt",
+    "04_mtg_on_actions.txt",
+    "05_lar_on_actions.txt",
+    "06_bftb_on_actions.txt",
+    "07_nsb_on_actions.txt",
+    "08_bba_on_actions.txt",
+    "09_aat_on_actions.txt",
+    "10_toa_on_actions.txt",
+    "12_wuw_on_actions.txt",
+    "13_goe_on_actions.txt",
+    "14_sea_on_actions.txt",
+    "15_mun_on_actions.txt",
+    "16_taog_on_actions.txt",
+)
+
 
 def _is_legacy_generated_file(path: str) -> bool:
     try:
@@ -177,3 +234,44 @@ def write_ai_strategy_overrides(output_dir: str) -> None:
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "w", encoding="utf-8") as file:
             file.write(content)
+
+    for relative_path, content in _DECISION_OVERRIDES.items():
+        path = os.path.join(output_dir, *relative_path.split("/"))
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as file:
+            file.write(content)
+
+    # The vanilla faction-theater database is a single file.  Its region IDs
+    # are tied to the 48-region vanilla map and are rejected by a compact
+    # exported map.  Shadow that file at the same path with one inert theater
+    # instead of replacing the whole ``common`` tree or adding another
+    # replace_path entry.
+    theater_path = os.path.join(
+        output_dir, "common", "ai_faction_theaters", "ai_faction_theaters.txt"
+    )
+    os.makedirs(os.path.dirname(theater_path), exist_ok=True)
+    with open(theater_path, "w", encoding="utf-8") as file:
+        file.write(_AI_FACTION_THEATER_OVERRIDE)
+
+    # The vanilla tutorial is loaded during every new-session setup even when
+    # the tutorial UI is not opened.  Its hard-coded state/province IDs are
+    # invalid for a custom map and can be dereferenced during map entry.
+    tutorial_path = os.path.join(output_dir, "tutorial", "tutorial.txt")
+    os.makedirs(os.path.dirname(tutorial_path), exist_ok=True)
+    with open(tutorial_path, "w", encoding="utf-8") as file:
+        file.write(_TUTORIAL_OVERRIDE)
+
+    # Vanilla on_actions contain hard-coded state/province/character targets
+    # (for example, 14_sea_on_actions and 16_taog_on_actions).  They run as
+    # soon as a new session starts and repeatedly dereference objects that a
+    # custom map does not have.  Shadow each shipped file at its exact path;
+    # this keeps the directory additive and avoids another replace_path entry.
+    on_actions_dir = os.path.join(output_dir, "common", "on_actions")
+    os.makedirs(on_actions_dir, exist_ok=True)
+    for filename in _ON_ACTION_FILE_NAMES:
+        path = os.path.join(on_actions_dir, filename)
+        with open(path, "w", encoding="utf-8") as file:
+            file.write(
+                "# Empty - TC MOD: vanilla on_actions target objects absent from the exported map.\n"
+                "on_actions = { }\n"
+            )
