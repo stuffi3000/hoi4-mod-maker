@@ -19,6 +19,7 @@ _CAT_BUILDINGS = {
     "enclave":      (1, 0, 0, 0, 0),
     "tiny_island":  (1, 0, 0, 0, 0),
     "small_island": (1, 0, 0, 0, 0),
+    "large_island": (2, 0, 1, 0, 1),
     "pastoral":     (2, 0, 1, 0, 0),
     "rural":        (2, 0, 1, 0, 0),
     "town":         (3, 1, 2, 0, 1),
@@ -31,10 +32,94 @@ _CAT_BUILDINGS = {
 
 _COASTAL_DOCKYARDS = {
     "pastoral": 1, "rural": 1,
+    "large_island": 1,
     "town": 1, "large_town": 2,
     "city": 2, "large_city": 3,
     "metropolis": 3, "megalopolis": 4,
 }
+
+# ``state_category`` controls the number of shared (state-level) building
+# slots.  The game rejects a history block when the sum of buildings marked
+# ``shares_slots = yes`` is greater than this value.  Keep this table in the
+# writer instead of deriving it from the generated defaults: a coastal state
+# gets an extra dockyard by default, which otherwise overflows small
+# categories (for example a pastoral state has one slot but would receive an
+# industrial complex and a dockyard).
+_LOCAL_BUILDING_SLOTS = {
+    "wasteland": 0,
+    "enclave": 0,
+    "tiny_island": 0,
+    "small_island": 1,
+    "large_island": 3,
+    "pastoral": 1,
+    "rural": 2,
+    "town": 4,
+    "large_town": 5,
+    "city": 6,
+    "large_city": 8,
+    "metropolis": 10,
+    "megalopolis": 12,
+}
+
+# Building definitions in vanilla that declare ``shares_slots = yes`` and
+# can appear in a state history ``buildings`` block.  Infrastructure, air
+# bases, and province buildings use separate limits and must not consume the
+# shared local-building budget here.
+_SHARED_SLOT_BUILDINGS = frozenset({
+    "arms_factory",
+    "industrial_complex",
+    "dockyard",
+    "synthetic_refinery",
+    "fuel_silo",
+    "rocket_site",
+    "mega_gun_emplacement",
+    "nuclear_reactor",
+    "nuclear_reactor_heavy_water",
+    "commercial_nuclear_reactor",
+    "energy_infrastructure",
+    "industrial_infrastructure",
+    "stronghold_network",
+})
+
+
+def _clamp_shared_buildings(
+    category: str,
+    buildings: dict[str, int],
+    preferred: tuple[str, ...] = (),
+) -> dict[str, int]:
+    """Limit shared state buildings to the category's local slot count.
+
+    Values are considered in the same deterministic order as the generated
+    history block.  Non-shared buildings (for example ``air_base``) are
+    retained because they have their own state/province limits.  The helper
+    returns a new mapping so the editor's in-memory state is never mutated by
+    export.
+    """
+    remaining = _LOCAL_BUILDING_SLOTS.get(category, 0)
+    clamped: dict[str, int] = {}
+    preferred_names = [name for name in preferred if name in buildings]
+    preferred_set = set(preferred_names)
+    ordered_items = [
+        (name, buildings[name]) for name in preferred_names
+    ] + [
+        (name, value) for name, value in buildings.items()
+        if name not in preferred_set
+    ]
+    for bname, raw_value in ordered_items:
+        try:
+            value = int(raw_value or 0)
+        except (TypeError, ValueError):
+            continue
+        if value <= 0:
+            continue
+        if bname not in _SHARED_SLOT_BUILDINGS:
+            clamped[bname] = value
+            continue
+        allowed = min(value, remaining)
+        if allowed > 0:
+            clamped[bname] = allowed
+            remaining -= allowed
+    return clamped
 
 
 def write_states_from_mgr(
@@ -163,6 +248,24 @@ def write_states_from_mgr(
 
             if impassable or category == "wasteland":
                 final_buildings = {}
+            else:
+                # A coastal dockyard is added above even when all of the
+                # category's shared slots are already occupied by generated
+                # factories.  Clamp after applying user overrides so every
+                # exported history block remains valid for its category.
+                preferred_shared_list: list[str] = []
+                for bname, bval in user_buildings.items():
+                    if bname not in _SHARED_SLOT_BUILDINGS:
+                        continue
+                    try:
+                        if int(bval or 0) > 0:
+                            preferred_shared_list.append(bname)
+                    except (TypeError, ValueError):
+                        continue
+                final_buildings = _clamp_shared_buildings(
+                    category, final_buildings,
+                    preferred=tuple(preferred_shared_list),
+                )
 
             f.write("\t\tbuildings = {\n")
             for bname, bval in final_buildings.items():

@@ -160,16 +160,40 @@ def write_country_characters(tag, output_dir, country_name="Fantasy"):
 
 
 def write_dynamic_countries(output_dir, count=75):
-    """dynamic countries 占位 — 由 vanilla 提供，MOD 不再重复生成。
+    """Generate the dynamic country pool used by civil wars and puppets.
 
-    旧实现写了 D01-D75 的 country_tags 注册 + country 文件。但自从 REPLACE_PATHS
-    移除 common/country_tags 和 common/countries（避免 vanilla gfx TAG 查找失败崩溃）后，
-    MOD 和 vanilla 的 D01-D75 会重名 → "Duplicate Country Tag" → 加载阶段除零崩。
-
-    vanilla 自带 D01-D75 dynamic countries，数量足够内战/傀儡使用，MOD 直接复用即可。
-    保留本函数空实现是为了兼容所有调用点（write_country / write_countries_from_mgr 等）。
+    ``common/country_tags`` and ``common/countries`` are complete replace
+    paths for an exported map, so the vanilla D01-D75 definitions are not
+    visible to the game.  Every dynamic tag therefore needs both an entry in
+    the tag registry and its own country definition.  Keep the files
+    independent (rather than one shared country file) because the engine
+    associates country-local name groups and AI state with each tag.
     """
-    return
+    if count < 0:
+        raise ValueError("count must be non-negative")
+
+    tags_dir = os.path.join(output_dir, "common", "country_tags")
+    countries_dir = os.path.join(output_dir, "common", "countries")
+    os.makedirs(tags_dir, exist_ok=True)
+    os.makedirs(countries_dir, exist_ok=True)
+
+    # The zz_ prefix keeps this registry after the regular exported countries
+    # file while remaining deterministic across exports.
+    tags_path = os.path.join(tags_dir, "zz_dynamic_countries.txt")
+    with open(tags_path, "w", encoding="utf-8") as tags_file:
+        tags_file.write("dynamic_tags = yes\n\n")
+        for i in range(1, count + 1):
+            tag = f"D{i:02d}"
+            tags_file.write(f'{tag} = "countries/{tag}.txt"\n')
+
+            # Use distinct, valid colours so the country database does not
+            # treat all generated countries as one definition at render time.
+            r = (i * 37) % 200 + 40
+            g = (i * 73) % 200 + 40
+            b = (i * 113) % 200 + 40
+            with open(os.path.join(countries_dir, f"{tag}.txt"), "w", encoding="utf-8") as country_file:
+                country_file.write("use_legacy_ai_pp_spend = yes\n")
+                country_file.write(f"color = {{ {r} {g} {b} }}\n")
 
 
 def write_country(tag, capital_state_id, output_dir):

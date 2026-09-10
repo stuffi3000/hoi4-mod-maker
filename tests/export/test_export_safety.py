@@ -4,15 +4,17 @@ from __future__ import annotations
 
 import numpy as np
 
-from data.constants import TILE_LAND, TILE_SEA
+from data.constants import REPLACE_PATHS, TILE_LAND, TILE_SEA
 from domain.managers.state import StateData, StateManager
 from domain.validators.province import (
     build_coastal_land_to_sea,
     get_coastal_provinces,
 )
 from export.mod_exporter import _compute_coastal_once, _compute_coastal_province_level
+from export.writers.common.countries import write_dynamic_countries
 from export.writers.history.states import write_states_from_mgr
 from export.writers.map.buildings import write_buildings
+from export.writers.map.descriptor import write_descriptor
 from export.writers.replace_path.scrubber import write_replace_path_dirs
 
 
@@ -67,6 +69,33 @@ def test_state_writer_normalises_categories_and_moves_invalid_naval_base(tmp_pat
     assert "\t\t\t2 = {\n\t\t\t\tnaval_base" in text
 
 
+def test_state_writer_clamps_coastal_buildings_to_category_slots(tmp_path):
+    """A coastal pastoral state must not receive both a factory and dockyard."""
+    tile_map, province_map = _seam_map()
+    state_mgr = StateManager()
+    state_mgr.states[1] = StateData(
+        id=1,
+        name="Pastoral Coast",
+        provinces=[1],
+        category="pastoral",
+    )
+
+    write_states_from_mgr(
+        state_mgr,
+        country_mgr=None,
+        province_map=province_map,
+        output_dir=str(tmp_path),
+        land_id_set={1},
+        coastal_set={1},
+    )
+
+    text = (tmp_path / "history" / "states" / "1-STATE_1.txt").read_text(
+        encoding="utf-8"
+    )
+    assert "\t\t\tindustrial_complex = 1" in text
+    assert "\t\t\tdockyard =" not in text
+
+
 def test_buildings_writer_places_a_seam_port_on_a_land_pixel(tmp_path):
     tile_map, province_map = _seam_map()
 
@@ -93,3 +122,44 @@ def test_replace_path_cleanup_removes_only_legacy_generated_overlays(tmp_path):
 
     assert not generated.exists()
     assert custom.exists()
+
+
+def test_requested_replace_paths_are_declared_and_created(tmp_path):
+    requested = {
+        "events",
+        "common/countries",
+        "common/bookmarks",
+        "common/characters",
+        "common/country_tags",
+    }
+    assert requested.issubset(REPLACE_PATHS)
+
+    write_replace_path_dirs(str(tmp_path))
+
+    for relative_path in requested:
+        assert (tmp_path / relative_path).is_dir()
+
+    mod_root = tmp_path / "fantasy"
+    mod_root.mkdir()
+    write_descriptor("Fantasy", str(mod_root))
+    for descriptor in (mod_root / "descriptor.mod", tmp_path / "fantasy.mod"):
+        descriptor_text = descriptor.read_text(encoding="utf-8")
+        for relative_path in requested:
+            assert f'replace_path="{relative_path}"' in descriptor_text
+
+
+def test_dynamic_country_pool_writes_independent_tags_and_files(tmp_path):
+    write_dynamic_countries(str(tmp_path), count=3)
+
+    tags_text = (
+        tmp_path / "common" / "country_tags" / "zz_dynamic_countries.txt"
+    ).read_text(encoding="utf-8")
+    assert "dynamic_tags = yes" in tags_text
+    for index in range(1, 4):
+        tag = f"D{index:02d}"
+        assert f'{tag} = "countries/{tag}.txt"' in tags_text
+        country_text = (
+            tmp_path / "common" / "countries" / f"{tag}.txt"
+        ).read_text(encoding="utf-8")
+        assert "use_legacy_ai_pp_spend = yes" in country_text
+        assert country_text.count("color = {") == 1

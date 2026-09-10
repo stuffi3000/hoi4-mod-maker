@@ -194,23 +194,28 @@ def is_vanilla_tag(tag: str) -> bool:
     return tag.upper() in get_vanilla_tags()
 
 # 全转换 MOD 替换路径
-# 只替换我们实际提供内容的目录，避免清空引擎必需文件导致崩溃
-# 未替换的目录会使用原版内容（bookmarks、game_rules、modifiers 等）
+# 只替换我们实际提供完整内容或有意清空的目录，避免加载引用旧地图数据的原版内容。
+# 未替换的目录会继续使用原版内容（game_rules、modifiers 等）。
 REPLACE_PATHS = [
-    # The exporter produces complete replacements only for these map and
-    # history directories.  Keeping the remaining vanilla systems intact is
-    # essential: an incomplete replace_path can remove definitions that the
-    # engine expects during startup.
+    # The exporter produces complete replacements for these map, history,
+    # country, bookmark, character, and event directories.  Keeping these
+    # paths in one list makes descriptor.mod and the launcher-facing .mod file
+    # agree on the content that the export owns.
     "map/strategicregions",
     "map/supplyareas",
     "history/states",
     "history/countries",
     "history/units",
+    "events",
+    "common/countries",
+    "common/bookmarks",
+    "common/characters",
+    "common/country_tags",
 ]
 
-# Retained historical notes about the old total-conversion experiment.  They
-# are deliberately not part of REPLACE_PATHS: the exporter does not ship a
-# complete replacement for those directories.
+# Retained historical notes about earlier total-conversion experiments.  This
+# block is documentation only; the active REPLACE_PATHS list above is
+# authoritative.
 _LEGACY_REPLACE_PATH_NOTES = r"""
 REPLACE_PATHS = [
     # ════════════════════════════════════════════════════════════
