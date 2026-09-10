@@ -40,6 +40,7 @@ class LogisticsPage(QWidget):
     # 输出信号
     open_adjacency_dialog_requested = pyqtSignal()
     open_railway_list_requested = pyqtSignal()
+    generate_logistics_requested = pyqtSignal()
     logistics_railway_level_changed = pyqtSignal(int)
     logistics_supply_pick_toggled = pyqtSignal(bool, bool)  # (on, erase)
 
@@ -173,6 +174,11 @@ class LogisticsPage(QWidget):
         tool_lay.addWidget(rail_list_btn)
 
         lay.addWidget(tool_box)
+
+        generate_btn = QPushButton(tr("logistics_generate_button"))
+        generate_btn.setStyleSheet(_PRIMARY_BTN_STYLE)
+        generate_btn.clicked.connect(self.generate_logistics_requested.emit)
+        lay.addWidget(generate_btn)
 
         lay.addStretch(1)
 

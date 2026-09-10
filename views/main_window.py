@@ -480,6 +480,7 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
         # Logistics 信号 → controller
         tp.open_adjacency_dialog_requested.connect(self._open_adjacency_dialog)
         tp.open_railway_list_requested.connect(self._open_railway_dialog)
+        tp.generate_logistics_requested.connect(self._open_logistics_generation)
         tp.logistics_railway_level_changed.connect(
             lambda lv: self._controllers["logistics"].set_railway_level(lv)
         )
@@ -563,6 +564,7 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
         bus.subscribe("vp_dialog_requested", self._on_evt_vp_dialog)
         bus.subscribe("logistics_province_picked", self._on_evt_logistics_picked)
         bus.subscribe("sr_select_in_list", self._on_evt_sr_select_in_list)
+        bus.subscribe("railway_changed", lambda event: self._refresh_logistics_counts())
 
     def _on_evt_status(self, event) -> None:
         self._status_info.setText(event.data.get("text", ""))
@@ -632,6 +634,10 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
         else:
             mode_name = self._app.on_mode_changed(mode)
         self._status_mode.setText(tr("status_mode").format(mode=mode_name))
+        if mode == "strategic_region":
+            self._refresh_sr_list()
+        elif mode == "logistics":
+            self._refresh_logistics_counts()
         # 进入省份模式时检测 ID 空洞
         if mode == "province":
             self._check_province_gaps()
@@ -1236,6 +1242,7 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
         self._app._refresh_country_list()
         self._app._refresh_state_list()
         self._refresh_sr_list()
+        self._refresh_logistics_counts()
         self._project.mark_dirty()
 
         progress.close()

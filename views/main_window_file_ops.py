@@ -217,6 +217,8 @@ class MainWindowFileOpsMixin:
         self._project.railway_mgr.clear()
         self._project.supply_mgr.clear()
         self._cmd_history.clear()
+        self._refresh_sr_list()
+        self._refresh_logistics_counts()
         self._update_province_count()
         self._canvas.refresh_display()
         self._current_project_path = None  # 新项目还没有文件, 保存时另存为
@@ -284,6 +286,7 @@ class MainWindowFileOpsMixin:
                 adjacency_rule_mgr=self._project.adjacency_rule_mgr,
                 strategic_region_mgr=self._project.strategic_region_mgr,
             )
+            self._cmd_history.clear()
             # 加载后检测省份 ID 空洞并提示
             import numpy as np
             pm = self._canvas.province_map
@@ -297,6 +300,8 @@ class MainWindowFileOpsMixin:
             self._update_province_count()
             self._app._refresh_state_list()
             self._app._refresh_country_list()
+            self._refresh_sr_list()
+            self._refresh_logistics_counts()
             if gap_count > 0:
                 self._status_info.setText(
                     tr("file_ops_loaded_gaps", path, gap_count)
@@ -525,6 +530,8 @@ class MainWindowFileOpsMixin:
         self._app._refresh_country_colors()
         self._app._refresh_country_list()
         self._app._refresh_state_list()
+        self._refresh_sr_list()
+        self._refresh_logistics_counts()
         self._project.mark_dirty()
 
         state_count = len(self._project.state_mgr.states)

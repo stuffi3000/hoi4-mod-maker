@@ -335,6 +335,7 @@ class ToolPanel(QWidget):
     # 后勤信号
     open_adjacency_dialog_requested = pyqtSignal()
     open_railway_list_requested = pyqtSignal()
+    generate_logistics_requested = pyqtSignal()
     logistics_railway_level_changed = pyqtSignal(int)
     logistics_supply_pick_toggled = pyqtSignal(bool, bool)
 
@@ -680,6 +681,7 @@ class ToolPanel(QWidget):
         p = self._logistics_page
         p.open_adjacency_dialog_requested.connect(self.open_adjacency_dialog_requested)
         p.open_railway_list_requested.connect(self.open_railway_list_requested)
+        p.generate_logistics_requested.connect(self.generate_logistics_requested)
         p.logistics_railway_level_changed.connect(self.logistics_railway_level_changed)
         p.logistics_supply_pick_toggled.connect(self.logistics_supply_pick_toggled)
 

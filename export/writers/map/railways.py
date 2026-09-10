@@ -6,8 +6,7 @@ map/railways.txt 写入器.
 - 不能空 (CLAUDE.md 约束, 空文件会崩)
 - 无 BOM, LF 换行
 
-导出逻辑：把"省份→等级"映射转成"相邻省份之间的路径"。
-每对相邻且都有铁路的省份生成一条 level=min(两者等级) 的 2 省份铁路。
+导出逻辑：保留显式铁路路径；省份画笔产生的单省份占位则按地图邻接连接。
 """
 
 from __future__ import annotations
@@ -24,8 +23,8 @@ def write_railways_txt(
 ) -> None:
     """生成 map/railways.txt。
 
-    从 railway_mgr.province_levels() 取每个省份的等级，
-    用 province_map 算邻接关系，输出相邻省份对。
+    显式路径按原顺序输出。省份画笔的 ``[pid, pid]`` 占位条目用
+    province_map 推导相邻连接。
     """
     d = os.path.join(output_dir, "map")
     os.makedirs(d, exist_ok=True)
@@ -34,9 +33,7 @@ def write_railways_txt(
     lines: list[str] = []
 
     if railway_mgr is not None and province_map is not None:
-        levels = railway_mgr.province_levels()
-        if levels:
-            lines = _build_railway_lines(levels, province_map)
+        lines = _build_manager_railway_lines(railway_mgr, province_map)
 
     # 必须非空
     if not lines:
@@ -85,4 +82,33 @@ def _build_railway_lines(
         lvl = min(levels[a], levels[b])
         lines.append(f"{lvl} 2 {a} {b}")
 
+    return lines
+
+
+def _build_manager_railway_lines(railway_mgr, province_map: np.ndarray) -> list[str]:
+    """Preserve authored paths and expand only brush placeholders."""
+    entries = railway_mgr.get_all()
+    present = set(int(p) for p in np.unique(province_map) if p > 0)
+    explicit = [
+        entry for entry in entries
+        if len(entry.province_ids) >= 2
+        and len(set(entry.province_ids)) >= 2
+        and all(pid in present for pid in entry.province_ids)
+    ]
+    lines = [entry.to_line() for entry in explicit]
+    explicit_pairs = {
+        tuple(sorted((a, b)))
+        for entry in explicit
+        for a, b in zip(entry.province_ids, entry.province_ids[1:])
+    }
+    placeholders = {
+        entry.province_ids[0] for entry in entries
+        if entry.province_ids and len(set(entry.province_ids)) == 1
+    }
+    if placeholders:
+        for line in _build_railway_lines(railway_mgr.province_levels(), province_map):
+            parts = line.split()
+            a, b = int(parts[2]), int(parts[3])
+            if (a in placeholders or b in placeholders) and (a, b) not in explicit_pairs:
+                lines.append(line)
     return lines

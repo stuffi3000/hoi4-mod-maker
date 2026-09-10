@@ -165,6 +165,8 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
         self._cmd_history._undo_stack.append(cmd)
         self._cmd_history._redo_stack.clear()
         self._cmd_history._notify()
+        self._refresh_sr_list()
+        self._event_bus.emit("sr_colors_dirty")
 
     # ═══════════════════════ 省份生成与验证 ═══════════════════
 
@@ -1755,6 +1757,9 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
         from PyQt5.QtWidgets import QListWidgetItem
         from domain.managers.strategic_region import weather_preset_display_name
         lst = self._tool_panel._sr_list
+        selected = lst.currentItem()
+        selected_id = selected.data(Qt.UserRole) if selected else None
+        was_blocked = lst.blockSignals(True)
         lst.clear()
         for r in sorted(self._project.strategic_region_mgr.regions.values(), key=lambda x: x.id):
             label = (
@@ -1764,6 +1769,22 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
             item = QListWidgetItem(label)
             item.setData(Qt.UserRole, r.id)
             lst.addItem(item)
+            if r.id == selected_id:
+                lst.setCurrentItem(item)
+        lst.blockSignals(was_blocked)
+        if lst.currentRow() < 0 and lst.count():
+            lst.setCurrentRow(0)
+        else:
+            self._on_sr_selected(lst.currentRow())
+
+    def _refresh_logistics_counts(self) -> None:
+        self._tool_panel._logi_adj_status.setText(tr("logistics_adj_count", self._project.adjacency_mgr.count()))
+        self._tool_panel._logi_rail_status.setText(tr("logistics_rail_count", self._project.railway_mgr.count()))
+        self._tool_panel._logi_sup_status.setText(tr("logistics_supply_count", self._project.supply_mgr.count()))
+
+    def _open_logistics_generation(self) -> None:
+        from features.map.logistics.generation_dialog import LogisticsGenerationDialog
+        LogisticsGenerationDialog(self._project, self._controllers["logistics"].history, self).exec_()
 
     # ═══════════════════════ Logistics 对话框 ═══════════════
 
@@ -1793,6 +1814,7 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
 
     def _on_adjacency_dialog_closed(self, *_args) -> None:
         self._adjacency_dialog = None
+        self._refresh_logistics_counts()
         ctrl: LogisticsController = self._controllers["logistics"]
         if ctrl.pick_target and ctrl.pick_target.startswith("adj_"):
             ctrl.pick_target = None
@@ -1810,6 +1832,7 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
 
     def _on_railway_dialog_closed(self, *_args) -> None:
         self._railway_dialog = None
+        self._refresh_logistics_counts()
 
     # ═══════════════════════ Default Map ═══════════════════
 
