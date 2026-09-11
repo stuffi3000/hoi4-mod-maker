@@ -2,6 +2,48 @@
 import os
 
 
+def _localisation_replace_directory(output_dir: str) -> str:
+    """Return the language ``replace`` directory used for vanilla overrides.
+
+    Victory-point keys are numeric (``VICTORY_POINTS_<id>``), so an exported
+    province can legitimately share a key with a vanilla province.  HOI4's
+    localization loader gives files below ``localisation/english/replace``
+    deterministic override precedence; a same-named file in the root
+    ``localisation`` directory can lose to the vanilla catalogue.
+    """
+    directory = os.path.join(output_dir, "localisation", "english", "replace")
+    os.makedirs(directory, exist_ok=True)
+    return directory
+
+
+def _remove_legacy_localisation_files(output_dir: str, safe_name: str) -> None:
+    """Remove exporter-owned files from the pre-``english/replace`` layout.
+
+    Exports are often refreshed without ``--clean``.  Remove only the exact
+    deterministic names this writer used previously so an old root file cannot
+    reintroduce a competing city-name definition or localization collision.
+    """
+    root = os.path.join(output_dir, "localisation")
+    legacy_names = [
+        f"{safe_name}_l_english.yml",
+        *(
+            f"zz_{safe_name}_{topic}_l_english.yml"
+            for topic in (
+                "states",
+                "strategic_regions",
+                "countries",
+                "leaders",
+                "ideas",
+                "bookmarks",
+            )
+        ),
+    ]
+    for filename in legacy_names:
+        path = os.path.join(root, filename)
+        if os.path.isfile(path):
+            os.remove(path)
+
+
 def _state_name(s, sid: int) -> str:
     """Return a state's configured English name or a stable fallback."""
     configured = (getattr(s, "name_en", "") or "").strip()
@@ -44,10 +86,10 @@ def _escape_yml(text: str) -> str:
 
 def write_localisation_simple(mod_name, tag, states, output_dir, region_count=24):
     """Write a compact English localisation file for a minimal export."""
-    directory = os.path.join(output_dir, "localisation")
-    os.makedirs(directory, exist_ok=True)
     safe_name = mod_name.replace(" ", "_")
-    path = os.path.join(directory, f"{safe_name}_l_english.yml")
+    _remove_legacy_localisation_files(output_dir, safe_name)
+    directory = _localisation_replace_directory(output_dir)
+    path = os.path.join(directory, f"zz_{safe_name}_l_english.yml")
     with open(path, "w", encoding="utf-8-sig") as stream:
         stream.write("l_english:\n")
         for sid in states:
@@ -82,9 +124,9 @@ def write_localisation_full(
     region_mgr=None,
 ):
     """Write topic-separated English localisation for a complete export."""
-    directory = os.path.join(output_dir, "localisation")
-    os.makedirs(directory, exist_ok=True)
     safe_name = mod_name.replace(" ", "_")
+    _remove_legacy_localisation_files(output_dir, safe_name)
+    directory = _localisation_replace_directory(output_dir)
 
     with _open_yml(directory, safe_name, "states") as stream:
         if state_mgr and state_mgr.states:

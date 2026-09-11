@@ -146,7 +146,13 @@ def test_localisation_vp_names(tmp_path):
     write_localisation_full("TestMod", mgr, None, [sid], str(tmp_path))
 
     # After localization is split, VP is written in the states file
-    yml_path = tmp_path / "localisation" / "zz_TestMod_states_l_english.yml"
+    yml_path = (
+        tmp_path
+        / "localisation"
+        / "english"
+        / "replace"
+        / "zz_TestMod_states_l_english.yml"
+    )
     content = yml_path.read_text(encoding="utf-8-sig")
     assert 'VICTORY_POINTS_100:0 "MyCity"' in content
 
@@ -165,7 +171,13 @@ def test_localisation_vp_fallback(tmp_path):
 
     write_localisation_full("TestMod", mgr, None, [sid], str(tmp_path))
 
-    yml_path = tmp_path / "localisation" / "zz_TestMod_states_l_english.yml"
+    yml_path = (
+        tmp_path
+        / "localisation"
+        / "english"
+        / "replace"
+        / "zz_TestMod_states_l_english.yml"
+    )
     content = yml_path.read_text(encoding="utf-8-sig")
     assert 'VICTORY_POINTS_200:0 "Berlin Region"' in content
 

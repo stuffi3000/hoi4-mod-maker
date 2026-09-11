@@ -654,7 +654,13 @@ class ModVerifier:
             self.warnings.append("Missing localisation/ directory")
             return
 
-        yml_files = [f for f in os.listdir(loc_dir) if f.endswith("_l_english.yml")]
+        yml_files = []
+        for root, _dirs, files in os.walk(loc_dir):
+            for filename in files:
+                if filename.endswith("_l_english.yml"):
+                    path = os.path.join(root, filename)
+                    yml_files.append(os.path.relpath(path, loc_dir))
+        yml_files.sort()
         if not yml_files:
             self.warnings.append("No *_l_english.yml files found in localisation/")
             return

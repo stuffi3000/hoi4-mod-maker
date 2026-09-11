@@ -230,6 +230,34 @@ def test_ai_strategy_overrides_shadow_map_incompatible_vanilla_files(tmp_path):
     assert "has_anyone_else_claimed_ROM = { always = no }" in patch_text
 
 
+def test_localisation_uses_english_replace_and_cleans_legacy_root(tmp_path):
+    from export.writers.localisation.yml import write_localisation_full
+
+    legacy = tmp_path / "localisation" / "zz_TestMod_states_l_english.yml"
+    legacy.parent.mkdir(parents=True)
+    legacy.write_text("l_english:\n VICTORY_POINTS_1068:0 \"old\"\n", encoding="utf-8")
+
+    state_mgr = StateManager()
+    state = state_mgr.create_state()
+    state.name = "Custom State"
+    state.victory_points = {1068: 10}
+
+    write_localisation_full("TestMod", state_mgr, None, [state.id], str(tmp_path))
+
+    generated = (
+        tmp_path
+        / "localisation"
+        / "english"
+        / "replace"
+        / "zz_TestMod_states_l_english.yml"
+    )
+    assert generated.exists()
+    assert 'VICTORY_POINTS_1068:0 "Custom State"' in generated.read_text(
+        encoding="utf-8-sig"
+    )
+    assert not legacy.exists()
+
+
 def test_neutral_histories_cover_visible_vanilla_tags_without_shadowing_exported(
     tmp_path, monkeypatch
 ):
