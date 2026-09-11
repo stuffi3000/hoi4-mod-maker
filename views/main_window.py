@@ -315,6 +315,9 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
             lambda idx: setattr(self._controllers["terrain"], "current_terrain_index", idx)
         )
         tp.terrain_brush_mode_changed.connect(cv.set_terrain_brush_mode)
+        tp.terrain_vp_overlay_toggled.connect(
+            lambda on: cv.set_vp_overlay_visible("terrain", on)
+        )
         tp.terrain_brush_mode_changed.connect(
             lambda on: setattr(self._controllers["terrain"], "brush_mode", on)
         )
@@ -322,6 +325,9 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
         # Attributed terrain selection → Attributed terrain controller
         tp.province_terrain_type_changed.connect(
             self._controllers["province_terrain"].set_type
+        )
+        tp.province_terrain_vp_overlay_toggled.connect(
+            lambda on: cv.set_vp_overlay_visible("province_terrain", on)
         )
         tp.province_terrain_assign_mode_changed.connect(
             self._controllers["province_terrain"].set_assign_mode
@@ -1031,7 +1037,13 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
         tags = list(self._project.country_mgr.countries.keys())
         dlg = StateDetailDialog(state, tags, parent=self)
         if dlg.exec_() == dlg.Accepted:
+            # The dialog edits StateData directly (including VP values/names),
+            # so refresh overlays and mark the project dirty just like a
+            # controller-backed state edit.
+            self._project.mark_dirty()
             self._app._refresh_state_list()
+            self._app._refresh_vp_data()
+            self._canvas.refresh_display()
             self._status_info.setText(tr("status_state_updated").format(sid=state_id))
 
     # ═══════════════════════ Province Count ═══════════════════════

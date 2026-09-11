@@ -57,7 +57,9 @@ class TerrainController(BaseController):
         if tile_val in (TILE_SEA, TILE_LAKE):
             return
 
-        # Collect terrain changes
+        # Collect terrain changes. In province mode the selected graphical
+        # terrain also has a corresponding gameplay terrain in most cases
+        # (including variants such as forest_4 and forest_13/Urban).
         terrain_map = map_data.terrain_map
         terrain_changes = {}
         for i in range(len(ys)):
@@ -65,28 +67,36 @@ class TerrainController(BaseController):
             if int(terrain_map[y, x]) != self.current_terrain_index:
                 terrain_changes[(y, x)] = self.current_terrain_index
 
-        if not terrain_changes:
+        from data.terrain_types import PALETTE_TO_TYPE, TERRAIN_TYPES
+        terrain_type = PALETTE_TO_TYPE.get(self.current_terrain_index)
+        provincial_changes = {}
+        if terrain_type in TERRAIN_TYPES:
+            if map_data.provincial_terrain.get(pid) != terrain_type:
+                provincial_changes[pid] = terrain_type
+
+        # It is possible that the visual map already has this index while the
+        # attribute is stale. In that case the attribute-only command is still
+        # useful, so check both change sets before returning.
+        if not terrain_changes and not provincial_changes:
             return
 
-        # Provincial_terrain is no longer automatically changed (province attributes are carefully selected by the user and should not be overwritten by visual painting).
-        # Height is no longer linked - height is independent of terrain vision, and users use a dedicated "reverse height from terrain" function.
-        # Want to change province attributes → switch to provincial_terrain mode and specify manually.
         cmd = PaintTerrainCommand(
             map_data, terrain_changes,
-            provincial_terrain_changes=None,
+            provincial_terrain_changes=provincial_changes,
             height_changes=None,
         )
         self.history.execute(cmd)
         self.project.mark_dirty()
-        # Visually changed → colormap needs to be reborn; changing height also triggers normal
-        self._invalidate_art_assets(
-            "map/terrain/colormap_rgb_cityemissivemask_a.dds",
-            "map/world_normal.bmp",
-        )
-        self._emit_render(full=True)
-        from data.terrain_types import PALETTE_TO_TYPE, TERRAIN_TYPES
-        tkey = PALETTE_TO_TYPE.get(self.current_terrain_index)
-        terrain = TERRAIN_TYPES.get(tkey)
+        if terrain_changes:
+            # Only visual edits require regenerated art assets and a canvas
+            # render. An attribute-only correction should not dirty colormap
+            # files when the selected graphical terrain is already present.
+            self._invalidate_art_assets(
+                "map/terrain/colormap_rgb_cityemissivemask_a.dds",
+                "map/world_normal.bmp",
+            )
+            self._emit_render(full=True)
+        terrain = TERRAIN_TYPES.get(terrain_type)
         terrain_name = terrain.name_en if terrain else "Unknown"
         self._emit_status(f"Province {pid} terrain set to {terrain_name}")
 
@@ -166,37 +176,18 @@ class TerrainController(BaseController):
             self._stroke_changes[(y0 + int(cy), x0 + int(cx))] = self.current_terrain_index
 
     def _commit_stroke(self) -> None:
-        """Submit terrain strokes + one-way sync: painted province majority terrain → provincial_terrain dict.
+        """Submit a brush stroke as one undoable visual-terrain command.
 
-        After the brush paints a stroke, count the majority of graphical representations of each painted province on the terrain_map
-        terrain → infer provincial type → update dict. In this way, vision is the main one, and attributes automatically follow."""
+        Brush mode is intentionally pixel-oriented, so it does not infer a
+        province attribute from a partial stroke. Province-mode clicks are the
+        operation that synchronizes a matching attribute terrain type.
+        """
         self._is_painting = False
         if not self._stroke_changes:
             return
 
-        # Count the most painted terrains for each province → provincial_terrain
-        from data.terrain_types import PALETTE_TO_TYPE
-        from collections import Counter
-
-        map_data = self.project.map_data
-        province_map = map_data.province_map
-        terrain_map = map_data.terrain_map
-
-        # Collect all province pixels that are painted
-        province_changes: dict[int, Counter] = {}
-        for (y, x), new_terr_idx in self._stroke_changes.items():
-            pid = int(province_map[y, x])
-            if pid <= 0:
-                continue
-            if pid not in province_changes:
-                province_changes[pid] = Counter()
-            province_changes[pid][new_terr_idx] += 1
-
-        # Provincial_terrain is no longer automatically changed based on the pixels painted by the brush
-        # (The user's province attributes are carefully selected and should not be overwritten by the visual brush).
-        # Want to change province attributes → switch to provincial_terrain mode and specify manually.
         cmd = PaintTerrainCommand(
-            map_data, self._stroke_changes,
+            self.project.map_data, self._stroke_changes,
             provincial_terrain_changes=None,
         )
         self.history.execute(cmd)

@@ -333,6 +333,12 @@ class MapCanvas(InputMixin, OverlayMixin, NameLabelsMixin, RefImageMixin, QGraph
         self._vp_overlay_item.setVisible(False)
         self._scene.addItem(self._vp_overlay_item)
         self._vp_data: dict[int, int] = {}  # {province_id: vp_value}
+        # Terrain editors opt in to the VP overlay independently. State and
+        # province display modes retain their existing always-visible behavior.
+        self._vp_overlay_mode_visibility: dict[str, bool] = {
+            "terrain": False,
+            "province_terrain": False,
+        }
 
         # Name tag overlay (showing names in state/country mode)
         self._init_name_labels()

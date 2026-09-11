@@ -77,6 +77,7 @@ class TerrainPage(QWidget):
     terrain_brush_mode_changed = pyqtSignal(bool)
     terrain_brush_size_changed = pyqtSignal(int)
     terrain_soft_edge_changed = pyqtSignal(bool)
+    vp_overlay_toggled = pyqtSignal(bool)
     auto_terrain_requested = pyqtSignal()
     detail_terrain_requested = pyqtSignal(int)   # Climate-detail generation seed
     beautify_terrain_requested = pyqtSignal(int) # Shape-preserving beautification seed
@@ -270,6 +271,11 @@ class TerrainPage(QWidget):
         self._terrain_mode_group.idClicked.connect(self._on_mode_switched)
         mode_lay.addLayout(mode_row)
         outer.addWidget(mode_box)
+
+        self._vp_overlay_chk = QCheckBox(tr("terrain_show_victory_points"))
+        self._vp_overlay_chk.setToolTip(tr("terrain_show_victory_points_tip"))
+        self._vp_overlay_chk.toggled.connect(self.vp_overlay_toggled.emit)
+        outer.addWidget(self._vp_overlay_chk)
 
         # Brush controls are visible only while brush mode is active.
         self._brush_box = _make_section(tr("terrain_section_brush"))

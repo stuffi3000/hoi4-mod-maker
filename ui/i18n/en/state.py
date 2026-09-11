@@ -71,7 +71,7 @@ STRINGS: dict[str, str] = {
     "state_dlg_vp_names": "City Names (Victory Points)",
     "state_dlg_vp_none": "(No victory points in this state)",
     "state_dlg_vp_province": "Province",
-    "state_dlg_vp_value": "VP Value",
+    "state_dlg_vp_value": "VP Value (0 = remove)",
     "state_edit_section": "Manual Edit",
     "state_hint": "Select a state then click provinces to assign. Double-click a state for resource/building/VP details",
     "state_list_section": "State List",

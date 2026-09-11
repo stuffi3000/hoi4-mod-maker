@@ -269,8 +269,10 @@ class ToolPanel(QWidget):
     brush_size_changed = pyqtSignal(int)
     terrain_index_changed = pyqtSignal(int)
     terrain_brush_mode_changed = pyqtSignal(bool)
+    terrain_vp_overlay_toggled = pyqtSignal(bool)
     # Property terrain: Which provincial terrain type is selected
     province_terrain_type_changed = pyqtSignal(str)
+    province_terrain_vp_overlay_toggled = pyqtSignal(bool)
     # Attribute Terrain: Assign Mode Switch
     province_terrain_assign_mode_changed = pyqtSignal(bool)
     # Attributed terrain: attributes are fully recalculated from the visual terrain
@@ -598,6 +600,7 @@ class ToolPanel(QWidget):
         p = self._terrain_page
         p.terrain_index_changed.connect(self.terrain_index_changed)
         p.terrain_brush_mode_changed.connect(self.terrain_brush_mode_changed)
+        p.vp_overlay_toggled.connect(self.terrain_vp_overlay_toggled)
         p.terrain_brush_size_changed.connect(self.terrain_brush_size_changed)
         p.terrain_soft_edge_changed.connect(self.terrain_soft_edge_changed)
         p.auto_terrain_requested.connect(self.auto_terrain_requested)
@@ -607,6 +610,7 @@ class ToolPanel(QWidget):
         p.downgrade_lasso_mode_toggled.connect(self.downgrade_lasso_mode_toggled)
         # Property terrain page signal
         self._province_terrain_page.type_changed.connect(self.province_terrain_type_changed)
+        self._province_terrain_page.vp_overlay_toggled.connect(self.province_terrain_vp_overlay_toggled)
         self._province_terrain_page.assign_mode_changed.connect(self.province_terrain_assign_mode_changed)
         self._province_terrain_page.sync_requested.connect(self.province_terrain_sync_requested)
 

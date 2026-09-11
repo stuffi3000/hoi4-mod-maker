@@ -284,9 +284,25 @@ class OverlayMixin:
         self._vp_cache_dirty = True
         self._update_vp_visibility()
 
+    def set_vp_overlay_visible(self, mode: str, visible: bool) -> None:
+        """Toggle VP markers for one of the terrain editing modes."""
+        if mode not in ("terrain", "province_terrain"):
+            return
+        if not hasattr(self, "_vp_overlay_mode_visibility"):
+            self._vp_overlay_mode_visibility = {}
+        self._vp_overlay_mode_visibility[mode] = bool(visible)
+        self._update_vp_visibility()
+
     def _update_vp_visibility(self) -> None:
         """Show/hide VP overlay based on current mode and only redraw when data changes"""
-        if self._display_mode not in ("state", "province") or not self._vp_data:
+        mode_allowed = self._display_mode in ("state", "province")
+        if self._display_mode in ("terrain", "province_terrain"):
+            mode_allowed = bool(
+                getattr(self, "_vp_overlay_mode_visibility", {}).get(
+                    self._display_mode, False
+                )
+            )
+        if not mode_allowed or not self._vp_data:
             self._vp_overlay_item.setVisible(False)
             return
         if getattr(self, '_vp_cache_dirty', True):

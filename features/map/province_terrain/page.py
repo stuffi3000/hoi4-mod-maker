@@ -28,6 +28,7 @@ class ProvincialTerrainPage(QWidget):
     type_changed = pyqtSignal(str)
     assign_mode_changed = pyqtSignal(bool)  # True=Assign mode (click to change terrain)/False=View mode (click to view information only)
     sync_requested = pyqtSignal()  # Fully recalculate attributes from visual terrain (secondary confirmation)
+    vp_overlay_toggled = pyqtSignal(bool)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -53,6 +54,11 @@ class ProvincialTerrainPage(QWidget):
         )
         self._assign_chk.toggled.connect(self.assign_mode_changed)
         outer.addWidget(self._assign_chk)
+
+        self._vp_overlay_chk = QCheckBox(tr("terrain_show_victory_points"))
+        self._vp_overlay_chk.setToolTip(tr("terrain_show_victory_points_tip"))
+        self._vp_overlay_chk.toggled.connect(self.vp_overlay_toggled.emit)
+        outer.addWidget(self._vp_overlay_chk)
 
         type_box = _make_section(tr("pterrain_section_types"))
         type_layout = type_box.layout()

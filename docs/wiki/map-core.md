@@ -64,10 +64,15 @@ maps that style to the city meshes. The editor exports the same relationship.
 
 To paint a city area, switch to **Terrain (Visual)** (shortcut `3`), select
 **Urban**, then either click **By Province** to make a whole land province
-urban or choose **Brush** to paint a smaller patch around a VP. The
-right-click province menu also has **Set Terrain → Urban**. A VP's value/name
-is edited separately with **Set VP**; adding a VP does not automatically make
-its province urban.
+urban or choose **Brush** to paint a smaller patch around a VP. In By Province
+mode, the matching gameplay terrain attribute is assigned automatically when
+one exists; Brush remains visual-only. The right-click province menu also has
+**Set Terrain → Urban**. A VP's value/name can be edited with **Set VP** or in
+the **State Details** VP table; adding a VP does not automatically make its
+province urban.
+
+Both terrain tabs provide a **Show Victory Points on map** option for keeping
+VP markers and city names visible while editing.
 
 Because `terrain.bmp` and `cities.bmp` are per-pixel masks, a city can be
 painted inside an existing province without splitting that province. Province

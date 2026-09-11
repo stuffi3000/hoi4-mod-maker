@@ -161,11 +161,22 @@ class StateDetailDialog(QDialog):
         vp_lay.addWidget(QLabel(tr("state_dlg_vp_city_name_en")), 0, 3)
         self._vp_name_edits: dict[int, QLineEdit] = {}
         self._vp_name_en_edits: dict[int, QLineEdit] = {}
+        self._vp_value_spins: dict[int, QSpinBox] = {}
         row_idx = 1
         vp_names_en = getattr(self._state, "vp_names_en", {}) or {}
         for vpid, vpval in self._state.victory_points.items():
             vp_lay.addWidget(QLabel(str(vpid)), row_idx, 0)
-            vp_lay.addWidget(QLabel(str(vpval)), row_idx, 1)
+            value_spin = QSpinBox()
+            # Keep existing projects with larger values intact while allowing
+            # ample room for custom-map values as well as vanilla values.
+            try:
+                current_vp = max(0, int(vpval))
+            except (TypeError, ValueError):
+                current_vp = 0
+            value_spin.setRange(0, max(1_000_000, current_vp))
+            value_spin.setValue(current_vp)
+            self._vp_value_spins[vpid] = value_spin
+            vp_lay.addWidget(value_spin, row_idx, 1)
             edit = QLineEdit()
             edit.setPlaceholderText(self._state.name or f"State {self._state.id}")
             edit.setText(self._state.vp_names.get(vpid, ""))
@@ -335,13 +346,33 @@ class StateDetailDialog(QDialog):
             self._claims_list.item(i).text() for i in range(self._claims_list.count())
         ]
 
-        # Victory-point city name fields.
+        # Victory-point values and city name fields.
+        edited_vps = {
+            vpid: int(spin.value())
+            for vpid, spin in self._vp_value_spins.items()
+            if int(spin.value()) > 0
+        }
+        s.victory_points.clear()
+        s.victory_points.update(edited_vps)
+
+        # A zero value removes a VP, so remove its associated names as well.
+        s.vp_names = {
+            vpid: name for vpid, name in getattr(s, "vp_names", {}).items()
+            if vpid in edited_vps
+        }
         if not hasattr(s, "vp_names_en") or s.vp_names_en is None:
             s.vp_names_en = {}
+        else:
+            s.vp_names_en = {
+                vpid: name for vpid, name in s.vp_names_en.items()
+                if vpid in edited_vps
+            }
         for vpid, edit in self._vp_name_edits.items():
-            s.vp_names[vpid] = edit.text().strip()
+            if vpid in edited_vps:
+                s.vp_names[vpid] = edit.text().strip()
         for vpid, edit in self._vp_name_en_edits.items():
-            s.vp_names_en[vpid] = edit.text().strip()
+            if vpid in edited_vps:
+                s.vp_names_en[vpid] = edit.text().strip()
 
         self.accept()
 
