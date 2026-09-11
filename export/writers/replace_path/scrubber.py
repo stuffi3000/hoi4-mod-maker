@@ -29,6 +29,7 @@ _LEGACY_FILES = (
     "common/ai_navy/goals/goals_generic.txt",
     "common/ai_navy/taskforce/00_placeholder.txt",
     "common/decisions/00_placeholder.txt",
+    "common/scripted_triggers/00_scripted_triggers.txt",
     "common/on_actions/00_placeholder_on_actions.txt",
     "common/on_actions/00_on_actions.txt",
     "common/on_actions/00_testing_on_actions.txt",
@@ -82,6 +83,7 @@ _LEGACY_GENERATED_DIRS = (
     "common/ai_navy",
     "common/units",
     "common/decisions",
+    "common/scripted_triggers",
     "common/raids",
     "events",
 )
@@ -143,6 +145,257 @@ _DECISION_OVERRIDES = {
     ),
     "common/decisions/TOA_formable_nation_decisions.txt": (
         "# Empty - TC MOD: vanilla TOA formable decisions target states absent from the exported map.\n"
+    ),
+    # These country databases are evaluated every day even when the country
+    # is neutral.  Their target lists include fixed vanilla state IDs (for
+    # example 330 and the China warlord states), so leaving the files additive
+    # produces invalid-state and invalid-event-target spam in a compact map.
+    "common/decisions/CHI_decisions.txt": (
+        "# Empty - TC MOD: vanilla CHI decisions target states and event targets absent from the exported map.\n"
+    ),
+    "common/decisions/FRA.txt": (
+        "# Empty - TC MOD: vanilla FRA decisions target states absent from the exported map.\n"
+    ),
+    "common/decisions/PRC.txt": (
+        "# Empty - TC MOD: vanilla PRC decisions use event targets that are not initialized in the exported map.\n"
+    ),
+}
+
+# The country/formable decision files above are intentionally shadowed, but
+# vanilla focus trees still contain references to some of their IDs.  Keep
+# those references valid with invisible, never-available decisions.  This is
+# preferable to restoring the original definitions (which would immediately
+# evaluate their vanilla state IDs on a custom map).
+_DECISION_STUB_IDS = (
+    "ENG_the_mosley_plan",
+    "ENG_abdication_crisis",
+    "ENG_imperial_conference_decision",
+    "ENG_propaganda_campaigns_in_canada",
+    "ENG_trade_unions_demand_conscription_limitations_mission",
+    "ENG_trade_unions_demand_construction_safety_legislation_mission",
+    "ENG_trade_unions_demand_increase_in_paid_leave_mission",
+    "ENG_trade_unions_demand_legislation_amendment_mission",
+    "ENG_trade_unions_demand_mandatory_union_days_mission",
+    "ENG_trade_unions_demand_minimum_pay_increase_mission",
+    "ENG_trade_unions_demand_minister_appointment_mission",
+    "ENG_trade_unions_demand_workplace_safety_legislation_mission",
+    "CHL_anti_fascist_coalition_forming",
+    "CHL_expand_the_carabineros",
+    "CHL_ibanez_ruling_by_decree_mission",
+    "CHL_integrate_quebec",
+    "CHL_integrate_rio_grande_do_sul",
+    "CHL_integrate_the_kingdom_of_mexico",
+    "CHL_nacista_coup_attempt",
+    "CHL_nacistas_gathering_support_mission",
+    "CHI_60_divisions_plan",
+    "CHI_bog_them_down",
+    "CHI_breach_the_yellow_river",
+    "CHI_build_a_carrier",
+    "CHI_burma_campaign_mission",
+    "CHI_declare_war_zone",
+    "CHI_demonstrate_our_resolve_decision",
+    "CHI_expand_the_burma_road",
+    "CHI_flying_tigers",
+    "CHI_forced_loans",
+    "CHI_free_indochina_tsr",
+    "CHI_growing_impatience",
+    "CHI_growing_impatience_dummy",
+    "CHI_indo_chinese_campaign_mission",
+    "CHI_invest_in_officer_training",
+    "CHI_kwantung_army_impatience_dummy",
+    "CHI_overlordship_over_indochina",
+    "CHI_overlordship_over_indochina_tsr",
+    "CHI_release_korea",
+    "CHI_scorched_earth_tactics",
+    "CHI_soviet_volunteer_group",
+    "CHI_holding_state_mission",
+    "FRA_case_anton_mission",
+    "FRA_invasion_in_central_africa",
+    "FRA_invasion_in_indochina",
+    "FRA_invasion_in_syria",
+    "FRA_invasion_in_west_africa",
+    "FRA_order_bombers_in_USA",
+    "FRA_order_fighters_in_USA",
+    "FRA_prepare_coup_in_central_africa",
+    "FRA_prepare_coup_in_indochina",
+    "FRA_prepare_coup_in_madagascar",
+    "FRA_prepare_coup_in_north_africa",
+    "FRA_prepare_coup_in_syria",
+    "FRA_prepare_coup_in_west_africa",
+    "FRA_promise_independence_to_central_africa",
+    "FRA_promise_independence_to_indochina",
+    "FRA_promise_independence_to_madagascar",
+    "FRA_promise_independence_to_north_africa",
+    "FRA_promise_independence_to_syria",
+    "FRA_promise_independence_to_west_africa",
+    "FRA_rally_the_leagues",
+    "FRA_reorganize_aviation_industry_center",
+    "FRA_reorganize_aviation_industry_north",
+    "FRA_reorganize_aviation_industry_south_east",
+    "FRA_reorganize_aviation_industry_south_west",
+    "FRA_reorganize_aviation_industry_west",
+    "FRA_unleash_la_cagoule",
+    "NZL_demand_islands",
+    "PRC_initialize_five_year_plan_mission",
+    "PRC_initialize_shorter_market_plans_mission",
+    "PRC_launch_100_regiments_campaign",
+    "PRC_provoke_japan",
+    "PRC_rural_surveys",
+    "PRC_the_eastward_expedition_decision",
+    "PRC_the_peoples_doubt",
+    "PRC_the_westward_expedition_decision",
+    "PRC_usurp_control_over_yanan_decision",
+    "PRC_infiltrate_gansu",
+    "PRC_infiltrate_shandong",
+    "PRC_infiltrate_jiangsu",
+    "PRC_infiltrate_henan",
+    "PRC_infiltrate_beijing",
+    "PRC_infiltrate_hebei",
+    "PRC_infiltrate_shanxi",
+    "PRC_infiltrate_suiyuan",
+    "PRC_infiltrate_xian",
+    "PRC_infiltrate_ordos",
+    "PRC_infiltrate_east_hebei",
+    "PRC_infiltrate_jehol",
+    "PRC_infiltrate_south_chahar",
+    "PRC_infiltrate_chahar",
+    "PRC_infiltrate_heilungkiang",
+    "PRC_infiltrate_liaoning",
+    "byz_restore_byzantium",
+    "form_baltic_federation",
+    "form_commonwealth",
+    "form_east_africa",
+    "form_european_union",
+    "form_greater_greece",
+    "form_greater_proletarian_state",
+    "form_hre",
+    "form_nordic_league",
+    "form_roman_empire",
+    "form_the_horn_of_africa",
+)
+
+
+def _decision_stub_text() -> str:
+    """Return deterministic invisible decision definitions for missing IDs."""
+    lines = [
+        "# TC MOD compatibility: IDs referenced by shadowed vanilla content.",
+        "# They remain valid but can never be shown, activated, or timed.",
+        "political_actions = {",
+    ]
+    for decision_id in sorted(set(_DECISION_STUB_IDS)):
+        lines.extend(
+            [
+                f"\t{decision_id} = {{",
+                "\t\tallowed = { always = no }",
+                "\t\tvisible = { always = no }",
+                "\t\tavailable = { always = no }",
+                "\t\tai_will_do = { base = 0 }",
+                "\t\tdays_mission_timeout = 1",
+                "\t}",
+            ]
+        )
+    lines.append("}")
+    return "\n".join(lines) + "\n"
+
+# Scripted triggers are shared by focuses, decisions, and news events.  The
+# shipped files are all-or-nothing databases, so replacing a country file
+# wholesale would turn every other trigger in that file into an unknown
+# trigger.  Define safe, duplicate-name overrides in a late ``zz_`` file
+# instead; the game loads it after the vanilla files and uses these inert
+# definitions when a custom-map session evaluates them.
+_SCRIPTED_TRIGGER_PATCH = (
+    "# TC MOD compatibility: vanilla predicates below target states/event\n"
+    "# targets that are not initialized in the exported map.\n"
+    "is_controlled_by_ROOT_or_subject = { always = no }\n"
+    "is_not_controlled_by_ROOT_or_subject = { always = yes }\n"
+    "is_controlled_by_ROOT_or_ally = { always = no }\n"
+    "is_not_controlled_by_ROOT_or_ally = { always = yes }\n"
+    "state_is_fully_controlled_by_ROOT_subject_or_faction_member = { always = no }\n"
+    "FRA_controls_north_africa = { always = no }\n"
+    "FRA_controls_syria = { always = no }\n"
+    "FRA_controls_indochina = { always = no }\n"
+    "FRA_controls_west_africa = { always = no }\n"
+    "FRA_controls_central_africa = { always = no }\n"
+    "FRA_has_inefficient_economy = { always = no }\n"
+    "FRA_has_worker_shortage = { always = no }\n"
+    "is_owned_or_subject_trigger = { always = no }\n"
+    "USA_can_sell_weapons_trigger = { always = no }\n"
+    "has_any_occupation_cost_trigger = { always = no }\n"
+    "is_vichy_france = { always = no }\n"
+    "is_available_fighter_ROM = { always = no }\n"
+    "is_available_heavy_fighter_ROM = { always = no }\n"
+    "is_available_cas_ROM = { always = no }\n"
+    "is_available_tac_ROM = { always = no }\n"
+    "has_anyone_else_claimed_ROM = { always = no }\n"
+)
+
+# News events are global and can evaluate their map targets for every country,
+# even when no country-specific focus is active.  Their hard-coded Singapore,
+# Hong Kong, New Delhi, and Rangoon states are not present in the export.
+_EVENT_OVERRIDES = {
+    "events/NewsEvents.txt": (
+        "# Empty - TC MOD: vanilla news events target provinces/states absent from the exported map.\n"
+    ),
+    "events/SEA_Japan.txt": (
+        "# Empty - TC MOD: vanilla SEA news events target provinces/states absent from the exported map.\n"
+        "# Keep the callback IDs used by vanilla JAP border-incident decisions.\n"
+        "add_namespace = SEA_border_incidents_events\n"
+        "country_event = {\n"
+        "\tid = SEA_border_incidents_events.1\n"
+        "\ttitle = generic.1.t\n"
+        "\tdesc = generic.1.d_neutral_good\n"
+        "\tis_triggered_only = yes\n"
+        "\toption = { name = OK }\n"
+        "}\n"
+        "country_event = {\n"
+        "\tid = SEA_border_incidents_events.2\n"
+        "\ttitle = generic.1.t\n"
+        "\tdesc = generic.1.d_neutral_good\n"
+        "\tis_triggered_only = yes\n"
+        "\toption = { name = OK }\n"
+        "}\n"
+        "country_event = {\n"
+        "\tid = SEA_border_incidents_events.3\n"
+        "\ttitle = generic.1.t\n"
+        "\tdesc = generic.1.d_neutral_good\n"
+        "\tis_triggered_only = yes\n"
+        "\toption = { name = OK }\n"
+        "}\n"
+        "country_event = {\n"
+        "\tid = SEA_border_incidents_events.4\n"
+        "\ttitle = generic.1.t\n"
+        "\tdesc = generic.1.d_neutral_good\n"
+        "\tis_triggered_only = yes\n"
+        "\toption = { name = OK }\n"
+        "}\n"
+        "country_event = {\n"
+        "\tid = SEA_border_incidents_events.5\n"
+        "\ttitle = generic.1.t\n"
+        "\tdesc = generic.1.d_neutral_good\n"
+        "\tis_triggered_only = yes\n"
+        "\toption = { name = OK }\n"
+        "}\n"
+        "country_event = {\n"
+        "\tid = SEA_border_incidents_events.6\n"
+        "\ttitle = generic.1.t\n"
+        "\tdesc = generic.1.d_neutral_good\n"
+        "\tis_triggered_only = yes\n"
+        "\toption = { name = OK }\n"
+        "}\n"
+        "country_event = {\n"
+        "\tid = SEA_border_incidents_events.7\n"
+        "\ttitle = generic.1.t\n"
+        "\tdesc = generic.1.d_neutral_good\n"
+        "\tis_triggered_only = yes\n"
+        "\toption = { name = OK }\n"
+        "}\n"
+        "country_event = {\n"
+        "\tid = SEA_border_incidents_events.8\n"
+        "\ttitle = generic.1.t\n"
+        "\tdesc = generic.1.d_neutral_good\n"
+        "\tis_triggered_only = yes\n"
+        "\toption = { name = OK }\n"
+        "}\n"
     ),
 }
 
@@ -240,6 +493,26 @@ def write_ai_strategy_overrides(output_dir: str) -> None:
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "w", encoding="utf-8") as file:
             file.write(content)
+
+    decision_stub_path = os.path.join(
+        output_dir, "common", "decisions", "zz_tc_map_safety.txt"
+    )
+    os.makedirs(os.path.dirname(decision_stub_path), exist_ok=True)
+    with open(decision_stub_path, "w", encoding="utf-8") as file:
+        file.write(_decision_stub_text())
+
+    for relative_path, content in _EVENT_OVERRIDES.items():
+        path = os.path.join(output_dir, *relative_path.split("/"))
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as file:
+            file.write(content)
+
+    scripted_trigger_patch_path = os.path.join(
+        output_dir, "common", "scripted_triggers", "zz_tc_map_safety.txt"
+    )
+    os.makedirs(os.path.dirname(scripted_trigger_patch_path), exist_ok=True)
+    with open(scripted_trigger_patch_path, "w", encoding="utf-8") as file:
+        file.write(_SCRIPTED_TRIGGER_PATCH)
 
     # The vanilla faction-theater database is a single file.  Its region IDs
     # are tied to the 48-region vanilla map and are rejected by a compact

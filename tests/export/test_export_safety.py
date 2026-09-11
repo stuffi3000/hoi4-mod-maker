@@ -200,6 +200,35 @@ def test_ai_strategy_overrides_shadow_map_incompatible_vanilla_files(tmp_path):
     formables = tmp_path / "common" / "decisions" / "formable_nation_decisions.txt"
     assert formables.read_text(encoding="utf-8").startswith("# Empty - TC MOD")
 
+    decision_stubs = tmp_path / "common" / "decisions" / "zz_tc_map_safety.txt"
+    decision_stub_text = decision_stubs.read_text(encoding="utf-8")
+    assert "ENG_abdication_crisis = {" in decision_stub_text
+    assert "PRC_infiltrate_liaoning = {" in decision_stub_text
+    assert "CHI_holding_state_mission = {" in decision_stub_text
+    assert "visible = { always = no }" in decision_stub_text
+
+    for relative_path in (
+        "common/decisions/CHI_decisions.txt",
+        "common/decisions/FRA.txt",
+        "common/decisions/PRC.txt",
+        "events/NewsEvents.txt",
+        "events/SEA_Japan.txt",
+    ):
+        shadow_text = (tmp_path / relative_path).read_text(encoding="utf-8")
+        assert shadow_text.startswith("# Empty - TC MOD")
+
+    sea_japan_text = (tmp_path / "events" / "SEA_Japan.txt").read_text(
+        encoding="utf-8"
+    )
+    assert "id = SEA_border_incidents_events.5" in sea_japan_text
+    assert "title = generic.1.t" in sea_japan_text
+
+    patch = tmp_path / "common" / "scripted_triggers" / "zz_tc_map_safety.txt"
+    patch_text = patch.read_text(encoding="utf-8")
+    assert "is_controlled_by_ROOT_or_subject = { always = no }" in patch_text
+    assert "FRA_controls_north_africa = { always = no }" in patch_text
+    assert "has_anyone_else_claimed_ROM = { always = no }" in patch_text
+
 
 def test_neutral_histories_cover_visible_vanilla_tags_without_shadowing_exported(
     tmp_path, monkeypatch
