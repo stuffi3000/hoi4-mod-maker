@@ -1,4 +1,4 @@
-"""国家相关文件: country_tags/countries/history/characters/names/colors/ideas/bookmark/dynamic."""
+"""Country-related files: country_tags/countries/history/characters/names/colors/ideas/bookmark/dynamic."""
 import os
 from data.constants import (
     VALID_MAIN_IDEOLOGIES, DEFAULT_IDEOLOGY_SUBTYPE,
@@ -10,16 +10,15 @@ from export.writers.gfx.flags import write_country_flags
 
 
 def write_country_colors(tag, rgb, output_dir):
-    """生成 common/countries/zz_worldtest_colors.txt — 地图上国家的颜色
+    """Generate common/countries/zz_worldtest_colors.txt — Colors of countries on the map
 
-    用 zz_worldtest_ 前缀避免覆盖 vanilla 的同名 colors.txt（1220 行，定义所有
-    vanilla TAG 的颜色）。MOD 不再 replace common/countries 后，若文件名相同
-    会让 vanilla 颜色全部丢失 → 渲染管线除零崩溃。
-    """
+    Use the zz_worldtest_ prefix to avoid overwriting vanilla's colors.txt of the same name (line 1220, defines all
+    color of vanilla TAG). After MOD no longer replaces common/countries, if the file names are the same
+    Will cause all vanilla colors to be lost → divide-by-zero crash in the rendering pipeline."""
     d = os.path.join(output_dir, "common", "countries")
     os.makedirs(d, exist_ok=True)
     r, g, b = rgb
-    # 追加模式：如果文件已存在（多国家情况），累加
+    # Append mode: If the file already exists (multi-country situation), accumulate
     path = os.path.join(d, "zz_worldtest_colors.txt")
     mode = "a" if os.path.exists(path) else "w"
     with open(path, mode, encoding="utf-8") as f:
@@ -32,14 +31,13 @@ def write_country_colors(tag, rgb, output_dir):
 
 
 def write_country_names(tag, output_dir, country_name="Fantasy"):
-    """生成 common/names/<TAG>_names.txt
+    """Generate common/names/<TAG>_names.txt
 
-    HOI4 的人物自动生成器（character_manager）会从这个文件里拉取
-    姓名和姓氏。如果国家没有对应的 names 条目，游戏会用国家的本地化
-    名字作为 origins 去查找，查找失败则导致崩溃。
+    HOI4's automatic character generator (character_manager) will pull it from this file
+    First and last name. If a country does not have a corresponding names entry, the game will use the country's localization
+    The name is used as origins to search. Failure to search will result in a crash.
 
-    不 replace_path common/names（保留原版名字），只【添加】我们的文件。
-    """
+    Do not replace_path common/names (keep the original names), just [add] our files."""
     d = os.path.join(output_dir, "common", "names")
     os.makedirs(d, exist_ok=True)
     with open(os.path.join(d, f"{tag}_names.txt"), "w", encoding="utf-8") as f:
@@ -56,17 +54,16 @@ def write_country_names(tag, output_dir, country_name="Fantasy"):
 
 
 def write_country_characters(tag, output_dir, country_name="Fantasy"):
-    """生成国家人物文件 common/characters/<TAG>.txt
+    """Generate national characters file common/characters/<TAG>.txt
 
-    HOI4 引擎会为每个国家自动生成 country_leader/scientist/field_marshal 等人物。
-    如果国家没有这些角色定义，自动生成会因为找不到 origins 而失败，
-    进而导致游戏在启动时崩溃（character_manager.cpp 报错）。
+    The HOI4 engine will automatically generate country_leader/scientist/field_marshal and other characters for each country.
+    If the country does not have these roles defined, automatic generation will fail because origins cannot be found,
+    This in turn causes the game to crash on startup (character_manager.cpp reports an error).
 
-    解决：至少提供 country_leader + field_marshal + general + scientist，
-    覆盖游戏的自动生成路径。
-    注意：这里不 replace_path common/characters，而是【添加】文件，
-    和原版 characters 共存。
-    """
+    Solution: Provide at least country_leader + field_marshal + general + scientist,
+    Override the game's automatically generated paths.
+    Note: This is not replace_path common/characters, but [add] file.
+    Coexists with original characters."""
     d = os.path.join(output_dir, "common", "characters")
     os.makedirs(d, exist_ok=True)
     # Older exporter versions used ``<TAG>.txt``.  Remove that file only when
@@ -86,18 +83,18 @@ def write_country_characters(tag, output_dir, country_name="Fantasy"):
         )
         if generated_signature:
             os.remove(legacy_path)
-    # name 字段用 character ID 作为 localisation key (vanilla 做法 `name=CHI_chiang_kaishek`),
-    # 不能直接写 country_name 字符串 — country_name 可能含中文 + open() 默认 GBK + 无 BOM,
-    # 三重 bug 叠加导致 HOI4 parse 失败 → 引擎自动生成 character 时除零崩溃.
-    # 文件用 UTF-8 BOM 编码与 vanilla character 文件保持一致 (HOI4 parser 对 BOM 容忍).
-    # 显示名走 localisation/*_l_<lang>.yml (yml.py 已写 leader/marshal/general/admiral key,
-    # scientist 这里也保留 key, yml 没翻译就显示 raw key, 不会崩).
+    # The name field uses character ID as localization key (vanilla approach `name=CHI_chiang_kaishek`),
+    # The country_name string cannot be written directly: user-entered text may be non-ASCII,
+    # Triple bug stacking causes HOI4 parse to fail → division by zero crashes when the engine automatically generates characters.
+    # Files are encoded with UTF-8 BOM consistent with vanilla character files (HOI4 parser is BOM tolerant).
+    # The display name goes to localisation/*_l_<lang>.yml (yml.py has written leader/marshal/general/admiral key,
+    # Scientist also retains the key here, and the yml will display the raw key without translation, which will not crash).
     with open(os.path.join(d, f"zz_fantasy_{tag}.txt"), "w", encoding="utf-8") as f:
         f.write("# Generated - TC MOD character definitions\n")
         f.write("characters = {\n\n")
 
-        # 1. 国家领袖 (4种意识形态子类型各一个, 对齐 vanilla 最小格式;
-        #    1.17 去掉 id=-1 和 expire 字段以避免 AI 初始化校验失败)
+        # 1. National leader (one for each of the 4 ideological subtypes, aligned to vanilla minimal format;
+        # 1.17 Remove the id=-1 and expire fields to avoid AI initialization verification failure)
         for ideo in ("despotism", "conservatism", "nazism", "marxism"):
             f.write(f"\t{tag}_leader_{ideo} = {{\n")
             f.write(f"\t\tname = {tag}_leader_{ideo}\n")
@@ -110,7 +107,7 @@ def write_country_characters(tag, output_dir, country_name="Fantasy"):
             f.write("\t\t}\n")
             f.write("\t}\n\n")
 
-        # 2. 元帅
+        # 2. Marshal
         f.write(f"\t{tag}_field_marshal_1 = {{\n")
         f.write(f"\t\tname = {tag}_field_marshal_1\n")
         f.write("\t\tportraits = {\n")
@@ -126,7 +123,7 @@ def write_country_characters(tag, output_dir, country_name="Fantasy"):
         f.write("\t\t}\n")
         f.write("\t}\n\n")
 
-        # 3. 将军
+        # 3. General
         f.write(f"\t{tag}_general_1 = {{\n")
         f.write(f"\t\tname = {tag}_general_1\n")
         f.write("\t\tportraits = {\n")
@@ -142,7 +139,7 @@ def write_country_characters(tag, output_dir, country_name="Fantasy"):
         f.write("\t\t}\n")
         f.write("\t}\n\n")
 
-        # 4. 海军将领
+        # 4. Admiral
         f.write(f"\t{tag}_admiral_1 = {{\n")
         f.write(f"\t\tname = {tag}_admiral_1\n")
         f.write("\t\tportraits = {\n")
@@ -158,7 +155,7 @@ def write_country_characters(tag, output_dir, country_name="Fantasy"):
         f.write("\t\t}\n")
         f.write("\t}\n\n")
 
-        # 5. 科学家 (4种专业, 避免自动生成失败)
+        # 5. Scientist (4 majors, to avoid automatic generation failure)
         #
         # The scientist database uses the facility specializations
         # ``air``, ``land``, ``naval`` and ``nuclear``.  ``industry`` and
@@ -221,13 +218,13 @@ def write_dynamic_countries(output_dir, count=75):
 
 
 def write_country(tag, capital_state_id, output_dir):
-    """写一个默认国家。capital_state_id 必须是有效的 State ID，不是省份ID！"""
+    """Write a default country. capital_state_id must be a valid State ID, not a province ID!"""
     os.makedirs(os.path.join(output_dir, "common", "country_tags"), exist_ok=True)
     os.makedirs(os.path.join(output_dir, "common", "countries"), exist_ok=True)
     os.makedirs(os.path.join(output_dir, "history", "countries"), exist_ok=True)
     os.makedirs(os.path.join(output_dir, "history", "units"), exist_ok=True)
 
-    # 生成 80 个 dynamic countries（HOI4 强制要求，否则崩溃）
+    # Generate 80 dynamic countries (mandatory for HOI4, otherwise it will crash)
     write_dynamic_countries(output_dir)
 
     with open(os.path.join(output_dir, "common", "country_tags", "02_worldtest_countries.txt"), "w", encoding="utf-8") as f:
@@ -238,28 +235,28 @@ def write_country(tag, capital_state_id, output_dir):
         f.write("graphical_culture_2d = western_european_2d\n")
         f.write("color = { 100 100 200 }\n")
 
-    # 生成国家人物（country_leader/将领/科学家）
+    # Generate national figures (country_leader/general/scientist)
     write_country_characters(tag, output_dir)
-    # 生成国家名字数组（避免 character_manager 找不到名字崩溃）
+    # Generate an array of country names (to avoid character_manager crashing when it cannot find a name)
     write_country_names(tag, output_dir)
-    # 生成国家肖像池（避免 scientist 自动生成崩溃）★崩溃根因★
+    # Generate national portrait pool (avoid scientist automatic generation crash) ★Crash root cause★
     write_country_portraits(tag, output_dir)
-    # 生成国家颜色（地图上显示）
+    # Generate country colors (shown on map)
     write_country_colors(tag, (100, 100, 200), output_dir)
 
     with open(os.path.join(output_dir, "history", "countries", f"{tag} - Fantasy.txt"), "w", encoding="utf-8") as f:
         f.write(f"capital = {capital_state_id}\n")
         f.write(f'oob = "{tag}_1936"\n')
         f.write("set_research_slots = 3\n")
-        # 不 recruit_character — 让 HOI4 自动从 common/characters 生成 leader。
-        # 显式 recruit 在 1.17 可能引用格式不对的字段导致 AI 启动校验失败崩溃
+        # No recruit_character — Let HOI4 automatically generate leaders from common/characters.
+        # Explicit recruit in 1.17 may reference incorrectly formatted fields, causing AI startup verification to fail and crash.
         f.write("set_politics = {\n\truling_party = neutrality\n")
         f.write('\tlast_election = "1932.1.1"\n\telection_frequency = 48\n')
         f.write("\telections_allowed = no\n}\n")
         f.write("set_popularities = {\n\tdemocratic = 10\n\tfascism = 5\n")
         f.write("\tcommunism = 5\n\tneutrality = 80\n}\n")
-        # Wiki: 文件不能以 recruit_character 结尾，最后必须有非 recruit 行
-        # 这里 set_popularities 已经是最后一个，所以本身就符合要求
+        # Wiki: File cannot end with recruit_character, must have non-recruit line at the end
+        # Here set_popularities is already the last one, so it meets the requirements
         f.write("\n# end of country history\n")
 
     with open(os.path.join(output_dir, "history", "units", f"{tag}_1936.txt"), "w", encoding="utf-8") as f:
@@ -273,16 +270,15 @@ def write_country(tag, capital_state_id, output_dir):
 
 
 def write_countries_from_mgr(country_mgr, output_dir, states):
-    """用 CountryManager 的数据写国家文件。
-    注意：country_mgr.capital 存的是【省份ID】，但 HOI4 的 capital 字段要求【State ID】。
-    这里会自动把省份ID转换成包含该省份的State ID。
-    """
+    """Write country files using data from CountryManager.
+    Note: country_mgr.capital stores [Province ID], but the capital field of HOI4 requires [State ID].
+    Here, the province ID will be automatically converted into the State ID containing the province."""
     os.makedirs(os.path.join(output_dir, "common", "country_tags"), exist_ok=True)
     os.makedirs(os.path.join(output_dir, "common", "countries"), exist_ok=True)
     os.makedirs(os.path.join(output_dir, "history", "countries"), exist_ok=True)
     os.makedirs(os.path.join(output_dir, "history", "units"), exist_ok=True)
 
-    # 构建 省份ID -> State ID 反查表
+    # Construct Province ID -> State ID reverse lookup table
     prov_to_state = {}
     for sid, provs in states.items():
         for p in provs:
@@ -293,7 +289,7 @@ def write_countries_from_mgr(country_mgr, output_dir, states):
         )
     fallback_state = min(states.keys())
 
-    # 生成 80 个 dynamic countries（HOI4 强制要求，否则崩溃）
+    # Generate 80 dynamic countries (mandatory for HOI4, otherwise it will crash)
     write_dynamic_countries(output_dir)
 
     # country_tags
@@ -308,20 +304,20 @@ def write_countries_from_mgr(country_mgr, output_dir, states):
             f.write("graphical_culture_2d = western_european_2d\n")
             f.write(f"color = {{ {r} {g} {b} }}\n")
 
-        # 生成国家人物（country_leader/将领/科学家）
+        # Generate national figures (country_leader/general/scientist)
         write_country_characters(tag, output_dir, country_name=c.name)
-        # 生成国家名字数组
+        # Generate an array of country names
         write_country_names(tag, output_dir, country_name=c.name)
-        # 生成国家肖像池（避免 scientist 自动生成崩溃）★崩溃根因★
+        # Generate national portrait pool (avoid scientist automatic generation crash) ★Crash root cause★
         write_country_portraits(tag, output_dir)
-        # 生成国家颜色
+        # Generate country colors
         write_country_colors(tag, c.color, output_dir)
 
-        # 省份ID → State ID 转换
+        # Province ID → State ID conversion
         capital_state = prov_to_state.get(c.capital, fallback_state)
 
-        # 意识形态白名单校验：非法的 ruling_party 降级为 neutrality，
-        # 非法的 popularities 键会被丢弃，缺失的键补 0，总和归一化到 100
+        # Ideological whitelist verification: illegal ruling_party downgraded to neutrality,
+        # Illegal popularity keys are discarded, missing keys are filled with 0, and the sum is normalized to 100
         ruling = c.ruling_party if c.ruling_party in VALID_MAIN_IDEOLOGIES else "neutrality"
         pops = {k: max(0, int(v)) for k, v in (c.popularities or {}).items()
                 if k in VALID_MAIN_IDEOLOGIES}
@@ -329,29 +325,29 @@ def write_countries_from_mgr(country_mgr, output_dir, states):
             pops.setdefault(k, 0)
         total = sum(pops.values())
         if total <= 0:
-            # 全空 → ruling_party 100%
+            # All empty → ruling_party 100%
             pops = {k: (100 if k == ruling else 0) for k in VALID_MAIN_IDEOLOGIES}
         elif total != 100:
-            # 按比例归一化，四舍五入后再用 ruling_party 补余数
+            # Normalize according to proportion, round off and then use ruling_party to make up the remainder
             scaled = {k: round(v * 100 / total) for k, v in pops.items()}
             diff = 100 - sum(scaled.values())
             scaled[ruling] = scaled.get(ruling, 0) + diff
             pops = scaled
 
-        # 文件名必须与 country_tags/02_worldtest_countries.txt 里的 "countries/{tag}.txt"
-        # 完全一致, 否则 HOI4 (PHYSFS) 找不到文件 → 国家加载失败 → 引用该 TAG 时除零崩溃.
-        # vanilla 用 "TAG - English_Name.txt" 是因为名字全 ASCII 引擎能模糊匹配; 我们的国家
-        # 名常含中文, PHYSFS 在 Windows 加载非 ASCII 路径失败, 必须严格匹配 = 纯 TAG 命名.
+        # The file name must be the same as "countries/{tag}.txt" in country_tags/02_worldtest_countries.txt
+        # Exactly, otherwise HOI4 (PHYSFS) cannot find file → country load fails → crash on divide-by-zero when referencing this TAG.
+        # vanilla uses "TAG - English_Name.txt" because the full ASCII engine of the name can fuzzy match; our country
+        # PHYSFS may fail on non-ASCII paths on Windows, so this file name must be an ASCII TAG.
         with open(os.path.join(output_dir, "history", "countries", f"{tag}.txt"), "w", encoding="utf-8") as f:
             f.write(f"capital = {capital_state}\n")
             f.write(f'oob = "{tag}_1936"\n')
             f.write("set_research_slots = 3\n")
-            # 强制加载 vanilla generic_focus 通用国策树，避免引擎尝试匹配
-            # FRA/GER/ENG 等特定国策树（触发条件引用 vanilla idea/trigger 会错）
+            # Force loading of the vanilla generic_focus universal national policy tree to prevent the engine from trying to match
+            # Specific national policy trees such as FRA/GER/ENG (the trigger conditions refer to vanilla idea/trigger will be wrong)
             f.write("load_focus_tree = generic_focus\n")
-            # 不 recruit_character — 让 HOI4 自动从 common/characters 生成 leader。
-            # 显式 recruit 在 1.17 可能引用格式不对（id/expire 废弃字段）导致 AI
-            # 启动时校验失败崩溃
+            # No recruit_character — Let HOI4 automatically generate leaders from common/characters.
+            # Explicit recruit may have incorrect reference format (id/expire obsolete fields) in 1.17, causing AI
+            # Verification failed and crashed during startup
             f.write(f"set_politics = {{\n\truling_party = {ruling}\n")
             f.write('\tlast_election = "1932.1.1"\n\telection_frequency = 48\n')
             f.write("\telections_allowed = no\n}\n")
@@ -359,16 +355,16 @@ def write_countries_from_mgr(country_mgr, output_dir, states):
             for party in VALID_MAIN_IDEOLOGIES:
                 f.write(f"\t{party} = {pops[party]}\n")
             f.write("}\n")
-            # 注意：不再在 country history 写 add_ideas —— 引用未定义 idea 会触发
-            # AI 每 tick 评估时崩。national_spirits 数据保留在 country_mgr 但不
-            # 写入 history（以后真要做 spirits 必须先把所有 ideas 完整定义）
+            # Note: no longer write add_ideas in country history - referencing undefined idea will trigger
+            # AI crashes when evaluating every tick. national_spirits data is retained in country_mgr but not
+            # Write history (if you really want to use spirits in the future, you must first fully define all ideas)
             f.write("\n# end of country history\n")
 
-        # OOB：必须有至少一个 division template + 一个部署的 division，
-        # 否则 5x 速度时 AI 多线程评估空军队 → null deref → client_ping 崩
-        # location 用国家首都所在的 land province
+        # OOB: There must be at least one division template + one deployed division,
+        # Otherwise 5x speed when AI multi-threaded evaluation air force → null deref → client_ping crashes
+        # location uses the land province where the country's capital is located
         capital_prov = c.capital if c.capital else 1
-        # 如果 capital 是 0 或不在该国土地，找一个 fallback
+        # If capital is 0 or is not in the country's land, find a fallback
         country_states = country_mgr.get_states_of_country(tag)
         any_land_prov = capital_prov
         if country_states:
@@ -393,12 +389,12 @@ def write_countries_from_mgr(country_mgr, output_dir, states):
             f.write("\t}\n")
             f.write("}\n")
 
-    # 不再生成 country ideas 文件 —— 阶段 2 已禁止 country history add_ideas
+    # Country ideas files are no longer generated - country history add_ideas is disabled in stage 2
     # write_country_ideas(country_mgr, output_dir)
 
-    # 为所有 dynamic countries 写空 OOB 文件
-    # （D01-D75 在 country_tags/zz_dynamic_countries.txt 里注册但没有 history/units/Dxx_1936.txt
-    #  → AI 5x 多线程评估它们的军队时 null → tbb race → 崩）
+    # Write empty OOB files for all dynamic countries
+    # (D01-D75 are registered in country_tags/zz_dynamic_countries.txt but there is no history/units/Dxx_1936.txt
+    # → AI 5x multi-threaded when evaluating their armies null → tbb race → crash)
     write_dynamic_country_oobs(output_dir)
 
     write_neutral_country_histories(
@@ -481,7 +477,7 @@ def write_neutral_country_histories(
 
 
 def write_dynamic_country_oobs(output_dir, count=75):
-    """为 D01..D75 写空 OOB。HOI4 对每个注册的 country 都会尝试读 history/units/<TAG>_1936.txt"""
+    """Write empty OOB for D01..D75. HOI4 will try to read history/units/<TAG>_1936.txt for each registered country."""
     d = os.path.join(output_dir, "history", "units")
     os.makedirs(d, exist_ok=True)
     for i in range(1, count + 1):
@@ -491,9 +487,8 @@ def write_dynamic_country_oobs(output_dir, count=75):
 
 
 def write_country_ideas(country_mgr, output_dir):
-    """生成 common/ideas/<MOD>_country_ideas.txt 包含所有国家的 national spirits。
-    不 replace_path common/ideas（vanilla idea 都保留），只【添加】我们的文件。
-    """
+    """Generate common/ideas/<MOD>_country_ideas.txt containing national spirits for all countries.
+    Do not replace_path common/ideas (vanilla ideas are retained), only [add] our files."""
     all_spirits = []
     for tag, c in country_mgr.countries.items():
         for spirit in c.national_spirits:
@@ -522,18 +517,17 @@ def write_country_ideas(country_mgr, output_dir):
 
 
 def write_bookmark(mod_name, country_tags, output_dir):
-    """生成 bookmark 文件。
-    策略：
-    1. 用同名文件 the_gathering_storm.txt / blitzkrieg.txt 覆盖原版为【空 bookmarks 块】
-       - 原因：原版 bookmark 引用 GER/ENG/JAP 等我们已移除的国家，选中会崩溃
-       - 覆盖为空让玩家在菜单里看不到原版 bookmark
-    2. 用 z_{safe}.txt 写我们自己的 bookmark（z_ 前缀确保排序在后，不会和原版冲突）
-    """
+    """Generate bookmark files.
+    Strategy:
+    1. Use the file with the same name the_gathering_storm.txt / blitzkrieg.txt to overwrite the original version into [empty bookmarks block]
+       - Reason: The original bookmark references GER/ENG/JAP and other countries that we have removed, and it will crash when selected.
+       - Leave the coverage empty so that players cannot see the original bookmark in the menu
+    2. Use z_{safe}.txt to write our own bookmark (the z_ prefix ensures that it is sorted last and will not conflict with the original version)"""
     d = os.path.join(output_dir, "common", "bookmarks")
     os.makedirs(d, exist_ok=True)
     safe = mod_name.replace(" ", "_").upper()
 
-    # --- 1. 屏蔽原版 bookmark（必须有完整结构，不能空块） ---
+    # --- 1. Block the original bookmark (must have a complete structure, no empty blocks) ---
     for bm_file in ("the_gathering_storm.txt", "blitzkrieg.txt"):
         with open(os.path.join(d, bm_file), "w", encoding="utf-8") as f:
             f.write("bookmarks = {\n")
@@ -546,7 +540,7 @@ def write_bookmark(mod_name, country_tags, output_dir):
             f.write("\t}\n")
             f.write("}\n")
 
-    # --- 2. 写我们自己的 bookmark ---
+    # --- 2. Write our own bookmark ---
     safe_file = mod_name.replace(" ", "_").lower()
     bm_name_key = f"{safe}_BOOKMARK"
     bm_desc_key = f"{safe}_BOOKMARK_DESC"

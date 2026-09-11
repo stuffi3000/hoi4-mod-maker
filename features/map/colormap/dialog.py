@@ -1,9 +1,7 @@
-"""
-战略总览贴图颜色对话框.
+"""Strategy overview map color dialog.
 
-3 个色块按钮 (陆/海/湖), 点击弹 QColorDialog. 实时预览.
-保存到 ColormapSettings, 下次导出 colormap_dds.dds 用这些颜色.
-"""
+3 color block buttons (land/sea/lake), click to pop up QColorDialog. Real-time preview.
+Save to ColormapSettings and use these colors next time you export colormap_dds.dds."""
 
 from __future__ import annotations
 
@@ -19,7 +17,7 @@ from ui.i18n import tr
 
 
 class ColormapDialog(QDialog):
-    """战略总览贴图颜色编辑器."""
+    """Strategy overview map color editor."""
 
     def __init__(self, settings: ColormapSettings, parent=None) -> None:
         super().__init__(parent)
@@ -39,7 +37,7 @@ class ColormapDialog(QDialog):
         tip.setStyleSheet("color: #888; font-size: 11px;")
         root.addWidget(tip)
 
-        # 三个色块行
+        # rows of three color blocks
         self._land_swatch = self._make_color_row(
             root, tr("cm_dlg_land"), self._settings.land, self._on_pick_land
         )
@@ -50,14 +48,14 @@ class ColormapDialog(QDialog):
             root, tr("cm_dlg_lake"), self._settings.lake, self._on_pick_lake
         )
 
-        # 重置按钮
+        # reset button
         reset_btn = QPushButton(tr("cm_dlg_reset_default"))
         reset_btn.clicked.connect(self._on_reset)
         root.addWidget(reset_btn)
 
         root.addStretch(1)
 
-        # 底部按钮
+        # bottom button
         btn_row = QHBoxLayout()
         btn_row.addStretch(1)
         ok_btn = QPushButton(tr("cm_dlg_save"))

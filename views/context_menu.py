@@ -1,6 +1,4 @@
-"""
-右键省份弹出菜单 — 集中所有省份快捷操作。
-"""
+"""Right-click province pop-up menu - centralized shortcut operations for all provinces."""
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
@@ -20,7 +18,7 @@ if TYPE_CHECKING:
 
 
 class ProvinceContextMenu:
-    """右键省份弹出菜单。"""
+    """Right-click on the province to pop up the menu."""
 
     def __init__(
         self,
@@ -33,18 +31,18 @@ class ProvinceContextMenu:
         self._project = project
         self._controllers = controllers
         self._canvas = canvas
-        # 回调: (state_id) → 打开州详情对话框 (资源/建筑), 由 MainWindow 注入
+        # Callback: (state_id) → Open state details dialog (resource/building), injected by MainWindow
         self._open_state_detail = open_state_detail
         self._delete_provinces = delete_provinces
 
     def show(self, pid: int, screen_pos: QPoint) -> None:
-        """在指定屏幕位置弹出菜单。"""
+        """Pops up a menu at a specified screen location."""
         if pid <= 0:
             return
 
         menu = QMenu()
 
-        # ── 省份信息 ──
+        # ──Province information──
         selected_pids = (
             self._canvas.selected_province_ids()
             if self._canvas.display_mode == "province"
@@ -63,7 +61,7 @@ class ProvinceContextMenu:
         info_action.setEnabled(False)
         menu.addSeparator()
 
-        # ── 地形设置 ──
+        # ── Terrain settings ──
         terrain_menu = menu.addMenu(tr("context_set_terrain"))
         terrain_actions: dict[object, int] = {}
         for gt in sorted(GRAPHICAL_TERRAIN_BY_INDEX.values(), key=lambda g: g.palette_index):
@@ -74,7 +72,7 @@ class ProvinceContextMenu:
 
         menu.addSeparator()
 
-        # ── State 相关 ──
+        # ── State related ──
         state_id = self._project.state_mgr.get_state_of_province(pid)
         vp_action = None
         capital_action = None
@@ -108,7 +106,7 @@ class ProvinceContextMenu:
                 tr("context_delete_provinces", n=len(selected_pids))
             )
 
-        # ── 执行 ──
+        # ──Execution──
         chosen = menu.exec_(screen_pos)
         if chosen is None:
             return
@@ -132,13 +130,13 @@ class ProvinceContextMenu:
         delete_action: object | None = None,
         selected_pids: set[int] | None = None,
     ) -> None:
-        # 州详情 (资源/建筑)
+        # State Details (Resources/Buildings)
         if action is detail_action and detail_action is not None:
             if self._open_state_detail is not None and state_id:
                 self._open_state_detail(state_id)
             return
 
-        # 地形
+        # terrain
         if action in terrain_actions:
             palette_idx = terrain_actions[action]
             self._set_terrain(pid, palette_idx)
@@ -149,12 +147,12 @@ class ProvinceContextMenu:
             self._set_vp(pid)
             return
 
-        # 首都
+        # capital
         if action is capital_action:
             self._set_capital(pid)
             return
 
-        # 复制 ID
+        # Copy ID
         if action is copy_action:
             clipboard = QApplication.clipboard()
             if clipboard is not None:
@@ -167,7 +165,7 @@ class ProvinceContextMenu:
             return
 
     def _set_terrain(self, pid: int, palette_idx: int) -> None:
-        """整个省份设为指定地形。"""
+        """The entire province is set to the specified terrain."""
         import numpy as np
         pm = self._canvas.province_map
         mask = pm == pid
@@ -183,7 +181,7 @@ class ProvinceContextMenu:
         self._canvas.refresh_display()
 
     def _set_vp(self, pid: int) -> None:
-        """弹出对话框设置胜利点数值 + 城市名。"""
+        """A dialog box pops up to set the victory point value + city name."""
         ctrl = self._controllers.get("state")
         if ctrl is None:
             return
@@ -199,7 +197,7 @@ class ProvinceContextMenu:
             ctrl.set_vp(pid, value, name)
 
     def _set_capital(self, pid: int) -> None:
-        """设为国家首都。"""
+        """Set as the nation's capital."""
         ctrl = self._controllers.get("country")
         if ctrl is not None:
             ctrl.on_province_right_clicked(pid, 0, 0)

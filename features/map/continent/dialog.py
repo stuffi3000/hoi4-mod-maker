@@ -1,9 +1,7 @@
-"""
-大陆编辑器对话框 — 增删改大陆名, 并把省份指派到选定大陆.
+"""Continent Editor Dialog — Add, delete, or modify continent names, and assign provinces to the selected continent.
 
-用法: 打开对话框 → 选中一个大陆 → 进入"拾取模式" → 在主画布点击省份
-(主窗口拦截点击事件并调用 continent_mgr.assign_province)
-"""
+Usage: Open the dialog box → select a continent → enter "pickup mode" → click on the province on the main canvas
+(The main window intercepts the click event and calls continent_mgr.assign_province)"""
 
 from __future__ import annotations
 
@@ -17,10 +15,10 @@ from ui.i18n import tr
 
 
 class ContinentDialog(QDialog):
-    """非模态, 允许用户一边看画布一边点省份指派大陆."""
+    """Non-modal, allowing users to click provinces and assign continents while looking at the canvas."""
 
-    # 用户进入/退出拾取模式; 主窗口用来切换画布点击行为
-    pick_mode_changed = pyqtSignal(bool, int)  # (开/关, 大陆索引 0-based)
+    # The user enters/exits picking mode; the main window is used to toggle canvas click behavior
+    pick_mode_changed = pyqtSignal(bool, int)  # (on/off, mainland index 0-based)
 
     def __init__(self, continent_mgr, parent=None):
         super().__init__(parent)
@@ -28,7 +26,7 @@ class ContinentDialog(QDialog):
         self._pick_on = False
         self.setWindowTitle(tr("cont_dlg_title"))
         self.setMinimumSize(340, 420)
-        # 非模态: 不阻塞主窗口点击
+        # Non-modal: Does not block main window clicks
         self.setWindowFlags(self.windowFlags() | Qt.Tool)
 
         self._build_ui()
@@ -82,13 +80,13 @@ class ContinentDialog(QDialog):
             self._list.setCurrentRow(0)
 
     def current_index(self) -> int:
-        """返回当前选中的大陆索引 (0-based), 无选中返回 -1."""
+        """Returns the currently selected continent index (0-based), or -1 if no selection is made."""
         item = self._list.currentItem()
         if item is None:
             return -1
         return int(item.data(Qt.UserRole))
 
-    # ─────────── 大陆 CRUD ───────────
+    # ─────────── Mainland CRUD ───────────
 
     def _on_add(self) -> None:
         name, ok = QInputDialog.getText(self, tr("cont_dlg_add_title"), tr("cont_dlg_add_prompt"))
@@ -139,7 +137,7 @@ class ContinentDialog(QDialog):
             return
         self._refresh_list()
 
-    # ─────────── 拾取模式 ───────────
+    # ─────────── Pickup mode ────────────
 
     def _on_pick_toggled(self, on: bool) -> None:
         idx = self.current_index()
@@ -158,7 +156,7 @@ class ContinentDialog(QDialog):
         self.pick_mode_changed.emit(on, idx)
 
     def notify_assigned(self, pid: int) -> None:
-        """主窗口指派一个省份后回调, 刷新省数显示."""
+        """Called after assigning a province in the main window, the province number display is refreshed."""
         self._refresh_list()
         idx = self.current_index()
         if 0 <= idx:
@@ -166,7 +164,7 @@ class ContinentDialog(QDialog):
             self._status.setText(tr("cont_dlg_assigned_fmt", pid, name))
 
     def closeEvent(self, event) -> None:
-        # 关闭时自动退出拾取模式
+        # Automatically exit pickup mode when closed
         if self._pick_on:
             self.pick_mode_changed.emit(False, -1)
             self._pick_on = False

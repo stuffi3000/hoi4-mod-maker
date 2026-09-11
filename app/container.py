@@ -1,14 +1,12 @@
-"""
-应用装配容器 — 创建所有 manager 和 Feature, 注入给 UI.
+"""Application assembly container — creates all managers and Features and injects them into the UI.
 
-加新功能的步骤 (重构目标):
-1. 在 features/map/ 或 features/content/ 建新目录
-2. 新目录的 __init__.py 定义 Feature 子类
-3. 在本文件的 _register_map_features / _register_content_features 加一行 register
-4. 其他地方零改动
+Steps to add new features (refactoring goals):
+1. Create a new directory in features/map/ or features/content/
+2. __init__.py of the new directory defines the Feature subclass
+3. Add a line register to _register_map_features / _register_content_features in this file
+4. Zero changes elsewhere.
 
-这是"单文件扩展点"的核心. 不要绕过它直接改 main_window / tool_panel.
-"""
+This is the core of the "single file extension point". Don't bypass it and change main_window / tool_panel directly."""
 
 from __future__ import annotations
 
@@ -36,7 +34,7 @@ from features.map.default_map import DefaultMapFeature
 from features.map.strategic_region import StrategicRegionFeature
 from features.map.preview import PreviewFeature
 
-# content features (2.0 空壳, 当前不在 UI 暴露)
+# content features (2.0 empty shell, not currently exposed in the UI)
 from features.content.tech_tree import TechTreeFeature
 from features.content.focus_tree import FocusTreeFeature
 from features.content.events import EventsFeature
@@ -50,25 +48,25 @@ from features.content.ideas import IdeasFeature
 
 
 class AppContainer:
-    """全局应用容器. MainWindow 持有一个实例, 从这里取所有服务."""
+    """Global application container. MainWindow holds an instance and all services are taken from here."""
 
     def __init__(self) -> None:
-        # ─── domain 数据管理器 ───
+        # ─── domain data manager ───
         self.state_mgr = StateManager()
         self.country_mgr = CountryManager()
         self.continent_mgr = ContinentManager()
         self.undo_mgr = UndoManager(max_steps=30)
 
-        # ─── 命令总线 (新功能用, 旧 undo 继续用 UndoManager) ───
+        # ─── Command bus (for new functions, old undo continues to use UndoManager) ───
         self.command_bus = CommandBus(max_history=30)
 
-        # ─── Feature 注册表 ───
+        # ─── Feature Registry ───
         self.features = FeatureRegistry()
         self._register_map_features()
         self._register_content_features()
 
     def _register_map_features(self) -> None:
-        """注册 1.0 地图功能."""
+        """Register for 1.0 map functionality."""
         for f in [
             LandFeature(),
             ProvinceFeature(),
@@ -87,7 +85,7 @@ class AppContainer:
             self.features.register(f)
 
     def _register_content_features(self) -> None:
-        """注册 2.0 内容功能 (目前全是空壳, UI 可选不暴露)."""
+        """Register 2.0 content function (currently all empty shells, the UI is optional and not exposed)."""
         for f in [
             TechTreeFeature(),
             FocusTreeFeature(),

@@ -1,8 +1,7 @@
-"""省份属性地形 page — 选地形类型按钮 + 操作说明。
+"""Province attribute terrain page — Select terrain type button + operation instructions.
 
-操作：选地形类型 → 点击画布上的 province → 该 province gameplay 地形 = 该类型。
-不动 terrain.bmp 视觉、不动 height_map 高度。
-"""
+Operation: Select the terrain type → click province on the canvas → the province gameplay terrain = this type.
+Unmoving terrain.bmp visual, unmoving height_map height."""
 
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtWidgets import (
@@ -18,17 +17,17 @@ from ui.styles import (
 from ui.i18n import tr
 
 
-# 8 种 land 类型（不含 ocean/lakes）
+# 8 land types (excluding ocean/lakes)
 _LAND_TYPES = ["plains", "forest", "hills", "mountain",
                "desert", "marsh", "jungle", "urban"]
 
 
 class ProvincialTerrainPage(QWidget):
-    """省份属性地形选择页面。"""
+    """Province attribute terrain selection page."""
 
     type_changed = pyqtSignal(str)
-    assign_mode_changed = pyqtSignal(bool)  # True=分配模式（点改地形）/ False=查看模式（点只看信息）
-    sync_requested = pyqtSignal()  # 从视觉地形全量重算属性（已过二次确认）
+    assign_mode_changed = pyqtSignal(bool)  # True=Assign mode (click to change terrain)/False=View mode (click to view information only)
+    sync_requested = pyqtSignal()  # Fully recalculate attributes from visual terrain (secondary confirmation)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -45,12 +44,12 @@ class ProvincialTerrainPage(QWidget):
         intro.setTextFormat(Qt.TextFormat.RichText)
         outer.addWidget(intro)
 
-        # 分配模式开关
+        # Distribution mode switch
         self._assign_chk = QCheckBox(tr("pterrain_assign_mode"))
-        self._assign_chk.setChecked(False)  # 默认关闭，避免误改
+        self._assign_chk.setChecked(False)  # Closed by default to avoid accidental changes
         self._assign_chk.setStyleSheet(
             f"QCheckBox {{ color: #e8eaed; font-size: 14px; font-weight: 600; padding: 6px; }}"
-            f"QCheckBox:checked {{ color: #86efac; }}"  # 开启后变绿
+            f"QCheckBox:checked {{ color: #86efac; }}"  # Turns green when turned on
         )
         self._assign_chk.toggled.connect(self.assign_mode_changed)
         outer.addWidget(self._assign_chk)
@@ -95,7 +94,7 @@ class ProvincialTerrainPage(QWidget):
         self._status_label.setStyleSheet(_DIM_LABEL_STYLE)
         outer.addWidget(self._status_label)
 
-        # 从视觉地形重新同步（全量覆盖属性，可撤销）
+        # Resync from visual terrain (full attribute override, reversible)
         sync_box = _make_section(tr("pterrain_sync_section"))
         sync_layout = sync_box.layout()
         self._sync_btn = QPushButton(tr("pterrain_sync_btn"))
@@ -112,7 +111,7 @@ class ProvincialTerrainPage(QWidget):
         outer.addStretch()
 
     def _on_sync_clicked(self) -> None:
-        """防呆: 二次确认 (覆盖所有省份属性, 撤销才能恢复)。"""
+        """Fool-proof: double confirmation (covering all province attributes, can only be restored by revoking)."""
         from PyQt5.QtWidgets import QMessageBox
         ret = QMessageBox.question(
             self, tr("pterrain_sync_confirm_title"),

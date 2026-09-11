@@ -1,16 +1,14 @@
-"""
-OptionChooserDialog — "说人话的选择题"对话框。
+"""OptionChooserDialog — "Speaking multiple choice questions" dialog box.
 
-治"按钮太多不知道点哪个": 页面只留一个入口按钮, 点开后每个选项是
-一张大卡片 (标题 + 一句什么时候用它的说明), 点卡片即选定。
+To solve the problem of "too many buttons and I don't know which one to click": There is only one entry button left on the page. After clicking it, each option is
+A large card (title + a sentence explaining when to use it), click on the card to select it.
 
-用法:
-    key = OptionChooserDialog.choose(parent, "生成 / 优化高度", [
-        ("realistic", "从零生成真实地势", "我还没画高度..."),
-        ("refine", "保形精修", "我已画好哪里高哪里低..."),
+Usage:
+    key = OptionChooserDialog.choose(parent, "Generate/Optimize Height", [
+        ("realistic", "Generate real terrain from scratch", "I haven't drawn the height yet..."),
+        ("refine", "Conformal Refinement", "I have already drawn where it is high and where it is low..."),
     ])
-    if key == "realistic": ...
-"""
+    if key == "realistic": ..."""
 
 from __future__ import annotations
 
@@ -24,8 +22,8 @@ from PyQt5.QtWidgets import (
 from ui.i18n import tr
 from ui.styles import _BORDER, _TEXT, _DIM, _ACCENT, _INPUT_BG
 
-# 卡片用 QFrame 而不是 QPushButton: QPushButton 的高度不会跟随内部
-# 换行文字长高（文字被裁掉）, QFrame + 布局能正确按内容计算高度。
+# Cards use QFrame instead of QPushButton: the height of QPushButton will not follow the interior
+# The wrapped text grows taller (the text is cropped), and QFrame + layout can correctly calculate the height according to the content.
 _CARD_STYLE = f"""
     QFrame#optionCard {{
         background: {_INPUT_BG};
@@ -40,7 +38,7 @@ _CARD_STYLE = f"""
 
 
 class _OptionCard(QFrame):
-    """一张可点击的选项卡片: 标题 + 换行说明。"""
+    """A clickable tab: title + line break description."""
 
     def __init__(self, key: str, name: str, desc: str,
                  on_pick: Callable[[str], None]) -> None:
@@ -74,14 +72,14 @@ class _OptionCard(QFrame):
 
 
 class OptionChooserDialog(QDialog):
-    """大卡片单选对话框。选中的 key 存 self.selected。"""
+    """Large card radio dialog box. The selected key is stored in self.selected."""
 
     def __init__(self, parent, title: str,
                  options: list[tuple[str, str, str]]) -> None:
         super().__init__(parent)
         self.selected: str | None = None
         self.setWindowTitle(title)
-        # 固定宽度: 说明文字在已知宽度下换行, 高度才能算对
+        # Fixed width: The description text wraps at a known width so that the height can be calculated correctly
         self.setFixedWidth(460)
 
         lay = QVBoxLayout(self)
@@ -95,8 +93,8 @@ class OptionChooserDialog(QDialog):
         cancel.clicked.connect(self.reject)
         lay.addWidget(cancel, alignment=Qt.AlignmentFlag.AlignRight)
 
-        # 高度钉死为"宽度 460 时的内容高度": 不给布局留可分配的多余空间,
-        # 否则卡片之间会被拉出大空隙; heightForWidth 才能算对换行文字的高度
+        # The height is pinned to "content height at width 460": leaving no extra space for the layout to allocate,
+        # Otherwise, a large gap will be drawn between the cards; only heightForWidth can be used to calculate the height of the wrapped text.
         lay.activate()
         if lay.hasHeightForWidth():
             self.setFixedHeight(lay.heightForWidth(self.width()))
@@ -110,11 +108,10 @@ class OptionChooserDialog(QDialog):
     @staticmethod
     def choose(parent, title: str,
                options: list[tuple[str, str, str]]) -> str | None:
-        """弹出对话框, 返回选中的 key; 取消返回 None。
+        """A dialog box pops up, returning the selected key; canceling returns None.
 
-        parent 可以传任意控件 (如侧栏页面) — 内部取其顶层窗口做锚点,
-        并显式居中: 直接用侧栏小控件当父级会让对话框弹在奇怪的位置。
-        """
+        parent can pass any control (such as sidebar page) - internally, its top-level window is used as the anchor point.
+        And explicitly centered: directly using the sidebar widget as the parent will cause the dialog box to pop up in a strange position."""
         anchor = parent.window() if parent is not None else None
         dlg = OptionChooserDialog(anchor, title, options)
         dlg.adjustSize()

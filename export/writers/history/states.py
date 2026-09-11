@@ -1,11 +1,9 @@
-"""
-history/states/ — State 历史文件生成器.
+"""history/states/ — State history file generator.
 
-一个 state 对应一个 {sid}-{name}.txt, 包含:
-- 基础字段: id / name / manpower / state_category / impassable / local_supplies / resources
-- 历史块: owner / add_core_of / add_claim_by / controller / buildings / victory_points
-- 省份列表
-"""
+A state corresponds to a {sid}-{name}.txt, including:
+- Basic fields: id / name / manpower / state_category / impassable / local_supplies / resources
+- History block: owner / add_core_of / add_claim_by / controller / buildings / victory_points
+- List of provinces"""
 
 import os
 
@@ -13,7 +11,7 @@ from domain.managers.state import normalize_state_category
 from domain.validators.province import get_coastal_provinces
 
 
-# state_category → 建筑默认等级 (infra, arms, indu, dock, air)
+# state_category → building default class (infra, arms, indu, dock, air)
 _CAT_BUILDINGS = {
     "wasteland":    (0, 0, 0, 0, 0),
     "enclave":      (1, 0, 0, 0, 0),
@@ -126,13 +124,12 @@ def write_states_from_mgr(
     state_mgr, country_mgr, province_map, output_dir, tile_map=None,
     land_id_set=None, coastal_set=None,
 ) -> None:
-    """用 StateManager + CountryManager 的数据写 State 文件.
-    如果传入预计算的 land_id_set 和 coastal_set，直接使用，避免逐省份全图扫描。
-    """
+    """Write the State file using the data of StateManager + CountryManager.
+    If the precalculated land_id_set and coastal_set are passed in, use them directly to avoid scanning the entire map province by province."""
     d = os.path.join(output_dir, "history", "states")
     os.makedirs(d, exist_ok=True)
 
-    # 预计算 land_id_set（一次性）
+    # Precompute land_id_set (one-time)
     if land_id_set is None and tile_map is not None:
         import numpy as np
         from data.constants import TILE_LAND
@@ -169,8 +166,8 @@ def write_states_from_mgr(
         if not owner and country_mgr and country_mgr.countries:
             owner = list(country_mgr.countries.keys())[0]
 
-        # 文件名只能 ASCII（Windows 某些编码下中文路径解析会出错）
-        # 优先用 name_en，否则只用 sid，不用可能含中文的 state.name
+        # The file name must be ASCII because some Windows encodings cannot resolve non-ASCII paths.
+        # Use name_en first, otherwise only use sid; never use the raw user-entered state.name.
         raw = (getattr(state, "name_en", "") or "").strip() or f"STATE_{sid}"
         safe_name = "".join(c if (c.isalnum() or c in "_-") else "_" for c in raw)
 
@@ -190,7 +187,7 @@ def write_states_from_mgr(
         with open(os.path.join(d, f"{sid}-{safe_name}.txt"), "w", encoding="utf-8") as f:
             f.write("state = {\n")
             f.write(f"\tid = {sid}\n")
-            # BUG-6: 用 WT_ 前缀避开 vanilla 的 STATE_X 命名空间 (否则 "热那亚→Krakow")
+            # BUG-6: Avoid vanilla STATE_X namespace with WT_ prefix (otherwise "Genoa→Krakow")
             f.write(f'\tname = "STATE_WT_{sid}"\n')
             f.write(f"\tmanpower = {state.manpower}\n")
             f.write(f"\tstate_category = {category}\n")
@@ -303,8 +300,8 @@ def write_states_from_mgr(
                 nb_level = 3 if category in (
                     "city", "large_city", "metropolis", "megalopolis"
                 ) else 2
-                # state 里只给一个沿海省份放 naval_base 建筑（和 vanilla 一致）
-                # 注意：buildings.txt 的 naval_base_spawn 是另一回事，那个每个 coastal 省份都要
+                # Only place naval_base buildings in one coastal province in the state (consistent with vanilla)
+                # Note: naval_base_spawn in buildings.txt is another matter, that is required for each coastal province
                 nb_prov = state_coastal_provs[0]
                 prov_blocks.setdefault(nb_prov, {})["naval_base"] = nb_level
             for pid, bmap in prov_blocks.items():
@@ -330,7 +327,7 @@ def write_states_from_mgr(
 
 
 def write_states_fallback(states: dict, tag: str, province_map, output_dir: str) -> None:
-    """无 StateManager 时的 fallback 写法 (硬编码 town + infra=1)."""
+    """How to write fallback without StateManager (hardcoded town + infra=1)."""
     d = os.path.join(output_dir, "history", "states")
     os.makedirs(d, exist_ok=True)
     for sid, provs in states.items():
@@ -339,7 +336,7 @@ def write_states_fallback(states: dict, tag: str, province_map, output_dir: str)
         with open(os.path.join(d, f"{sid}-STATE_{sid}.txt"), "w", encoding="utf-8") as f:
             f.write("state = {\n")
             f.write(f"\tid = {sid}\n")
-            # BUG-6: 用 WT_ 前缀避开 vanilla 的 STATE_X 命名空间
+            # BUG-6: Use WT_ prefix to avoid vanilla STATE_X namespace
             f.write(f'\tname = "STATE_WT_{sid}"\n')
             f.write(f"\tmanpower = {manpower}\n")
             f.write("\tstate_category = town\n\n")

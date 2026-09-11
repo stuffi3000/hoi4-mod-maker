@@ -1,88 +1,66 @@
-# HOI4 故障排除速查
+# HOI4 MOD troubleshooting
 
-> 编译自 Paradox Wiki "Troubleshooting" 页面
+When a MOD fails to load, start with the first useful error rather than the last message in the log. Parser errors often produce several secondary failures.
 
-## 日志文件
+## Log files
 
-路径: `Documents/Paradox Interactive/Hearts of Iron IV/logs/`
+The game normally writes logs under:
 
-| 文件 | 用途 | 重要性 |
-|------|------|--------|
-| **error.log** | 非致命错误, common/ 下的几乎都要修 | **高** |
-| **setup.log** | 加载流程完成标记, 定位崩溃阶段 | **高** |
-| **memory.log** | 加载时内存用量, 定位加载崩溃 | **高** |
-| **game.log** | 游戏内国家行为, 定位特定操作崩溃 | **高** |
-| exceptions.log | 崩溃栈跟踪 | **低(不可信)** |
-| text.log | 本地化 key 断言 | 中 |
-| time.log | 各步骤耗时 | 中 |
-
-## Crash Data Log
-
-启动项加 `-crash_data_log` → 崩溃时 `crashes/meta.yml` 包含 `LastRead` 字段
-
-```yaml
-LastRead: map/supply_nodes.txt (727)   # 文件名 + 最后读取行号
-LastRead: client_ping (1)               # 脚本名(非文件)
+```text
+Documents/Paradox Interactive/Hearts of Iron IV/logs/
 ```
 
-**重要**: LastRead 指向文件最后一行 → 实际崩溃可能在**下一个被读取的文件**
+| File | Use |
+| --- | --- |
+| `error.log` | Parser, asset, definition, and runtime errors |
+| `setup.log` | Map and database setup progress |
+| `game.log` | In-game triggers, effects, and country behavior |
+| `text.log` | Localisation key and text-parser diagnostics |
+| `memory.log` | Memory and loading diagnostics |
+| `exceptions.log` | Exception information; corroborate it with the other logs |
+| `time.log` | Timing information for loading and processing steps |
 
-## 崩溃分类速查表
+Enable the game's crash-data logging option when a crash report with a `LastRead` field is needed. `LastRead` identifies the last item successfully read; the actual invalid entry may be the next item, so inspect the surrounding files as well.
 
-### 主菜单加载
+## Common map failures
 
-| LastRead | 原因 |
-|----------|------|
-| `gfx/models/supply/railroad.shader` | **BMP 文件错误**: 尺寸不能被 256 整除 / 超 40MiB / 尺寸不一致 / DIB 头格式错 |
-| `common/countries/cosmetic.txt` | replace_path 覆盖了 national_focus/ 或 continuous_focus/ |
-| `map/rocketsites.txt` | replace_path 覆盖 history/states/ 或 common/unit_leader/ |
-| `common/national_focus/*.txt` (最后一行) | shared_focus 引用不存在的共享焦点 |
-| `history/general/*.txt` 等 | VP 引用不存在的省份 |
-| savegame 名 / `map/cities.txt` | 定义国家太多 + 动态国家太少(上限约 40-80 个) |
+| Symptom | First checks |
+| --- | --- |
+| Crash while loading the main menu | BMP dimensions, bit depth, palette, DIB header, and `default.map` references |
+| Provinces have wrong terrain or ownership | `definition.csv` colors, row order, province IDs, and state lists |
+| Coastal state or port failure | Province coastline, naval-base position, adjacent sea province, and building data |
+| Supply or railway crash | Valid exported province IDs, state membership, route order, and network levels |
+| Map reaches the menu but gameplay fails | State owners, capitals, strategic-region coverage, OOB references, and scripted scopes |
+| Text appears as a raw key | `l_english:` header, UTF-8 BOM, file path, exact key spelling, and `text.log` |
 
-### 选国/加载
+## Export validation
 
-| LastRead | 原因 |
-|----------|------|
-| `set_controller` | 国家 history 文件缺少有效 capital |
-| `map/supply_nodes.txt` / `map/railways.txt` | 补给节点/铁路放在无效省份(不在任何 state 中) |
-| `tutorial/tutorial.txt` | tutorial 引用无效 state ID / 缺少 `tutorial = { }` |
-| `start_game_command` | 地图数据不完整 (coastal no port / buildings 缺失) |
+Before launching the game, check that the export contains:
 
-### 游戏中
+- `map/provinces.bmp`, `definition.csv`, `terrain.bmp`, `heightmap.bmp`, and `default.map`;
+- valid `rivers.bmp`, `trees.bmp`, normal-map, colormap, and positions data when the target version requires them;
+- state, country, strategic-region, supply, railway, and adjacency references that use the final exported IDs;
+- `localisation/english/*_l_english.yml` files with a valid header and BOM;
+- a descriptor whose paths and supported version match the installation.
 
-| LastRead | 原因 |
-|----------|------|
-| `client_ping` / `hourly_tick` | **AI 相关崩溃**(关 AI 可验证): |
-| | - 国家有师模板但无匹配 ai_templates |
-| | - **state 无 owner** → AI 评估空袭时崩溃 |
-| | - **buildings.txt 不完整** → naval_base 缺定义 → CPU 死循环 |
+The project's export verifier checks file presence and structural invariants, but it cannot replace a game launch test. Always test the generated MOD with the exact HOI4 version it targets.
 
-## error.log 快速分析 (30秒)
+## Useful console checks
 
-```bash
-LD="D:/Documents/Paradox Interactive/Hearts of Iron IV/logs"
-wc -l "$LD/error.log"
-grep -oE "\[[a-z_]+\.cpp:[0-9]+\]" "$LD/error.log" | sort | uniq -c | sort -rn | head
-tail -30 "$LD/error.log"
-```
+The following commands are useful while diagnosing a loaded game:
 
-## 调试方法
+| Command | Purpose |
+| --- | --- |
+| `tdebug` | Show state, province, and other debug IDs |
+| `ai` | Toggle AI while isolating AI-triggered failures |
+| `reloadfx all` | Reload visual effects |
+| `reload localization` | Reload localisation files |
+| `tag TAG` | Switch the active country |
+| `Focus.NoChecks` | Ignore focus prerequisites during testing |
+| `Focus.AutoComplete` | Complete focuses immediately during testing |
 
-1. 查 `crashes/meta.yml` 的 `LastRead`
-2. LastRead 无用 → 批量移除/恢复 mod 文件, **二分查找**
-3. `client_ping` → 关 AI (`ai` 命令) 验证是否 AI 相关
-4. **replace_path 是崩溃大户** → 两个 .mod 文件都要改
-5. 空文件可能被跳过 → 同一崩溃可能显示不同 LastRead
+## Sources
 
-## 常用 console 命令
-
-| 命令 | 用途 |
-|------|------|
-| `tdebug` | 显示 state/省份 ID |
-| `ai` | 开关 AI |
-| `reloadfx all` | 重载视觉效果 |
-| `reload localization` | 重载本地化 |
-| `tag TAG` | 切换国家 |
-| `Focus.NoChecks` | 跳过国策条件 |
-| `Focus.AutoComplete` | 国策瞬间完成 |
+- [HOI4 Troubleshooting](https://hoi4.paradoxwikis.com/Troubleshooting)
+- [HOI4 Map modding](https://hoi4.paradoxwikis.com/Map_modding)
+- [HOI4 Localisation](https://hoi4.paradoxwikis.com/Localisation)

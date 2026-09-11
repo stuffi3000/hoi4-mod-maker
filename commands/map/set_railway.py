@@ -1,6 +1,4 @@
-"""
-SetRailwayLevelCommand — 设置省份铁路等级（支持撤销）。
-"""
+"""SetRailwayLevelCommand — Set the provincial railway level (supports revocation)."""
 
 from __future__ import annotations
 
@@ -8,9 +6,9 @@ from commands.base import Command
 
 
 class SetRailwayLevelCommand(Command):
-    """设置单个省份的铁路等级。"""
+    """Set the railway level for a single province."""
 
-    label = "设置铁路等级"
+    label = "Set railway level"
 
     def __init__(self, railway_mgr, pid: int, old_level: int, new_level: int) -> None:
         self._mgr = railway_mgr

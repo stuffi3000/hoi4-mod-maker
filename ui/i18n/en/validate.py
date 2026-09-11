@@ -1,8 +1,4 @@
-"""
-validate — en 翻译
-
-本文件由 tools/migrate_i18n.py 生成。后续手动维护。
-"""
+"""English messages for project and map validation results."""
 
 STRINGS: dict[str, str] = {
     "validate_coastal_mismatch": "Coastal status mismatch: {} found",

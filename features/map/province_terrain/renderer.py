@@ -1,7 +1,6 @@
-"""province_terrain 模式渲染：用每个省份的 gameplay terrain 颜色填充。
+"""province_terrain mode rendering: fills each province with the gameplay terrain color.
 
-依赖 canvas._provincial_terrain_color_rgb 预计算 RGB 数组（由 app_controller 触发更新）。
-"""
+Depends on canvas._provincial_terrain_color_rgb precomputed RGB array (updated by app_controller trigger)."""
 
 
 def render(canvas) -> None:

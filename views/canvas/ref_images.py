@@ -1,15 +1,13 @@
-"""
-参考图管理 Mixin — 用户参考图 + 原版地图参考层
-两张图共用同一套"参考图层"结构, 各自独立: 加载/透明度/缩放/移动/显隐。
-旧方法名保留为薄包装, main_window / input_router 的既有调用不受影响。
-"""
+"""Reference map management Mixin — user reference map + original map reference layer
+The two pictures share the same "reference layer" structure, and are independent of each other: loading/transparency/zoom/move/show/hide.
+The old method names remain as thin wrappers, existing calls to main_window / input_router are not affected."""
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QPixmap
 from PyQt5.QtWidgets import QGraphicsPixmapItem
 
 
 class RefLayer:
-    """单张参考图层: 场景 item + 原始 pixmap + 当前缩放倍率。"""
+    """Single reference layer: scene item + original pixmap + current zoom ratio."""
 
     def __init__(self, item: QGraphicsPixmapItem):
         self.item = item
@@ -18,29 +16,28 @@ class RefLayer:
 
 
 class RefImageMixin:
-    """参考图相关方法。假设 self 拥有:
-    - _ref_layers: dict[str, RefLayer]  (键: REF_CUSTOM / REF_VANILLA)
-    - map_w / map_h / _show_ref_image
-    """
+    """Reference diagram related methods. Assume self owns:
+    - _ref_layers: dict[str, RefLayer] (key: REF_CUSTOM / REF_VANILLA)
+    - map_w/map_h/_show_ref_image"""
 
     REF_CUSTOM = "custom"
     REF_VANILLA = "vanilla"
 
-    # ── 通用图层接口 ──────────────────────────────────
+    # ── Universal layer interface ─────────────────────────────────
 
     def load_ref_layer(self, key: str, file_path: str, fit: bool = False) -> bool:
-        """加载一张参考图。fit=True 时等比缩放到正好放进地图（不拉伸变形）。"""
+        """Load a reference image. When fit=True, the image is scaled to fit exactly into the map (without stretching or deformation)."""
         layer = self._ref_layers[key]
         pixmap = QPixmap(file_path)
         if pixmap.isNull():
             return False
         layer.original = pixmap
         if fit:
-            # 等比 contain: 取宽高两个方向缩放比里较小的, 不变形
+            # Contain: Take the smaller of the scaling ratios in the width and height directions, without deformation
             scale = min(self.map_w / pixmap.width(),
                         self.map_h / pixmap.height())
             self.set_ref_layer_scale(key, scale)
-            # 自动缩放改了 scale, 回写页面滑条（main_window 已接此信号）
+            # Automatic scaling changed the scale and wrote back the page slider (main_window has received this signal)
             self.ref_adjust_scale_changed.emit(key, layer.scale)
             shown = layer.item.pixmap()
             layer.item.setPos(
@@ -50,7 +47,7 @@ class RefImageMixin:
         else:
             layer.scale = 1.0
             layer.item.setPixmap(pixmap)
-            # 默认居中
+            # Centered by default
             layer.item.setPos(
                 (self.map_w - pixmap.width()) / 2,
                 (self.map_h - pixmap.height()) / 2,
@@ -62,7 +59,7 @@ class RefImageMixin:
         self._ref_layers[key].item.setOpacity(max(0.0, min(1.0, opacity)))
 
     def set_ref_layer_scale(self, key: str, scale: float) -> None:
-        """缩放参考图 (1.0 = 原始大小), 以原始 pixmap 为基准。"""
+        """Scale the reference map (1.0 = original size), based on the original pixmap."""
         layer = self._ref_layers[key]
         scale = max(0.1, min(10.0, scale))
         layer.scale = scale
@@ -85,7 +82,7 @@ class RefImageMixin:
     def toggle_ref_layer(self, key: str, visible: bool) -> None:
         self._ref_layers[key].item.setVisible(visible)
 
-    # ── 兼容旧接口 (main_window / input_router / 旧测试) ──
+    # ── Compatible with old interfaces (main_window / input_router / old test) ──
 
     def load_reference_image(self, file_path: str) -> bool:
         ok = self.load_ref_layer(self.REF_CUSTOM, file_path)
@@ -94,7 +91,7 @@ class RefImageMixin:
         return ok
 
     def load_vanilla_reference(self, file_path: str) -> bool:
-        """加载原版地图参考（独立于用户参考图, 等比缩放居中）。"""
+        """Load the original map reference (independent of the user reference map, scaled and centered)."""
         return self.load_ref_layer(self.REF_VANILLA, file_path, fit=True)
 
     def set_vanilla_ref_opacity(self, opacity: float) -> None:
@@ -116,17 +113,17 @@ class RefImageMixin:
         self._show_ref_image = visible
         self.toggle_ref_layer(self.REF_CUSTOM, visible)
 
-    # ── 调整参考图模式 ────────────────────────────────
+    # ── Adjust reference image mode ──────────────────────────────
 
     def set_ref_adjust_mode(self, target: str | None) -> None:
-        """进入/退出调整参考图模式。target=None 退出并恢复绘制。"""
+        """Enter/exit the adjustment reference image mode. target=None exits and resumes drawing."""
         self._ref_adjust_target = target
         if target is None:
             self._ref_adjust_border.setVisible(False)
             self.setCursor(Qt.CursorShape.CrossCursor if self._current_tool != "pan"
                            else Qt.CursorShape.OpenHandCursor)
-            # 退出调整模式必须清掉拖拽标记：否则 ESC 中断拖拽后 _ref_dragging
-            # 仍是 True，下一次 mouseMoveEvent 会 fallback 到 REF_CUSTOM 错拖自定义图
+            # The drag mark must be cleared when exiting adjustment mode: otherwise _ref_dragging will occur after ESC interrupts dragging.
+            # Still True, the next mouseMoveEvent will fallback to REF_CUSTOM and drag the custom image by mistake.
             self._ref_dragging = False
         else:
             self._update_ref_adjust_border()
@@ -134,7 +131,7 @@ class RefImageMixin:
             self.setCursor(Qt.CursorShape.SizeAllCursor)
 
     def _update_ref_adjust_border(self) -> None:
-        """虚线框贴住当前被调整的参考图。"""
+        """The dotted frame affixes the currently adjusted reference image."""
         if self._ref_adjust_target is None:
             return
         item = self._ref_layers[self._ref_adjust_target].item

@@ -1,63 +1,61 @@
-"""
-HOI4 地图 MOD 工具 — 全局常量定义
-"""
+"""HOI4 Map MOD Tool - Global Constant Definition"""
 
-# 地图尺寸（必须是 256 的倍数，否则 HOI4 崩溃 — 见 参考/Troubleshooting.txt:100）
-# 原版 5632×2048
+# Map size (must be a multiple of 256, otherwise HOI4 crashes — see refs/Troubleshooting.txt:100)
+# Original 5632×2048
 MAP_WIDTH = 5632
 MAP_HEIGHT = 2048
 
-# 地图尺寸预设
+# Map size defaults
 MAP_SIZE_PRESETS = {
-    "小 (2048×1024)": (2048, 1024),
-    "中 (3072×1536)": (3072, 1536),
-    "大 (4096×2048)": (4096, 2048),
-    "原版 (5632×2048)": (5632, 2048),
+    "Small (2048×1024)": (2048, 1024),
+    "Medium (3072×1536)": (3072, 1536),
+    "Large (4096×2048)": (4096, 2048),
+    "Vanilla (5632×2048)": (5632, 2048),
 }
 
 
 def set_map_size(width: int, height: int) -> None:
-    """更新全局地图尺寸。必须在初始化画布数组之前调用。"""
+    """Update global map dimensions. Must be called before initializing the canvas array."""
     import data.constants as _mod
     _mod.MAP_WIDTH = width
     _mod.MAP_HEIGHT = height
 
-# 省份数量范围 (vanilla 13382, HOI4 上限 21000, 14000 以上警告)
+# Province number range (vanilla 13382, HOI4 upper limit 21000, warning above 14000)
 MIN_PROVINCES = 1000
 MAX_PROVINCES = 15000
 DEFAULT_PROVINCES = 12000
 
-# 省份最小像素数
-# HOI4 硬性最低 8 像素，但 <50 像素的省份会导致 buildings.txt 坐标问题
-# 生成时合并阈值设 50，确保每个省份足够大
+# Province minimum number of pixels
+# HOI4 has a hard minimum of 8 pixels, but provinces <50 pixels will cause issues with buildings.txt coordinates
+# The merge threshold is set to 50 when generating to ensure that each province is large enough
 MIN_PROVINCE_PIXELS = 50
 
-# 省份数量上限（HOI4 引擎限制）
+# Maximum number of provinces (HOI4 engine limit)
 ENGINE_MAX_PROVINCES = 19000
 
-# 高度图参数
-SEA_LEVEL = 95          # 海平面灰度值
-OCEAN_HEIGHT = 40       # 深海灰度值
-LAND_BASE_HEIGHT = 120  # 陆地基础灰度值
-MOUNTAIN_HEIGHT = 220   # 山地灰度值
+# Heightmap parameters
+SEA_LEVEL = 95          # sea level gray value
+OCEAN_HEIGHT = 40       # Deep sea gray value
+LAND_BASE_HEIGHT = 120  # Land basic gray value
+MOUNTAIN_HEIGHT = 220   # Mountain gray value
 
-# 画布缩放范围
+# Canvas zoom range
 ZOOM_MIN = 0.05
 ZOOM_MAX = 10.0
 ZOOM_STEP = 1.2
 
-# 画笔大小范围
+# Brush size range
 BRUSH_MIN = 1
 BRUSH_MAX = 100
 BRUSH_DEFAULT = 10
 
-# 地块类型（内部表示）
+# Parcel type (internal representation)
 TILE_UNDEFINED = 0
 TILE_LAND = 1
 TILE_SEA = 2
 TILE_LAKE = 3
 
-# 地块类型名称映射
+# Parcel type name mapping
 TILE_TYPE_NAMES = {
     TILE_UNDEFINED: "undefined",
     TILE_LAND: "land",
@@ -65,23 +63,23 @@ TILE_TYPE_NAMES = {
     TILE_LAKE: "lake",
 }
 
-# HOI4 definition.csv 类型名
+# HOI4 definition.csv type name
 PROVINCE_TYPE_LAND = "land"
 PROVINCE_TYPE_SEA = "sea"
 PROVINCE_TYPE_LAKE = "lake"
 
-# 禁用颜色（HOI4 不允许使用）
+# Disabled colors (not allowed in HOI4)
 FORBIDDEN_COLOR = (0, 0, 0)
 
 # ════════════════════════════════════════════════════════════
-# HOI4 合法意识形态白名单
+# HOI4 Legal Ideology Whitelist
 # ════════════════════════════════════════════════════════════
-# 主意识形态（用于 set_politics.ruling_party 和 set_popularities 的键）
-# 来源：vanilla common/ideologies/00_ideologies.txt
+# Primary ideology (key used for set_politics.ruling_party and set_popularities)
+# Source: vanilla common/ideologies/00_ideologies.txt
 VALID_MAIN_IDEOLOGIES = ("neutrality", "democratic", "fascism", "communism")
 
-# 意识形态子类型（用于 country_leader.ideology 字段）
-# 每个主意识形态对应一个默认子类型，保证 leader 定义一定合法
+# Ideology subtype (for country_leader.ideology field)
+# Each main ideology corresponds to a default subtype, ensuring that the leader definition must be legal.
 DEFAULT_IDEOLOGY_SUBTYPE = {
     "neutrality": "despotism",
     "democratic": "conservatism",
@@ -90,11 +88,11 @@ DEFAULT_IDEOLOGY_SUBTYPE = {
 }
 
 # ════════════════════════════════════════════════════════════
-# HOI4 合法 3D 建筑类型白名单（buildings.txt 可用类型）
+# HOI4 legal 3D building type whitelist (buildings.txt available types)
 # ════════════════════════════════════════════════════════════
-# 来源：vanilla common/buildings/00_buildings.txt 中 spawn_point / has_pop_center = yes 的实体建筑
-# 关键：infrastructure / air_base / supply_hub 等 state-level 统计建筑【不能】写入 buildings.txt
-# 只有这些"有 3D 模型的点位建筑"合法，否则引擎会 MAP_ERROR 崩溃
+# Source: entity building with spawn_point / has_pop_center = yes in vanilla common/buildings/00_buildings.txt
+# Key: infrastructure / air_base / supply_hub and other state-level statistical buildings [cannot] be written to buildings.txt
+# Only these "point buildings with 3D models" are legal, otherwise the engine will crash with MAP_ERROR
 VALID_3D_BUILDING_TYPES = frozenset({
     "arms_factory", "industrial_complex", "air_base", "anti_air_building",
     "bunker", "coastal_bunker", "dockyard", "naval_base", "naval_base_spawn",
@@ -103,31 +101,31 @@ VALID_3D_BUILDING_TYPES = frozenset({
     "floating_harbor",
 })
 
-# BMP 文件常量
+# BMP file constants
 BMP_HEADER_SIZE = 14
 BMP_INFO_HEADER_SIZE = 40
 BMP_BITS_24 = 24
 BMP_BITS_8 = 8
 
-# 默认 MOD 信息
+# Default MOD information
 DEFAULT_MOD_NAME = "Fantasy World"
 DEFAULT_MOD_VERSION = "0.1"
-# 兜底值 — 导出时优先用 services.game_assets.resolve_supported_version()
-# 从本机游戏安装实测版本, 检测不到才用这个
+# Bottom line - use services.game_assets.resolve_supported_version() first when exporting
+# Install the actual test version from the local game, only use this if it cannot be detected
 DEFAULT_SUPPORTED_VERSION = "1.19.*"
 
-# HOI4 路径（用户可配置）
+# HOI4 path (user configurable)
 DEFAULT_HOI4_PATH = "G:/SteamLibrary/steamapps/common/Hearts of Iron IV/"
 DEFAULT_MOD_OUTPUT_PATH = "D:/Documents/Paradox Interactive/Hearts of Iron IV/mod/"
 
 
 # ════════════════════════════════════════════════════════════
-# Vanilla TAG 黑名单（避免与 vanilla 国家撞车）
+# Vanilla TAG blacklist (to avoid collision with vanilla countries)
 # ════════════════════════════════════════════════════════════
-# 用户创建国家时, TAG 不能撞 vanilla, 否则:
-#   - vanilla 的 events/decisions/scripted_effects 引用同名 TAG 时会触发到我们国家
-#   - vanilla 的 localisation key (TAG=Germany 等) 可能覆盖我们的国名
-# Fallback 列表是 HOI4 1.17 截至 2026-05 的全部 vanilla TAG (含 D01-D75 dynamic slot)
+# When a user creates a country, the TAG cannot match vanilla, otherwise:
+# - Vanilla events/decisions/scripted_effects will trigger to our country when referencing the TAG with the same name
+# - vanilla localization key (TAG=Germany, etc.) may override our country name
+# The Fallback list is all vanilla TAGs from HOI4 1.17 as of 2026-05 (including D01-D75 dynamic slot)
 _VANILLA_TAGS_FALLBACK = frozenset((
     "ABK ADU AFA AFG ALB ALG ALT ANG ANU AOI ARG ARM AST ASY ATJ AUS AZR BAH BAN BAR "
     "BAS BAY BEG BEL BHR BHU BIA BLC BLR BLZ BOL BOS BOT BRA BRD BRI BRM BRN BSK "
@@ -158,11 +156,10 @@ _VANILLA_TAGS_CACHE: frozenset[str] | None = None
 
 
 def get_vanilla_tags() -> frozenset[str]:
-    """获取 vanilla 占用的所有 TAG (frozenset). 结果缓存到进程结束.
+    """Get all TAGs occupied by vanilla (frozenset). The results are cached until the end of the process.
 
-    优先动态读 vanilla 的 country_tags 目录 (DLC 更新后自动获取最新),
-    读不到则用硬编码 fallback (1.17 截至 2026-05).
-    """
+    Prioritize dynamically reading the country_tags directory of vanilla (automatically obtain the latest after DLC is updated),
+    If it cannot be read, use hard-coded fallback (1.17 as of 2026-05)."""
     global _VANILLA_TAGS_CACHE
     if _VANILLA_TAGS_CACHE is not None:
         return _VANILLA_TAGS_CACHE
@@ -209,12 +206,12 @@ def get_vanilla_tags() -> frozenset[str]:
 
 
 def is_vanilla_tag(tag: str) -> bool:
-    """TAG 是否被 vanilla 占用 (大小写不敏感)."""
+    """Whether TAG is occupied by vanilla (case insensitive)."""
     return tag.upper() in get_vanilla_tags()
 
-# 全转换 MOD 替换路径
-# 只替换我们实际提供完整内容或有意清空的目录，避免加载引用旧地图数据的原版内容。
-# 未替换的目录会继续使用原版内容（game_rules、modifiers 等）。
+# Full conversion MOD replacement path
+# Only replace directories where we actually provide full content or intentionally empty them to avoid loading original content that references old map data.
+# Unreplaced directories will continue to use the original content (game_rules, modifiers, etc.).
 REPLACE_PATHS = [
     # The exporter produces complete replacements for these map, history,
     # country, bookmark, character, and event directories.  Keeping these

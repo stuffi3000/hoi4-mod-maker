@@ -1,16 +1,14 @@
-"""
-每省建筑等级编辑对话框.
+"""Building level editing dialog box for each province.
 
-HOI4 允许在 state 内对**具体省份**配置某些建筑 (vs. state 级统计建筑):
-- bunker — 陆地防御工事
-- coastal_bunker — 沿海防御工事
-- naval_base — 海军基地 (必须沿海)
+HOI4 allows configuring certain buildings within the state for specific provinces (vs. state-level statistical buildings):
+- bunker — land fortification
+- coastal_bunker — coastal fortifications
+- naval_base — naval base (must be coastal)
 
-数据存在 StateData.province_buildings: dict[pid, dict[building_name, level]]
-导出到 history/states/*.txt 的 buildings 块里的嵌套 `pid = { building = level }` 格式.
+Data exists StateData.province_buildings: dict[pid, dict[building_name, level]]
+Nested `pid = { building = level }` format in buildings blocks exported to history/states/*.txt.
 
-参考: 参考/State modding.txt 省份级建筑字段
-"""
+Reference: Reference/State modding.txt Province-level building fields"""
 
 from __future__ import annotations
 
@@ -23,8 +21,8 @@ from PyQt5.QtWidgets import (
 from ui.i18n import tr
 
 
-# 允许的省份级建筑类型 + 等级上限
-# 参考 common/buildings/00_buildings.txt
+# Allowed provincial building types + level cap
+# Reference common/buildings/00_buildings.txt
 _PROVINCE_BUILDINGS = [
     ("bunker", "prov_bld_bunker", 5),
     ("coastal_bunker", "prov_bld_coastal", 5),
@@ -33,7 +31,7 @@ _PROVINCE_BUILDINGS = [
 
 
 class ProvinceBuildingsDialog(QDialog):
-    """为选定 state 的每个陆地省份配置 bunker / coastal_bunker / naval_base."""
+    """Configure bunker / coastal_bunker / naval_base for each land province of the selected state."""
 
     def __init__(self, state, land_province_ids: list[int], parent=None) -> None:
         super().__init__(parent)
@@ -42,7 +40,7 @@ class ProvinceBuildingsDialog(QDialog):
         self.setWindowTitle(tr("prov_bld_title_fmt", state.name, state.id))
         self.setMinimumSize(440, 480)
 
-        # 用来收集每行的 spinbox 引用: {(pid, building): spin}
+        # The spinbox reference used to collect each row: {(pid, building): spin}
         self._spins: dict[tuple[int, str], QSpinBox] = {}
 
         self._build_ui()
@@ -57,7 +55,7 @@ class ProvinceBuildingsDialog(QDialog):
         tip.setStyleSheet("color: #888; font-size: 11px;")
         root.addWidget(tip)
 
-        # 滚动区域
+        # scroll area
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setStyleSheet("QScrollArea { border: 1px solid #2a3a55; }")
@@ -68,12 +66,12 @@ class ProvinceBuildingsDialog(QDialog):
         grid.setHorizontalSpacing(12)
         grid.setVerticalSpacing(6)
 
-        # 表头
+        # Header
         grid.addWidget(QLabel(f"<b>{tr('prov_bld_province_id')}</b>"), 0, 0)
         for i, (_, display, _max) in enumerate(_PROVINCE_BUILDINGS):
             grid.addWidget(QLabel(f"<b>{tr(display)}</b>"), 0, i + 1)
 
-        # 每个 land 省份一行
+        # One line for each land province
         for row, pid in enumerate(self._land_pids, start=1):
             grid.addWidget(QLabel(str(pid)), row, 0)
             current_map = self._state.province_buildings.get(pid, {})
@@ -89,7 +87,7 @@ class ProvinceBuildingsDialog(QDialog):
         scroll.setWidget(inner)
         root.addWidget(scroll, 1)
 
-        # 底部按钮
+        # bottom button
         btn_row = QHBoxLayout()
         btn_row.addStretch(1)
         ok_btn = QPushButton(tr("prov_bld_save"))
@@ -101,7 +99,7 @@ class ProvinceBuildingsDialog(QDialog):
         root.addLayout(btn_row)
 
     def _on_accept(self) -> None:
-        """把 spin 值写回 state.province_buildings."""
+        """Write the spin value back to state.province_buildings."""
         new_pb: dict[int, dict[str, int]] = {}
         for (pid, bname), spin in self._spins.items():
             v = int(spin.value())

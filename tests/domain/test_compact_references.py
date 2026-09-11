@@ -1,10 +1,8 @@
-"""
-compact_with_references 全量引用同步测试。
+"""compact_with_references full reference synchronization test.
 
-地图省份 ID 为 1/3/5（2、4 是合并留下的空洞），压实后应变为 1/2/3。
-验证铁路/补给节点/邻接/邻接规则/大陆指派/省份级地形全部跟着重映射，
-且指向已删省份（不在地图上的 ID）的死引用被清理。
-"""
+The map province ID is 1/3/5 (2 and 4 are the holes left by the merger), which should become 1/2/3 after compaction.
+Verify that railways/supply nodes/adjacencies/adjacency rules/continent assignments/province-level terrain are all remapped,
+And dead references pointing to deleted provinces (IDs not on the map) are cleaned up."""
 
 import numpy as np
 import pytest
@@ -21,14 +19,14 @@ import data.constants as _constants
 
 @pytest.fixture(autouse=True)
 def _restore_map_size():
-    """set_map_size(8, 4) 是全局状态, 测试后必须还原, 否则污染后续测试."""
+    """set_map_size(8, 4) is a global state that must be restored after testing, otherwise it will pollute subsequent tests."""
     w, h = _constants.MAP_WIDTH, _constants.MAP_HEIGHT
     yield
     set_map_size(w, h)
 
 
 def _make_map_with_gaps() -> MapData:
-    """省份 ID 1, 3, 5（2、4 空洞）→ 压实后 1, 2, 3。"""
+    """Province ID 1, 3, 5 (2, 4 holes) → 1, 2, 3 after compaction."""
     set_map_size(8, 4)
     md = MapData()
     md.province_map = np.array([
@@ -42,11 +40,11 @@ def _make_map_with_gaps() -> MapData:
 
 
 def test_compact_remaps_railways():
-    """铁路省份重映射；引用已删省份的铁路整条丢弃。"""
+    """Railway provinces are remapped; railways referencing deleted provinces are discarded entirely."""
     md = _make_map_with_gaps()
     rw = RailwayManager()
     rw.add(1, [1, 3, 5])
-    rw.add(2, [1, 99])  # 99 不在地图上 = 死引用
+    rw.add(2, [1, 99])  # 99 Not on the map = dead reference
 
     md.compact_with_references(railway_mgr=rw)
 
@@ -56,7 +54,7 @@ def test_compact_remaps_railways():
 
 
 def test_compact_remaps_supply_nodes():
-    """补给节点重映射；死引用节点丢弃。"""
+    """Supply nodes are remapped; dead reference nodes are discarded."""
     md = _make_map_with_gaps()
     sp = SupplyNodeManager()
     sp.add(3)
@@ -69,7 +67,7 @@ def test_compact_remaps_supply_nodes():
 
 
 def test_compact_remaps_adjacencies():
-    """邻接 from/to/through 重映射；任一端是死引用则整条丢弃。"""
+    """Adjacency from/to/through remapping; if either end is a dead reference, the entire line is discarded."""
     md = _make_map_with_gaps()
     adj = AdjacencyManager()
     adj.add(AdjacencyEntry(from_id=1, to_id=5, type="sea", through_id=3))
@@ -84,7 +82,7 @@ def test_compact_remaps_adjacencies():
 
 
 def test_compact_remaps_adjacency_rules():
-    """邻接规则 required_provinces / icon_province 重映射。"""
+    """Adjacency rules required_provinces / icon_province remapping."""
     md = _make_map_with_gaps()
     rules = AdjacencyRuleManager()
     rules.add(AdjacencyRule(
@@ -104,7 +102,7 @@ def test_compact_remaps_adjacency_rules():
 
 
 def test_compact_remaps_continents():
-    """省份→大陆指派重映射；死引用指派丢弃。"""
+    """Province → continent assignments are remapped; dead reference assignments are discarded."""
     md = _make_map_with_gaps()
     cont = ContinentManager()
     asia = cont.add_continent("Asia")
@@ -114,12 +112,12 @@ def test_compact_remaps_continents():
     md.compact_with_references(continent_mgr=cont)
 
     assert cont.get_province_continent(2) == asia
-    # 99 的指派被丢弃, 3 现在是另一个省份(原 5), 应回落到默认 0
+    # The assignment of 99 was discarded, 3 is now another province (originally 5) and should fall back to the default of 0
     assert cont.get_province_continent(3) == 0
 
 
 def test_compact_drops_zero_pid_references():
-    """引用 0 号（未分配像素）的脏数据在压实时被清掉, 不会原样穿透。"""
+    """Dirty data referencing No. 0 (unallocated pixel) will be cleared during compaction and will not be penetrated as it is."""
     md = _make_map_with_gaps()
     sp = SupplyNodeManager()
     sp.add(0)
@@ -133,7 +131,7 @@ def test_compact_drops_zero_pid_references():
 
 
 def test_compact_remaps_provincial_terrain():
-    """MapData.provincial_terrain（pid→地形）重映射。"""
+    """MapData.provincial_terrain(pid→terrain) remap."""
     md = _make_map_with_gaps()
     md.provincial_terrain = {3: "hills", 5: "mountain", 99: "plains"}
 

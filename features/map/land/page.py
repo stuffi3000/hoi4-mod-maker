@@ -1,9 +1,8 @@
-"""land feature 页面 — 独立 QWidget, 不依赖 ToolPanel.
+"""land feature page — independent QWidget, does not depend on ToolPanel.
 
-2026-07 UI 试点页: 按 MOD 作者的做事顺序排布 —
-① 垫参考底图描海岸 → ② 画陆海+修海岸 → ③ 生成省份。
-分组用 make_card (内嵌标题+步骤徽标), 信号接口与旧版完全一致。
-"""
+2026-07 UI pilot page: arranged in the order of the MOD author’s work —
+① Use the base map to draw the coast → ② Draw the land and sea + repair the coast → ③ Generate provinces.
+Make_card is used for grouping (embedded title + step logo), and the signal interface is completely consistent with the old version."""
 
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtWidgets import (
@@ -27,7 +26,7 @@ from ui.styles import (
 from ui.i18n import tr
 
 
-# 调整模式开关: 平时次要按钮外观, 勾选后橙色 = "进行中"（与变换工具一致）
+# Adjust mode switch: Normal secondary button appearance, orange = "in progress" when checked (consistent with the transform tool)
 _ADJUST_BTN_STYLE = _SECONDARY_BTN_STYLE + """
     QPushButton:checked {
         background: #f97316;
@@ -39,19 +38,19 @@ _ADJUST_BTN_STYLE = _SECONDARY_BTN_STYLE + """
 
 
 class LandPage(QWidget):
-    """陆地/海洋/湖泊绘制页面."""
+    """Land/ocean/lake drawing page."""
 
-    # 输出信号
+    # Output signal
     tool_changed = pyqtSignal(str)
     tile_type_changed = pyqtSignal(int)
     brush_size_changed = pyqtSignal(int)
     smooth_coast_requested = pyqtSignal()
     clear_new_land_mask_requested = pyqtSignal()
-    import_ref_requested = pyqtSignal()          # 导入自定义参考图片
-    auto_land_from_ref_requested = pyqtSignal()  # 从整图参考自动提取陆地/海洋
-    open_vanilla_requested = pyqtSignal()        # 打开原版参考
-    ref_adjust_toggled = pyqtSignal(bool)        # 调整参考图模式开关
-    ref_adjust_target_changed = pyqtSignal(str)  # 调整对象: "custom"/"vanilla"
+    import_ref_requested = pyqtSignal()          # Import custom reference images
+    auto_land_from_ref_requested = pyqtSignal()  # Automatically extract land/ocean from whole image reference
+    open_vanilla_requested = pyqtSignal()        # Open original reference
+    ref_adjust_toggled = pyqtSignal(bool)        # Adjust the reference image mode switch
+    ref_adjust_target_changed = pyqtSignal(str)  # Adjustment object: "custom"/"vanilla"
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -62,10 +61,10 @@ class LandPage(QWidget):
         lay.setContentsMargins(8, 8, 8, 8)
         lay.setSpacing(10)
 
-        # ══ ① 参考底图 — 做图第一步: 垫在画布下照着描 ══
+        # ══ ① Reference base map - the first step in drawing: place it under the canvas and trace ══
         ref_card = _make_card(tr("land_section_ref"), "①")
 
-        # 顶部: 两个加载入口（导入自定义 / 打开原版）
+        # Top: Two loading entrances (import customization/open original version)
         load_row = QHBoxLayout()
         load_row.setSpacing(4)
         import_ref_btn = QPushButton(tr("land_btn_import_ref"))
@@ -80,21 +79,21 @@ class LandPage(QWidget):
         load_row.addWidget(self._open_vanilla_btn)
         ref_card.layout().addLayout(load_row)
 
-        # 原版参考: 透明度 + 缩放 + 隐藏
+        # Original reference: Transparency + Scale + Hide
         (self._vanilla_ref_opacity_slider, self._vanilla_ref_opacity_label,
          self._vanilla_ref_toggle) = self._add_ref_group(
             ref_card, tr("land_section_vanilla_ref"), opacity=30)
         (self._vanilla_ref_scale_slider,
          self._vanilla_ref_scale_label) = self._add_scale_row(ref_card)
 
-        # 自定义参考图: 同样一套
+        # Customized reference pictures: the same set
         (self._ref_opacity_slider, self._ref_opacity_label,
          self._ref_toggle) = self._add_ref_group(
             ref_card, tr("land_section_custom_ref"), opacity=40)
         (self._ref_scale_slider,
          self._ref_scale_label) = self._add_scale_row(ref_card)
 
-        # 调整参考图位置（开关 + 调整对象单选）
+        # Adjust the position of the reference image (switch + adjust object radio selection)
         self._ref_adjust_btn = QPushButton(tr("land_btn_ref_adjust"))
         self._ref_adjust_btn.setCheckable(True)
         self._ref_adjust_btn.setStyleSheet(_ADJUST_BTN_STYLE)
@@ -112,7 +111,7 @@ class LandPage(QWidget):
         self._adjust_target_group = QButtonGroup(self)
         for r in (self._adjust_custom_radio, self._adjust_vanilla_radio):
             self._adjust_target_group.addButton(r)
-            r.setEnabled(False)          # 平时置灰, 进入调整模式才可用
+            r.setEnabled(False)          # Normally grayed out, only available after entering adjustment mode.
             target_row.addWidget(r)
         target_row.addStretch()
         self._adjust_custom_radio.toggled.connect(
@@ -124,7 +123,7 @@ class LandPage(QWidget):
         ref_card.layout().addWidget(_make_hint(tr("land_ref_adjust_hint")))
         lay.addWidget(ref_card)
 
-        # ══ ② 绘制陆地与海洋 — 类型 / 工具 / 画笔 / 修海岸 ══
+        # ══ ② Drawing Land and Sea - Types/Tools/Brushes/Coast Repair ══
         draw_card = _make_card(tr("land_section_tile_draw"), "②")
 
         auto_land_btn = QPushButton(tr("land_btn_auto_land_ref"))
@@ -155,7 +154,7 @@ class LandPage(QWidget):
                 btn.setChecked(True)
         draw_card.layout().addLayout(tile_row)
 
-        # 工具行: [绘制] | [增量] | [编辑]
+        # Toolbar: [Draw] | [Increment] | [Edit]
         tl = QHBoxLayout()
         tl.setSpacing(3)
         self._land_tool_group = QButtonGroup(self)
@@ -195,7 +194,7 @@ class LandPage(QWidget):
         )
         draw_card.layout().addLayout(tl)
 
-        # 画笔大小
+        # brush size
         brush_row = QHBoxLayout()
         lbl = QLabel(tr("land_label_size"))
         lbl.setStyleSheet(_LABEL_STYLE)
@@ -213,14 +212,14 @@ class LandPage(QWidget):
         self._land_brush_slider.valueChanged.connect(self._on_land_brush)
         draw_card.layout().addWidget(self._land_brush_slider)
 
-        # 平滑海岸线 — 属于"画完修边", 放在绘制卡片里
+        # Smooth coastline - belongs to "Trimming after drawing", placed in the drawing card
         coast_btn = QPushButton(tr("land_btn_smooth_coast"))
         coast_btn.setStyleSheet(_SECONDARY_BTN_STYLE)
         coast_btn.setToolTip(tr("land_btn_smooth_coast_tip"))
         coast_btn.clicked.connect(self.smooth_coast_requested.emit)
         draw_card.layout().addWidget(coast_btn)
 
-        # 导航/操作提示（含可点击的"清空扩展遮罩"链接）
+        # Navigation/Action Tips (with clickable "Clear Expansion Mask" link)
         tip_label = QLabel(tr("land_nav_tip"))
         tip_label.setStyleSheet(f"color: {_DIM}; font-size: 11px; padding: 4px 2px;")
         tip_label.setWordWrap(True)
@@ -233,9 +232,9 @@ class LandPage(QWidget):
 
         lay.addStretch()
 
-    # ── 参考底图卡片 helper ──
+    # ── Basemap card helper ──
     def _add_ref_group(self, card, title: str, opacity: int):
-        """一组参考图控制的头两行: 标题+隐藏钮 / 透明度滑条。"""
+        """The first two rows of a set of reference image controls: title + hide button / transparency slider."""
         head = QHBoxLayout()
         head.setSpacing(4)
         lbl = QLabel(title)
@@ -271,7 +270,7 @@ class LandPage(QWidget):
         return slider, val, toggle
 
     def _add_scale_row(self, card):
-        """一行缩放控制: 缩放滑条 + %。"""
+        """One-line zoom control: Zoom slider + %."""
         row = QHBoxLayout()
         row.setSpacing(4)
         cap = QLabel(tr("land_label_scale"))
@@ -298,15 +297,15 @@ class LandPage(QWidget):
         self.ref_adjust_toggled.emit(on)
 
     def current_adjust_target(self) -> str:
-        """当前调整对象: "vanilla" / "custom"。"""
+        """Current adjustment object: "vanilla" / "custom"."""
         return "vanilla" if self._adjust_vanilla_radio.isChecked() else "custom"
 
     def set_ref_adjust_checked(self, on: bool) -> None:
-        """外部（画布 ESC 退出）同步按钮勾选状态。"""
+        """External (canvas ESC exit) sync button checked state."""
         self._ref_adjust_btn.setChecked(on)
 
     def set_ref_scale_percent(self, target: str, percent: int) -> None:
-        """画布滚轮缩放后回写滑条（blockSignals 防止再触发缩放回环）。"""
+        """Write back the slider after the canvas wheel is zoomed (blockSignals prevents the zoom loop from being triggered again)."""
         slider = (self._vanilla_ref_scale_slider if target == "vanilla"
                   else self._ref_scale_slider)
         label = (self._vanilla_ref_scale_label if target == "vanilla"
@@ -316,14 +315,14 @@ class LandPage(QWidget):
         slider.blockSignals(False)
         label.setText(f"{percent}%")
 
-    # ── 槽函数 ──
+    # ── Slot function ──
     def _on_land_brush(self, size: int) -> None:
         self._land_brush_label.setText(f"{size}px")
         self.brush_size_changed.emit(size)
 
     def _on_tile_click(self, tile_type: int) -> None:
         self.tile_type_changed.emit(tile_type)
-        # 自动切换到画笔工具
+        # Automatically switch to the brush tool
         for btn in self._land_tool_group.buttons():
             if btn.property("tool_id") == "brush":
                 btn.setChecked(True)
@@ -331,6 +330,6 @@ class LandPage(QWidget):
                 break
 
     def _on_tip_link(self, href: str) -> None:
-        """提示条 HTML 链接点击 — 当前只有清空扩展遮罩。"""
+        """Tool bar HTML link click - currently only clears the expansion mask."""
         if href == "clear_new_land_mask":
             self.clear_new_land_mask_requested.emit()

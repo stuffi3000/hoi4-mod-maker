@@ -1,8 +1,4 @@
-"""
-import_ — en 翻译
-
-本文件由 tools/migrate_i18n.py 生成。后续手动维护。
-"""
+"""English strings for project and map import operations."""
 
 STRINGS: dict[str, str] = {
     "dlg_import_failed": "Import Failed",

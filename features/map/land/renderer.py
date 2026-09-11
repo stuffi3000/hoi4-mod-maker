@@ -1,15 +1,14 @@
-"""Land 模式渲染: tile_map (陆/海/湖) → BGRA 显示缓冲.
+"""Land mode rendering: tile_map (land/sea/lake) → BGRA display buffer.
 
-new_land_mask 上的像素会额外覆盖一层鲜黄色（BGRA），让用户在"新大陆"模式下
-能一眼看到刚画上、还没生成省份的那片区域。
-"""
+Pixels on new_land_mask will be overlaid with an extra layer of bright yellow (BGRA), allowing users to
+You can see at a glance the area that has just been drawn but has not yet generated a province."""
 
-# 新大陆高亮色（BGRA）— 鲜亮黄，和普通陆地绿区分开
+# New World Highlight Color (BGRA) - bright yellow, distinguished from ordinary land green
 _NEW_LAND_HIGHLIGHT = (60, 230, 255, 255)
 
 
 def _overlay_new_land(canvas, buf, region_mask=None, y0: int = 0, x0: int = 0) -> None:
-    """把 new_land_mask 的像素覆盖成高亮色。region_mask 可选, 用于局部渲染。"""
+    """Cover the pixels of new_land_mask with the highlight color. region_mask optional, used for local rendering."""
     nlm = getattr(canvas, "new_land_mask", None)
     if nlm is None or not nlm.any():
         return

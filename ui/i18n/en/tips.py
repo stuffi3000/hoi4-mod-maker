@@ -1,8 +1,4 @@
-"""
-tips — en 翻译
-
-本文件由 tools/migrate_i18n.py 生成。后续手动维护。
-"""
+"""English hints for map tools and editing workflows."""
 
 STRINGS: dict[str, str] = {
     "hint_mode_colormap": "Adjust land/sea/lake colors for the overview colormap.",

@@ -1,32 +1,32 @@
-# UI 减负重构实施计划
+# UI burden reduction and reconstruction implementation plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 将 13 个编辑模式合并为 7 个，每页高级选项折叠，加防误触保护。
+**Goal:** Merge 13 editing modes into 7, fold advanced options on each page, and add protection against accidental touches.
 
-**Architecture:** 创建 4 个合并页面（QTabWidget 包裹原有 page），修改 ToolPanel 模式列表和信号转发，在 canvas 加防误触确认。原有 page 文件不修改，只在外层包裹。
+**Architecture:** Create 4 merged pages (QTabWidget wraps the original page), modify the ToolPanel mode list and signal forwarding, and add anti-accidental touch confirmation on the canvas. The original page file is not modified, only wrapped in the outer layer.
 
-**Tech Stack:** Python 3.10, PyQt5 (QTabWidget, QGroupBox 折叠)
+**Tech Stack:** Python 3.10, PyQt5 (QTabWidget, QGroupBox collapse)
 
 ---
 
-### Task 1: 创建可折叠分组组件
+### Task 1: Create a collapsible group component
 
 **Files:**
 - Create: `ui/collapsible.py`
 
-- [ ] **Step 1: 创建 CollapsibleSection widget**
+- [ ] **Step 1: Create CollapsibleSection widget**
 
 ```python
 # ui/collapsible.py
-"""可折叠分组 — 点击标题展开/收起内容。"""
+"""Collapsible grouping— Click on title to expand/Collapse content."""
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QPushButton, QSizePolicy
 from PyQt5.QtCore import Qt
 from ui.styles import _ACCENT, _INPUT_BG, _BORDER, _DIM
 
 
 class CollapsibleSection(QWidget):
-    """可折叠区域：标题按钮 + 内容容器。"""
+    """Collapsible Area: Title Button+ Content container."""
 
     def __init__(self, title: str, parent=None, collapsed: bool = True):
         super().__init__(parent)
@@ -64,7 +64,7 @@ class CollapsibleSection(QWidget):
         self._on_toggle()
 
     def layout_content(self) -> QVBoxLayout:
-        """返回内容区域的 layout，外部往里加控件。"""
+        """Returns the content arealayout，Add controls from outside."""
         return self._content_layout
 
     def _on_toggle(self) -> None:
@@ -74,7 +74,7 @@ class CollapsibleSection(QWidget):
         self._toggle.setText(f"{arrow} {self._title}")
 ```
 
-- [ ] **Step 2: 验证导入**
+- [ ] **Step 2: Verify import**
 
 Run: `cd hoi4_map_maker && python -c "from ui.collapsible import CollapsibleSection; print('OK')"`
 Expected: `OK`
@@ -83,36 +83,36 @@ Expected: `OK`
 
 ```bash
 git add ui/collapsible.py
-git commit -m "feat: 可折叠分组组件 CollapsibleSection"
+git commit -m "feat: Collapsible group componentCollapsibleSection"
 ```
 
 ---
 
-### Task 2: 创建合并页面 — 地形（高度+地形）
+### Task 2: Create merge page — terrain (height + terrain)
 
 **Files:**
 - Create: `features/map/terrain_combined/page.py`
 - Create: `features/map/terrain_combined/__init__.py`
 
-- [ ] **Step 1: 创建合并页面**
+- [ ] **Step 1: Create merge page**
 
 ```python
 # features/map/terrain_combined/__init__.py
-"""地形合并模式（高度+地形）。"""
+"""Terrain merge mode (height+terrain)."""
 ```
 
 ```python
 # features/map/terrain_combined/page.py
-"""地形合并页面 — QTabWidget 包裹 HeightPage + TerrainPage。"""
+"""Terrain merge page— QTabWidget packageHeightPage + TerrainPage。"""
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QTabWidget
 from PyQt5.QtCore import pyqtSignal
 from ui.i18n import tr
 
 
 class TerrainCombinedPage(QWidget):
-    """地形合并页：标签页切换高度和地形。"""
+    """Terrain merge page: Tabs switch height and terrain."""
 
-    # 转发所有子页面信号（height + terrain）
+    # Forward all subpage signals (height + terrain）
     # Height signals
     height_value_changed = pyqtSignal(int)
     auto_height_requested = pyqtSignal()
@@ -149,14 +149,14 @@ class TerrainCombinedPage(QWidget):
         self._tabs.addTab(self._terrain_page, tr("tab_terrain"))
         lay.addWidget(self._tabs)
 
-        # 转发 height 信号
+        # forwardheight signal
         self._height_page.height_value_changed.connect(self.height_value_changed)
         self._height_page.auto_height_requested.connect(self.auto_height_requested)
         self._height_page.smooth_height_requested.connect(self.smooth_height_requested)
         self._height_page.ridge_mode_toggled.connect(self.ridge_mode_toggled)
         self._height_page.ridge_peak_changed.connect(self.ridge_peak_changed)
         self._height_page.ridge_falloff_changed.connect(self.ridge_falloff_changed)
-        # 转发 terrain 信号
+        # forwardterrain signal
         self._terrain_page.terrain_index_changed.connect(self.terrain_index_changed)
         self._terrain_page.terrain_brush_mode_changed.connect(self.terrain_brush_mode_changed)
         self._terrain_page.terrain_brush_size_changed.connect(self.terrain_brush_size_changed)
@@ -164,7 +164,7 @@ class TerrainCombinedPage(QWidget):
         self._terrain_page.auto_terrain_requested.connect(self.auto_terrain_requested)
 ```
 
-- [ ] **Step 2: 验证导入**
+- [ ] **Step 2: Verify import**
 
 Run: `cd hoi4_map_maker && python -c "from PyQt5.QtWidgets import QApplication; app=QApplication([]); from features.map.terrain_combined.page import TerrainCombinedPage; p=TerrainCombinedPage(); print('OK')"`
 Expected: `OK`
@@ -173,34 +173,34 @@ Expected: `OK`
 
 ```bash
 git add features/map/terrain_combined/
-git commit -m "feat: 地形合并页(高度+地形标签页)"
+git commit -m "feat: terrain merge page(height+Terrain tab)"
 ```
 
 ---
 
-### Task 3: 创建合并页面 — 国家与区域（州+国家+大洲）
+### Task 3: Create a merge page — Country and Region (State + Country + Continent)
 
 **Files:**
 - Create: `features/map/region_combined/page.py`
 - Create: `features/map/region_combined/__init__.py`
 
-- [ ] **Step 1: 创建合并页面**
+- [ ] **Step 1: Create merge page**
 
 ```python
 # features/map/region_combined/__init__.py
-"""国家与区域合并模式（州+国家+大洲）。"""
+"""National and regional merger patterns (state+country+continent)."""
 ```
 
 ```python
 # features/map/region_combined/page.py
-"""国家与区域合并页面 — QTabWidget 包裹 StatePage + CountryPage + ContinentPage。"""
+"""Country and region merged page— QTabWidget packageStatePage + CountryPage + ContinentPage。"""
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QTabWidget
 from PyQt5.QtCore import pyqtSignal
 from ui.i18n import tr
 
 
 class RegionCombinedPage(QWidget):
-    """国家与区域合并页：标签页切换州/国家/大洲。"""
+    """Country and region merge page: tab switch state/country/continent."""
 
     # State signals
     auto_states_requested = pyqtSignal(int)
@@ -246,60 +246,60 @@ class RegionCombinedPage(QWidget):
         self._tabs.addTab(self._continent_page, tr("tab_continent"))
         lay.addWidget(self._tabs)
 
-        # 转发 state 信号
+        # forwardstate signal
         self._state_page.auto_states_requested.connect(self.auto_states_requested)
         self._state_page.state_selected.connect(self.state_selected)
         self._state_page.state_property_changed.connect(self.state_property_changed)
         self._state_page.state_detail_requested.connect(self.state_detail_requested)
         self._state_page.batch_create_state_toggled.connect(self.batch_create_state_toggled)
         self._state_page.batch_create_state_confirmed.connect(self.batch_create_state_confirmed)
-        # 转发 country 信号
+        # forwardcountry signal
         self._country_page.create_country_requested.connect(self.create_country_requested)
         self._country_page.quick_create_country_requested.connect(self.quick_create_country_requested)
         self._country_page.country_selected.connect(self.country_selected)
         self._country_page.country_property_changed.connect(self.country_property_changed)
         self._country_page.country_color_change_requested.connect(self.country_color_change_requested)
-        # 转发 continent 信号
+        # forwardcontinent signal
         self._continent_page.continent_pick_toggled.connect(self.continent_pick_toggled)
         self._continent_page.continent_add_requested.connect(self.continent_add_requested)
         self._continent_page.continent_rename_requested.connect(self.continent_rename_requested)
         self._continent_page.continent_remove_requested.connect(self.continent_remove_requested)
 ```
 
-- [ ] **Step 2: 验证 + Commit**
+- [ ] **Step 2: Verification + Commit**
 
 Run: `cd hoi4_map_maker && python -c "from PyQt5.QtWidgets import QApplication; app=QApplication([]); from features.map.region_combined.page import RegionCombinedPage; p=RegionCombinedPage(); print('OK')"`
 
 ```bash
 git add features/map/region_combined/
-git commit -m "feat: 国家与区域合并页(州+国家+大洲标签页)"
+git commit -m "feat: Country and region merge page(state+country+Continents tab)"
 ```
 
 ---
 
-### Task 4: 创建合并页面 — 后勤（战略区+后勤系统）
+### Task 4: Create a merge page - Logistics (strategic area + logistics system)
 
 **Files:**
 - Create: `features/map/logistics_combined/page.py`
 - Create: `features/map/logistics_combined/__init__.py`
 
-- [ ] **Step 1: 创建合并页面**
+- [ ] **Step 1: Create merge page**
 
 ```python
 # features/map/logistics_combined/__init__.py
-"""后勤合并模式（战略区+后勤系统）。"""
+"""Logistics consolidation model (strategic area+logistics system)."""
 ```
 
 ```python
 # features/map/logistics_combined/page.py
-"""后勤合并页面 — QTabWidget 包裹 StrategicRegionPage + LogisticsPage。"""
+"""Logistics merge page— QTabWidget packageStrategicRegionPage + LogisticsPage。"""
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QTabWidget
 from PyQt5.QtCore import pyqtSignal
 from ui.i18n import tr
 
 
 class LogisticsCombinedPage(QWidget):
-    """后勤合并页：标签页切换战略区域和后勤系统。"""
+    """Logistics merger page: The tab page switches strategic areas and logistics systems."""
 
     # Strategic region signals
     strategic_region_auto_requested = pyqtSignal()
@@ -341,7 +341,7 @@ class LogisticsCombinedPage(QWidget):
         self._tabs.addTab(self._logistics_page, tr("tab_logistics"))
         lay.addWidget(self._tabs)
 
-        # 转发 strategic_region 信号
+        # forwardstrategic_region signal
         p = self._strategic_region_page
         p.strategic_region_auto_requested.connect(self.strategic_region_auto_requested)
         p.strategic_region_selected.connect(self.strategic_region_selected)
@@ -353,7 +353,7 @@ class LogisticsCombinedPage(QWidget):
         p.strategic_region_pick_toggled.connect(self.strategic_region_pick_toggled)
         p.create_from_states_toggled.connect(self.create_from_states_toggled)
         p.create_from_states_confirmed.connect(self.create_from_states_confirmed)
-        # 转发 logistics 信号
+        # forwardlogistics signal
         p2 = self._logistics_page
         p2.open_adjacency_dialog_requested.connect(self.open_adjacency_dialog_requested)
         p2.open_railway_list_requested.connect(self.open_railway_list_requested)
@@ -362,38 +362,38 @@ class LogisticsCombinedPage(QWidget):
         p2.logistics_supply_pick_toggled.connect(self.logistics_supply_pick_toggled)
 ```
 
-- [ ] **Step 2: 验证 + Commit**
+- [ ] **Step 2: Verification + Commit**
 
 ```bash
 git add features/map/logistics_combined/
-git commit -m "feat: 后勤合并页(战略区+后勤标签页)"
+git commit -m "feat: Logistics merge page(strategic area+Logistics tab)"
 ```
 
 ---
 
-### Task 5: 创建合并页面 — 设置（总览贴图+地图配置）
+### Task 5: Create merge page — settings (overview map + map configuration)
 
 **Files:**
 - Create: `features/map/settings_combined/page.py`
 - Create: `features/map/settings_combined/__init__.py`
 
-- [ ] **Step 1: 创建合并页面**
+- [ ] **Step 1: Create merge page**
 
 ```python
 # features/map/settings_combined/__init__.py
-"""设置合并模式（总览贴图+地图配置）。"""
+"""Set merge mode (overview map+map configuration)."""
 ```
 
 ```python
 # features/map/settings_combined/page.py
-"""设置合并页面 — QTabWidget 包裹 ColormapPage + DefaultMapPage。"""
+"""Set up merge page— QTabWidget packageColormapPage + DefaultMapPage。"""
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QTabWidget
 from PyQt5.QtCore import pyqtSignal
 from ui.i18n import tr
 
 
 class SettingsCombinedPage(QWidget):
-    """设置合并页：标签页切换总览贴图和地图配置。"""
+    """Set merge page: tab to switch overview map and map configuration."""
 
     colormap_color_changed = pyqtSignal(str, int, int, int)
     colormap_reset_requested = pyqtSignal()
@@ -432,44 +432,44 @@ class SettingsCombinedPage(QWidget):
         self._default_map_page.default_map_tree_reset_requested.connect(self.default_map_tree_reset_requested)
 ```
 
-- [ ] **Step 2: 验证 + Commit**
+- [ ] **Step 2: Verification + Commit**
 
 ```bash
 git add features/map/settings_combined/
-git commit -m "feat: 设置合并页(总览贴图+地图配置标签页)"
+git commit -m "feat: Set up merge pages(Overview map+Map configuration tab)"
 ```
 
 ---
 
-### Task 6: 重构 ToolPanel — 13→7 模式
+### Task 6: Refactor ToolPanel — 13→7 mode
 
 **Files:**
 - Modify: `ui/tool_panel.py`
 
-- [ ] **Step 1: 更新模式列表和页面创建**
+- [ ] **Step 1: Update pattern list and page creation**
 
-修改 `_init_ui` 中的 `_GroupedModeBar` 参数，从 13 个模式改为 7 个：
+Modify the `_GroupedModeBar` parameters in `_init_ui` from 13 modes to 7:
 
 ```python
-# 旧的3组13模式 → 新的7模式（不分组，直接列表）
+# old3group13mode→ new7Mode (no grouping, direct list)
 self._mode_tabs = _GroupedModeBar([
     (tr("group_map_drawing"), [
-        ("land", tr("mode_land_new")),         # 画地图
-        ("province", tr("mode_province")),      # 省份
-        ("terrain", tr("mode_terrain_new")),     # 地形
-        ("river", tr("mode_river_nav")),         # 河流
+        ("land", tr("mode_land_new")),         # draw a map
+        ("province", tr("mode_province")),      # Province
+        ("terrain", tr("mode_terrain_new")),     # terrain
+        ("river", tr("mode_river_nav")),         # river
     ]),
     (tr("group_region_mgmt"), [
-        ("region", tr("mode_region")),           # 国家与区域
-        ("logistics", tr("mode_logistics_new")), # 后勤
+        ("region", tr("mode_region")),           # Countries and regions
+        ("logistics", tr("mode_logistics_new")), # Logistics
     ]),
     (tr("group_settings"), [
-        ("settings", tr("mode_settings")),       # 设置
+        ("settings", tr("mode_settings")),       # settings
     ]),
 ])
 ```
 
-修改 `_create_pages`：用合并页面替换原有页面，同时保留对子页面的引用（兼容外部通过 `_land_page` 等属性访问）：
+Modify `_create_pages`: replace the original page with the merged page, while retaining references to subpages (compatible with external access through attributes such as `_land_page`):
 
 ```python
 def _create_pages(self) -> None:
@@ -489,7 +489,7 @@ def _create_pages(self) -> None:
     self._logistics_combined = LogisticsCombinedPage()
     self._settings_combined = SettingsCombinedPage()
 
-    # 兼容属性：外部代码通过 _height_page, _terrain_page 等访问
+    # Compatibility attribute: external code passes_height_page, _terrain_page Waiting for visit
     self._height_page = self._terrain_combined._height_page
     self._terrain_page = self._terrain_combined._terrain_page
     self._state_page = self._region_combined._state_page
@@ -512,32 +512,32 @@ def _create_pages(self) -> None:
     # ... rest same as before
 ```
 
-修改信号连接：合并页面的信号直接连接到 ToolPanel（替换原来分开的 `_connect_height_signals` + `_connect_terrain_signals` 等）：
+Modify the signal connection: the signals of the merged page are directly connected to the ToolPanel (replacing the original separate `_connect_height_signals` + `_connect_terrain_signals`, etc.):
 
 ```python
 self._connect_land_signals()
 self._connect_province_signals()
-self._connect_terrain_combined_signals()  # 替换 height + terrain
+self._connect_terrain_combined_signals()  # replaceheight + terrain
 self._connect_river_signals()
-self._connect_region_combined_signals()   # 替换 state + country + continent
-self._connect_logistics_combined_signals() # 替换 strategic_region + logistics
-self._connect_settings_combined_signals()  # 替换 colormap + default_map
+self._connect_region_combined_signals()   # replacestate + country + continent
+self._connect_logistics_combined_signals() # replacestrategic_region + logistics
+self._connect_settings_combined_signals()  # replacecolormap + default_map
 ```
 
-每个新方法直接连合并页面的信号（合并页面已经做了子页面→自身的转发）。
+Each new method is directly connected to the signal of the merged page (the merged page has already forwarded the subpage → itself).
 
-- [ ] **Step 2: 更新 _on_mode_changed 的 display_mode 映射**
+- [ ] **Step 2: Update display_mode mapping of _on_mode_changed**
 
-合并模式的 display_mode 需要映射到 canvas 能识别的模式名。canvas 的 `_full_render` 有 renderers 字典，需要加 "region"/"settings" 的映射：
+The display_mode of the merged mode needs to be mapped to a mode name recognized by canvas. Canvas' `_full_render` has a renderers dictionary and needs to add "region"/"settings" mapping:
 
 ```python
 def _on_mode_changed(self, mode: str) -> None:
     idx = self._mode_index.get(mode, 0)
     self._stack.setCurrentIndex(idx)
-    # 合并模式映射到 canvas display_mode
+    # Merge mode maps tocanvas display_mode
     canvas_mode = {
-        "region": "state",      # 默认显示 state 渲染
-        "settings": "colormap", # 默认显示 colormap 渲染
+        "region": "state",      # Displayed by defaultstate rendering
+        "settings": "colormap", # Displayed by defaultcolormap rendering
     }.get(mode, mode)
     if mode not in ("province", "region"):
         self.tool_changed.emit("brush")
@@ -545,7 +545,7 @@ def _on_mode_changed(self, mode: str) -> None:
     self.mode_changed.emit(canvas_mode)
 ```
 
-- [ ] **Step 3: 验证 ToolPanel 启动**
+- [ ] **Step 3: Verify ToolPanel starts**
 
 Run: `cd hoi4_map_maker && python -c "from PyQt5.QtWidgets import QApplication; app=QApplication([]); from ui.tool_panel import ToolPanel; tp=ToolPanel(); print('modes:', len(tp._pages)); print('OK')"`
 Expected: `modes: 7` + `OK`
@@ -554,28 +554,28 @@ Expected: `modes: 7` + `OK`
 
 ```bash
 git add ui/tool_panel.py
-git commit -m "refactor: ToolPanel模式13→7(合并页面+信号转发)"
+git commit -m "refactor: ToolPanelmode13→7(Merge pages+signal forwarding)"
 ```
 
 ---
 
-### Task 7: 更新 main_window.py 信号连接
+### Task 7: Update main_window.py signal connection
 
 **Files:**
 - Modify: `views/main_window.py`
 
-- [ ] **Step 1: 更新 _connect_signals**
+- [ ] **Step 1: Update _connect_signals**
 
-canvas display_mode 的 renderers 字典需要增加合并模式的映射。在 `views/canvas/widget.py` 的 `_full_render` 和 `_partial_render` 中加：
+The renderers dictionary of canvas display_mode needs to add the mapping of merged modes. In `views/canvas/widget.py`'s `_full_render` and `_partial_render` add:
 
 ```python
 "region": self._render_state_mode,
 "settings": self._render_land_mode,
 ```
 
-同时检查 `views/main_window.py` 的 `_connect_signals` 中所有 `tp.xxx.connect()` 是否仍然有效（ToolPanel 的信号名不变，只是内部转发路径变了）。
+At the same time, check whether all `tp.xxx.connect()` in `_connect_signals` of `views/main_window.py` are still valid (the signal name of ToolPanel remains unchanged, but the internal forwarding path has changed).
 
-- [ ] **Step 2: 验证完整启动**
+- [ ] **Step 2: Verify complete startup**
 
 Run: `cd hoi4_map_maker && python -c "from PyQt5.QtWidgets import QApplication; app=QApplication([]); from views.main_window import MainWindow; w=MainWindow(); print('OK')"`
 
@@ -583,39 +583,39 @@ Run: `cd hoi4_map_maker && python -c "from PyQt5.QtWidgets import QApplication; 
 
 ```bash
 git add views/main_window.py views/canvas/widget.py
-git commit -m "fix: 更新canvas渲染器+信号连接适配合并模式"
+git commit -m "fix: updatecanvasRenderer+Signal connection adapts to merge mode"
 ```
 
 ---
 
-### Task 8: 防误触保护
+### Task 8: Protection against accidental touch
 
 **Files:**
 - Modify: `views/canvas/widget.py`
 
-- [ ] **Step 1: 修改 _stamp_brush 的陆地模式**
+- [ ] **Step 1: Modify the land mode of _stamp_brush**
 
-在 `_stamp_brush` 的 `mode == "land"` 分支中，替换静默清除逻辑：
+In the `mode == "land"` branch of `_stamp_brush`, replace the silent clearing logic:
 
 ```python
 if mode in ("land", "density"):
     if self._display_mode == "density":
-        # ... 密度画笔逻辑不变 ...
+        # ... Density brush logic remains unchanged...
         return
 
-    # 防误触：画陆地时如果已有省份，需确认
+    # Prevent accidental touch: If there are already provinces when drawing land, you need to confirm
     if self._has_provinces and not getattr(self, '_province_clear_confirmed', False):
-        # 设置标志，让 canvas 发信号给 MainWindow 弹确认框
+        # Set the flag and letcanvas signal toMainWindow Pop up confirmation box
         self._pending_land_paint = True
-        self.land_paint_blocked.emit()  # 新信号
+        self.land_paint_blocked.emit()  # new signal
         return
 
-    # 原有逻辑...
+    # original logic...
 ```
 
-新增信号 `land_paint_blocked = pyqtSignal()` 在 MapCanvas 上。
+Added signal `land_paint_blocked = pyqtSignal()` on MapCanvas.
 
-MainWindow 连接这个信号，弹确认框：
+MainWindow connects to this signal and pops up the confirmation box:
 ```python
 self._canvas.land_paint_blocked.connect(self._on_land_paint_blocked)
 
@@ -627,91 +627,91 @@ def _on_land_paint_blocked(self):
     )
     if reply == QMessageBox.StandardButton.Yes:
         self._canvas._province_clear_confirmed = True
-        # 重新触发渲染
+        # Retrigger rendering
     else:
         self._canvas._pending_land_paint = False
 ```
 
-- [ ] **Step 2: 添加翻译**
+- [ ] **Step 2: Add translation**
 
 ```python
-"dlg_land_clear_title": {"zh": "修改陆地", "en": "Modify Land"},
-"dlg_land_clear_body": {"zh": "修改陆地将清除现有省份数据，是否继续？", "en": "Modifying land will clear existing province data. Continue?"},
+"dlg_land_clear_title": "Modify Land",
+"dlg_land_clear_body": "Modifying land will clear existing province data. Continue?",
 ```
 
 - [ ] **Step 3: Commit**
 
 ```bash
-git add views/canvas/widget.py views/main_window.py ui/i18n.py
-git commit -m "feat: 防误触保护(修改陆地前确认清除省份)"
+git add views/canvas/widget.py views/main_window.py ui/i18n/en/*.py
+git commit -m "feat: Anti-accidental touch protection(Make sure to clear the province before modifying the land)"
 ```
 
 ---
 
-### Task 9: 添加 i18n 翻译
+### Task 9: Add i18n translation
 
 **Files:**
-- Modify: `ui/i18n.py`
+- Modify: `ui/i18n/en/*.py`
 
-- [ ] **Step 1: 添加所有新翻译键**
+- [ ] **Step 1: Add all new translation keys**
 
 ```python
-# 合并模式名
-"mode_land_new": {"zh": "画地图", "en": "Draw Map"},
-"mode_terrain_new": {"zh": "地形", "en": "Terrain"},
-"mode_region": {"zh": "国家与区域", "en": "Countries & Regions"},
-"mode_logistics_new": {"zh": "后勤", "en": "Logistics"},
-"mode_settings": {"zh": "设置", "en": "Settings"},
-"group_settings": {"zh": "配置", "en": "Config"},
+# Merge schema name
+"mode_land_new": "Draw Map",
+"mode_terrain_new": "Terrain",
+"mode_region": "Countries & Regions",
+"mode_logistics_new": "Logistics",
+"mode_settings": "Settings",
+"group_settings": "Config",
 
-# 标签页名
-"tab_height": {"zh": "高度", "en": "Height"},
-"tab_terrain": {"zh": "地形", "en": "Terrain"},
-"tab_state": {"zh": "州", "en": "States"},
-"tab_country": {"zh": "国家", "en": "Countries"},
-"tab_continent": {"zh": "大洲", "en": "Continents"},
-"tab_strategic_region": {"zh": "战略区域", "en": "Strategic Regions"},
-"tab_logistics": {"zh": "后勤系统", "en": "Logistics"},
-"tab_colormap": {"zh": "总览贴图", "en": "Colormap"},
-"tab_default_map": {"zh": "地图配置", "en": "Map Config"},
+# Tab name
+"tab_height": "Height",
+"tab_terrain": "Terrain",
+"tab_state": "States",
+"tab_country": "Countries",
+"tab_continent": "Continents",
+"tab_strategic_region": "Strategic Regions",
+"tab_logistics": "Logistics",
+"tab_colormap": "Colormap",
+"tab_default_map": "Map Config",
 ```
 
 - [ ] **Step 2: Commit**
 
 ```bash
-git add ui/i18n.py
-git commit -m "feat: UI减负翻译(合并模式名+标签页名)"
+git add ui/i18n/en/*.py
+git commit -m "feat: UIBurden-reducing translation(Merge schema name+Tab name)"
 ```
 
 ---
 
-### Task 10: 删除独立 density 模式（已合并到画地图）
+### Task 10: Remove independent density mode (merged into map drawing)
 
 **Files:**
 - Delete: `features/map/density/page.py`
 - Delete: `features/map/density/__init__.py`
-- Modify: `ui/tool_panel.py` — 确保 density 不再作为独立模式注册
+- Modify: `ui/tool_panel.py` — ensure density is no longer registered as a standalone mode
 
-- [ ] **Step 1: 清理 density 目录**
+- [ ] **Step 1: Clean up the density directory**
 
 ```bash
 rm -rf features/map/density/
 ```
 
-确认 ToolPanel 中 density 相关信号已通过 land_page 转发（密度作为画地图的工具选项）。
+Confirm that density-related signals in ToolPanel have been forwarded through land_page (density is used as a tool option for drawing maps).
 
 - [ ] **Step 2: Commit**
 
 ```bash
 git add -A
-git commit -m "refactor: 删除独立density模式(已合并到画地图工具)"
+git commit -m "refactor: Delete independentdensitymode(Merged into map drawing tool)"
 ```
 
 ---
 
-### Task 11: 全量测试 + 最终提交
+### Task 11: Full testing + final submission
 
-- [ ] **Step 1: 验证完整启动和模式切换**
+- [ ] **Step 1: Verify full boot and mode switch**
 
 ```bash
 cd hoi4_map_maker
@@ -721,10 +721,10 @@ app = QApplication([])
 from views.main_window import MainWindow
 w = MainWindow()
 print('MainWindow OK')
-# 验证模式数量
+# Number of verification modes
 tp = w._tool_panel
-print(f'Modes: {len(tp._pages)}')  # 应该是 7
-# 验证子页面引用
+print(f'Modes: {len(tp._pages)}')  # should be7
+# Verify subpage references
 assert tp._height_page is not None
 assert tp._terrain_page is not None
 assert tp._state_page is not None

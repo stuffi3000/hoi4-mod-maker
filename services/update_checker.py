@@ -1,4 +1,4 @@
-"""版本更新检查 — 启动时后台检查 GitHub Releases。"""
+"""Version Update Check — Checks GitHub Releases in the background on startup."""
 from __future__ import annotations
 
 import json
@@ -12,8 +12,8 @@ GITHUB_RELEASES_URL = "https://github.com/AmonStreeling/hoi4-mod-maker/releases"
 
 
 def check_for_update() -> Optional[dict]:
-    """检查是否有新版本。返回 None 表示已是最新，否则返回 {version, body, url}。
-    网络错误静默返回 None（不打扰用户）。"""
+    """Check if there is a new version. Return None if it is the latest, otherwise return {version, body, url}.
+    Network errors silently return None (do not disturb the user)."""
     try:
         req = urllib.request.Request(
             GITHUB_API_URL,
@@ -38,10 +38,10 @@ def check_for_update() -> Optional[dict]:
 
 
 def _is_newer(remote: str, local: str) -> bool:
-    """比较版本号，remote > local 返回 True。
-    支持格式：1.0.0 / 1.0.0-beta.1 等。"""
+    """Compare version numbers, remote > local returns True.
+    Supported formats: 1.0.0 / 1.0.0-beta.1, etc."""
     def _parse(v: str) -> tuple:
-        # 去掉 -beta.1 之类的后缀做主版本比较
+        # Remove suffixes like -beta.1 to compare main versions
         main = v.split("-")[0]
         parts = []
         for p in main.split("."):
@@ -49,7 +49,7 @@ def _is_newer(remote: str, local: str) -> bool:
                 parts.append(int(p))
             except ValueError:
                 parts.append(0)
-        # 有 pre-release 后缀的比没有的低
+        # Those with pre-release suffix are lower than those without.
         pre = v.split("-", 1)[1] if "-" in v else ""
         return tuple(parts), pre
 
@@ -59,10 +59,10 @@ def _is_newer(remote: str, local: str) -> bool:
     if r_main > l_main:
         return True
     if r_main == l_main:
-        # 同主版本：无 pre > 有 pre（1.0.0 > 1.0.0-beta.1）
+        # Same main version: no pre > yes pre (1.0.0 > 1.0.0-beta.1)
         if not r_pre and l_pre:
             return True
-        # 都有 pre：按字符串比较
+        # Both have pre: compare by string
         if r_pre and l_pre and r_pre > l_pre:
             return True
     return False

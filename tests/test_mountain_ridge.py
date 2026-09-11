@@ -1,6 +1,4 @@
-"""
-画山脉线测试 — 升级后的真实山链行为（此前无测试覆盖）。
-"""
+"""Draw Mountain Line Test — Upgraded real mountain chain behavior (no test coverage before)."""
 
 import numpy as np
 
@@ -16,29 +14,29 @@ def _world(h=200, w=400):
 
 
 def test_ridge_raises_heights_near_line_only():
-    """山脊线附近升高, 远处和海洋不动。"""
+    """The ridgeline is elevated near, and the ocean is motionless in the distance."""
     tile_map, height_map = _world()
     points = [(100, 80), (100, 350)]
     out = apply_mountain_ridge(height_map, tile_map, points, peak_height=220)
 
-    assert int(out[100, 200]) > 150            # 脊上
-    assert int(out[10, 200]) == SEA_LEVEL + 20  # 远处平原不动
-    assert np.array_equal(out[:, :40], height_map[:, :40])  # 海洋不动
+    assert int(out[100, 200]) > 150            # on the ridge
+    assert int(out[10, 200]) == SEA_LEVEL + 20  # The plain is motionless in the distance
+    assert np.array_equal(out[:, :40], height_map[:, :40])  # The ocean does not move
 
 
 def test_crest_has_peaks_and_passes():
-    """沿脊高度有起伏 (主峰与垭口), 不再是均匀土堆。"""
+    """There are fluctuations in height along the ridge (main peak and pass), and it is no longer a uniform mound."""
     tile_map, height_map = _world()
     points = [(100, 80), (100, 350)]
     out = apply_mountain_ridge(height_map, tile_map, points, peak_height=220)
 
-    crest = out[100, 90:340].astype(np.int32)   # 沿脊取样
-    assert crest.max() - crest.min() > 25       # 有显著峰谷起伏
-    assert crest.min() > 100                    # 但垭口仍是山, 不断链
+    crest = out[100, 90:340].astype(np.int32)   # Sampling along the ridge
+    assert crest.max() - crest.min() > 25       # There are significant peaks and valleys
+    assert crest.min() > 100                    # But the pass is still a mountain, constantly connected
 
 
 def test_same_line_is_deterministic():
-    """同一条线两次调用结果一致 (调滑条预览时山形不跳变)。"""
+    """The results of two calls for the same line are consistent (the mountain shape does not jump when previewing the slider)."""
     tile_map, height_map = _world()
     points = [(60, 100), (140, 300)]
     a = apply_mountain_ridge(height_map, tile_map, points, peak_height=200)

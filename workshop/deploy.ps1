@@ -1,18 +1,19 @@
 # HOI4 Map Maker Workshop deploy (safe)
 #
-# 跑这个之前先跑 build_exe.bat 生成 dist/HOI4MapMaker/
+# Run build_exe.bat first to create dist/HOI4MapMaker/.
 #
-# 安全语义:
-# - 只删 mod 目录里的 HOI4MapMaker.exe + _internal/
-# - 保留 thumbnail.png / common/ / localisation/ / 其他文件
-# - 外层 .mod 和 descriptor.mod 用 in-place 修改, 只动 version 和 supported_version
-# - picture / remote_file_id / path 等 Steam Workshop 关键字段绝不动
+# Safety rules:
+# - Delete only HOI4MapMaker.exe and _internal/ from the MOD directory.
+# - Preserve thumbnail.png, common/, localisation/, and all other files.
+# - Edit the outer .mod and descriptor.mod in place, changing only version fields.
+# - Never touch Steam Workshop fields such as picture, remote_file_id, or path.
 #
-# 版本号自动从 ../version.py 的 VERSION 字段读
+# Read the version automatically from the VERSION field in ../version.py.
 $ErrorActionPreference = "Stop"
 
-# 实际上传源是 mod\1 (启动器 Upload Mod 工具创建的编号目录, remote_file_id=3707251866)
-# 注意: mod\hoi4_map_maker 是曾计划的改名, 从未在这台机落地, 别改回去
+# The upload source is mod\1, the numbered directory created by the launcher
+# Upload Mod tool (remote_file_id=3707251866).
+# mod\hoi4_map_maker was a planned rename that was never deployed; keep this path.
 $MOD_DIR = "D:\Documents\Paradox Interactive\Hearts of Iron IV\mod\1"
 $OUTER_MOD = "D:\Documents\Paradox Interactive\Hearts of Iron IV\mod\1.mod"
 $SCRIPT_DIR = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -21,7 +22,7 @@ $DIST_DIR = Join-Path $REPO_ROOT "dist\HOI4MapMaker"
 $VERSION_PY = Join-Path $REPO_ROOT "version.py"
 $SUP_VER = "1.19.*"
 
-# 从 version.py 读 VERSION
+# Read VERSION from version.py.
 $verLine = Get-Content $VERSION_PY | Where-Object { $_ -match '^VERSION\s*=' } | Select-Object -First 1
 if (-not $verLine -or $verLine -notmatch '"([^"]+)"') {
     Write-Error "Cannot parse VERSION from $VERSION_PY"
@@ -36,7 +37,8 @@ if (-not (Test-Path $MOD_DIR)) {
     Write-Error "MOD_DIR missing: $MOD_DIR`nFirst-time deploy must be manual (create dir + thumbnail.png + outer .mod with remote_file_id from Steam)."
     exit 1
 }
-# 外层 .mod 在 mod\1 布局下不存在 (启动器直接读目录里的 descriptor.mod), 存在才 patch
+# The outer .mod is absent in the mod\1 layout because the launcher reads the
+# descriptor.mod inside the directory; patch it only when it exists.
 $HAS_OUTER = Test-Path $OUTER_MOD
 if (-not (Test-Path (Join-Path $DIST_DIR "HOI4MapMaker.exe"))) {
     Write-Error "Build missing: $DIST_DIR\HOI4MapMaker.exe`nRun build_exe.bat first."

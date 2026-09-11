@@ -1,19 +1,17 @@
-"""
-预览功能 — 把当前地图合成"游戏内观感"画面显示在画布上。
+"""Preview function — combine the current map into an "in-game look and feel" screen and display it on the canvas.
 
-合成管线: domain/preview/compositor.py (游戏贴图 + 高度光影 + 气候色调
-+ 海洋深度 + 河流)。游戏贴图来自用户本机的 HOI4 安装目录
-(services/game_assets.py), 找不到时降级为大陆视图并在侧栏提示。
+Compositing pipeline: domain/preview/compositor.py (game texture + height lighting + climate tone
++ ocean depth + river). Game textures come from the HOI4 installation directory of the user's machine
+(services/game_assets.py), if it cannot be found, it will be downgraded to the continent view and a prompt will be displayed in the sidebar.
 
-整图合成约 2~5 秒, 因此结果缓存、手动刷新, 不实时跟随编辑。
-"""
+The whole image synthesis takes about 2~5 seconds, so the results are cached and refreshed manually, and the editing is not followed in real time."""
 
 from features.base import BaseFeature, FeatureContext
 
 
 class PreviewFeature(BaseFeature):
     id = "map.preview"
-    display_name = "预览"
+    display_name = "Preview"
     category = "map"
 
     def build_page(self, ctx: FeatureContext):

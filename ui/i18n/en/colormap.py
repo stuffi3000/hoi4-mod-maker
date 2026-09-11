@@ -1,8 +1,4 @@
-"""
-colormap — en 翻译
-
-本文件由 tools/migrate_i18n.py 生成。后续手动维护。
-"""
+"""English strings for colormap settings and preview controls."""
 
 STRINGS: dict[str, str] = {
     "cm_dlg_cancel": "Cancel",

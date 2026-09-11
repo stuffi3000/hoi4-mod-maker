@@ -169,7 +169,7 @@ This project is licensed under the **GNU General Public License v3.0**.
 Issues and pull requests are welcome.
 
 Code conventions:
-- Chinese comments
+- English comments
 - `snake_case` functions / `CamelCase` classes
 - Files under 800 lines
 - NumPy vectorization — no Python loops for pixel operations

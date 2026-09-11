@@ -1,11 +1,9 @@
-"""
-map/trees.bmp 写入器.
+"""map/trees.bmp writer.
 
-8-bit indexed BMP, bottom-up, vanilla palette (256 色).
-尺寸 = 地图 ÷ 4 (HOI4 按比例缩放到实际地图).
+8-bit indexed BMP, bottom-up, vanilla palette (256 colors).
+Size = map ÷ 4 (HOI4 scaled to actual map).
 
-参考: Map modding.txt §Trees (行 419-470).
-"""
+Reference: Map modding.txt §Trees (lines 419-470)."""
 
 from __future__ import annotations
 
@@ -14,7 +12,7 @@ import struct
 
 import numpy as np
 
-# 注意: 用 import as, 不 from import — from import 是值绑定, set_map_size 不更新.
+# Note: Use import as, not from import — from import is value binding, set_map_size is not updated.
 import data.constants as _const
 from data.trees_palette import TREES_PALETTE_BYTES
 
@@ -25,12 +23,11 @@ def write_trees_bmp(
     map_width: int | None = None,
     map_height: int | None = None,
 ) -> None:
-    """生成 map/trees.bmp.
+    """Generate map/trees.bmp.
 
-    tree_map: uint8 数组 (H//4, W//4), 每像素一个 palette 索引.
-              None → 全黑 (无树).
-    map_width/map_height: 实际地图尺寸, 用于 tree_map=None 时计算尺寸.
-    """
+    tree_map: uint8 array (H//4, W//4), one palette index per pixel.
+              None → completely black (no tree).
+    map_width/map_height: actual map size, used to calculate the size when tree_map=None."""
     d = os.path.join(output_dir, "map")
     os.makedirs(d, exist_ok=True)
     path = os.path.join(d, "trees.bmp")
@@ -53,7 +50,7 @@ def write_trees_bmp(
     # BMP is bottom-up: flip vertically
     data_flipped = data[::-1, :]
 
-    # 写 BMP
+    # Write BMP
     palette_size = 256 * 4  # 1024
     pixel_size = padded_row * h
     header_size = 14 + 40 + palette_size
@@ -88,11 +85,10 @@ def write_trees_bmp(
 
 
 def auto_generate_tree_map(terrain_map: np.ndarray) -> np.ndarray:
-    """从 terrain_map 自动生成 tree_map (降采样到 trees 分辨率).
+    """Automatically generate tree_map from terrain_map (downsampled to trees resolution).
 
     terrain_map: (H, W) uint8, palette index.
-    返回: (H//4, W//4) uint8, trees palette index.
-    """
+    Return: (H//4, W//4) uint8, trees palette index."""
     from data.terrain_types import TERRAIN_PALETTE_INDEX
     from data.trees_palette import TERRAIN_TO_TREE_INDEX
 
@@ -100,12 +96,12 @@ def auto_generate_tree_map(terrain_map: np.ndarray) -> np.ndarray:
     h = full_h // 4
     w = full_w // 4
 
-    # 降采样 terrain_map
+    # downsample terrain_map
     step_y = max(1, full_h // h)
     step_x = max(1, full_w // w)
     small_terrain = terrain_map[::step_y, ::step_x][:h, :w]
 
-    # 建反查表: terrain_palette_index → terrain_name
+    # Construct reverse lookup table: terrain_palette_index → terrain_name
     idx_to_name: dict[int, str] = {}
     for tname, tidx in TERRAIN_PALETTE_INDEX.items():
         idx_to_name[tidx] = tname

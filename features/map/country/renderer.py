@@ -1,24 +1,22 @@
-"""Country 模式渲染: 国家颜色块 + 已分配国家间白边 + 选中国家红边 (覆盖白).
+"""Country mode rendering: country color block + assigned white border between countries + selected country red border (covering white).
 
-性能: 白边 mask 缓存到 canvas, country_rgb 不变就不重算 (只重算红边).
-正确性:
-  - 白边只在两侧都是"已分配国家"的 land 之间画 (跳过海洋/未分配 state).
-  - 选中国家边界两侧都涂红 (完全覆盖白边, 不会出现红白夹杂).
-"""
+Performance: The white edge mask is cached in the canvas, and country_rgb remains unchanged and is not recalculated (only the red edge is recalculated).
+Correctness:
+  - White borders are only drawn between lands with "allocated states" on both sides (skipping ocean/unallocated state).
+  - Paint both sides of the selected country's border in red (completely covering the white border, so there will be no mixture of red and white)."""
 
 import numpy as np
 
 
 def _compute_white_borders(country_rgb, assigned_mask):
-    """算所有已分配国家间的白色边界 mask (H, W bool).
+    """Compute the white border mask (H, W bool) between all assigned countries.
 
-    边界 = 颜色变化处, 且边界两侧都属于"已分配国家".
-    海洋 / 未分配 state 不参与 → 这些区域和邻居之间不画白边.
-    """
+    Border = color change, and both sides of the border belong to "assigned countries".
+    Ocean/unallocated state does not participate → no white edges are drawn between these areas and their neighbors."""
     h, w = country_rgb.shape[:2]
     borders = np.zeros((h, w), dtype=bool)
     if assigned_mask is None:
-        # 没传 mask, 退回到"所有颜色变化都画白" (兼容旧调用方)
+        # If no mask is passed, it will fall back to "all color changes are painted white" (compatible with old callers)
         diff_v = (country_rgb[:-1] != country_rgb[1:]).any(axis=2)
         diff_h = (country_rgb[:, :-1] != country_rgb[:, 1:]).any(axis=2)
         borders[:-1, :] |= diff_v
@@ -27,14 +25,14 @@ def _compute_white_borders(country_rgb, assigned_mask):
         borders[:, 1:]  |= diff_h
         return borders
 
-    # 上下方向: 像素 (y, x) 与 (y+1, x) 颜色不同, 且两个像素都 assigned
+    # Up and down direction: pixels (y, x) and (y+1, x) have different colors, and both pixels are assigned
     diff_v = (country_rgb[:-1] != country_rgb[1:]).any(axis=2)
     a_v = assigned_mask[:-1] & assigned_mask[1:]
     border_v = diff_v & a_v
     borders[:-1, :] |= border_v
     borders[1:, :]  |= border_v
 
-    # 左右方向
+    # left and right direction
     diff_h = (country_rgb[:, :-1] != country_rgb[:, 1:]).any(axis=2)
     a_h = assigned_mask[:, :-1] & assigned_mask[:, 1:]
     border_h = diff_h & a_h
@@ -45,7 +43,7 @@ def _compute_white_borders(country_rgb, assigned_mask):
 
 
 def _compute_red_borders(country_rgb, highlight_rgb):
-    """算选中国家边界的 mask (H, W bool, 边界两侧都涂红, 自动覆盖白边)."""
+    """Calculate the mask of the selected country border (H, W bool, both sides of the border are painted red, and the white edges are automatically covered)."""
     if highlight_rgb is None:
         return None
     h, w = country_rgb.shape[:2]
@@ -59,16 +57,16 @@ def _compute_red_borders(country_rgb, highlight_rgb):
         return None
 
     borders = np.zeros((h, w), dtype=bool)
-    # 上下: 一侧是高亮 + 另一侧不是高亮 → 这两个像素都涂红
+    # Top and bottom: one side is highlighted + the other side is not highlighted → both pixels are painted red
     edge_v = is_hl[:-1] != is_hl[1:]
     borders[:-1, :] |= edge_v
     borders[1:, :]  |= edge_v
-    # 左右
+    # left and right
     edge_h = is_hl[:, :-1] != is_hl[:, 1:]
     borders[:, :-1] |= edge_h
     borders[:, 1:]  |= edge_h
 
-    # 加宽 1 像素 (2 像素厚的红边)
+    # Widen 1 pixel (2 pixel thick red border)
     borders = (
         borders
         | np.roll(borders, 1, axis=0)
@@ -80,7 +78,7 @@ def _compute_red_borders(country_rgb, highlight_rgb):
 
 
 def _get_white_borders_cached(canvas):
-    """从 canvas cache 拿白边, 没有就算一次并缓存."""
+    """Get the white edge from the canvas cache, if not, count it once and cache it."""
     rgb = canvas._country_color_rgb
     mask = getattr(canvas, "_country_assigned_mask", None)
     cache = getattr(canvas, "_country_borders_cache", None)
@@ -101,14 +99,14 @@ def render(canvas) -> None:
         canvas._display_buffer[:, :, 2] = rgb[:, :, 0]
         canvas._display_buffer[:, :, 3] = 255
 
-        # 1. 白边 (从 cache 拿)
+        # 1. White edge (taken from cache)
         white = _get_white_borders_cached(canvas)
         canvas._display_buffer[white, 0] = 255
         canvas._display_buffer[white, 1] = 255
         canvas._display_buffer[white, 2] = 255
         canvas._display_buffer[white, 3] = 255
 
-        # 2. 红边 (覆盖白)
+        # 2. Red edge (covering white)
         red = _compute_red_borders(rgb, getattr(canvas, "_highlight_country_rgb", None))
         if red is not None:
             canvas._display_buffer[red, 0] = 0    # B
@@ -123,7 +121,7 @@ def render(canvas) -> None:
 
 
 def partial_render(canvas, x0: int, y0: int, x1: int, y1: int) -> None:
-    """局部重绘: 仍然用 cache 里的全图白边切片, 红边只算选区."""
+    """Partial redrawing: still use the white edge slice of the entire image in the cache, and only the red edge is included in the selected area."""
     buf = canvas._display_buffer[y0:y1, x0:x1]
     if canvas._country_color_rgb is not None:
         rgb_full = canvas._country_color_rgb

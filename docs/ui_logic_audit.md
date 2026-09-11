@@ -1,207 +1,207 @@
-# UI 操作逻辑审计 + 优化方案
+# UI operation logic audit + optimization plan
 
-## 用户工作流程
+## User workflow
 
-正常的 MOD 制作流程是这样的：
+The normal MOD production process is as follows:
 
 ```
-地图绘制 → 省份 → 地形 → 河流 → 区域(州/国家/大洲) → 后勤(战略区/铁路) → 设置 → 导出
+mapping→ Province→ terrain→ river→ area(state/country/continent) → Logistics(strategic area/railway) → settings→ Export
 ```
 
-每个页面应该按"用户做事的先后顺序"排列控件。
+Each page should arrange controls in the "order in which users do things."
 
 ---
 
-## 逐页审计
+## Audit page by page
 
-### 1. 地图绘制 (LandPage) — 控件最多，需要精简
+### 1. Map drawing (LandPage) - has the most controls and needs to be streamlined
 
-**当前控件数**: 8 个区域，20+ 控件
-**问题**:
-- 工具(画笔/橡皮/填充/变换/平移) 和 地块类型(陆地/海洋/湖泊) 是分开的，但用户99%的操作是"选陆地→画"，应该合并
-- "平滑海岸线"按钮夹在地块类型和省份生成之间，位置尴尬
-- 省份生成区域里混了：生成按钮 + 省份数 + 海洋密度 + 湖泊密度 + 验证 + 一键初始化，太杂
-- 原版参考图 和 自定义参考图 两个区域结构重复，可以合并
-- "一键初始化"藏在省份生成区域最底部，但它是最常用的入门功能
+**Current number of controls**: 8 areas, 20+ controls
+**question**:
+- Tools (Brush/Eraser/Fill/Transform/Translate) and land type (land/ocean/lake) are separated, but 99% of user operations are "select land → draw" and should be merged
+- The "Smooth Coastline" button is sandwiched between land type and province generation, in an awkward position
+- The province generation area is mixed with: generation button + number of provinces + ocean density + lake density + verification + one-click initialization, too complicated
+- The original reference picture and the customized reference picture have repeated structures in the two areas and can be merged.
+- "One-click initialization" is hidden at the bottom of the province generation area, but it is the most commonly used entry-level function
 
-**优化方案**:
+**Optimization plan**:
 ```
-[一键初始化] ← 提到最顶部，新手第一个看到
-─── 绘制工具 ───
-  画笔 | 橡皮 | 填充(F) | 变换 | 平移
-  [画笔大小滑块]
-─── 地块类型 ───
-  陆地 | 海洋 | 湖泊        ← 改成横排 toggle 按钮组
-─── 操作 ───
-  [平滑海岸线]
-─── 省份生成 ───
-  省份数量: [12000]
-  海洋密度: [15%]
-  湖泊密度: [30%]
-  [生成省份] [验证]         ← 两个并排
-─── 参考图 ───              ← 合并为一个区域
-  原版参考: [显隐] 透明度: [30%]
-  自定义参考: [显隐] 透明度: [40%] 缩放: [100%] [铺满]
-```
-
-### 2. 密度图 (DensityPage) — OK，小改
-
-**当前**: 3 个区域，合理
-**问题**: 密度图是省份生成的辅助，但放在单独 tab 里，用户容易忘记切回去
-**优化**: 保持现状，但在页面底部加一个提示"画完密度图后切回「地图绘制」生成省份"
-
-### 3. 省份 (ProvincePage) — OK，小改
-
-**当前**: 信息区 + 工具区(合并/扩张/切割) + 重生成区
-**问题**:
-- 省份信息区占了很大空间但只读，可以缩小
-- 合并/扩张/切割 三个 toggle 按钮应该更明显地互斥
-**优化**:
-```
-─── 省份信息 ───            ← 改成单行: "ID: 123 | 陆地 | 平原 | 450px"
-─── 编辑工具 ───
-  [合并] [扩张] [切割]      ← 保持
-  (状态提示)
-─── 区域重生成 ───
-  [框选区域] [执行重生成]   ← 保持
+[One-click initialization] ← Mentioned at the top, newbies will see it first
+─── drawing tools───
+  brush| Eraser| padding(F) | transform| Pan
+  [Brush size slider]
+─── Lot type───
+  land| ocean| lake← Change to horizontaltoggle button group
+─── Operation───
+  [smooth coastline]
+─── Province generation───
+  Number of provinces: [12000]
+  ocean density: [15%]
+  lake density: [30%]
+  [Generate provinces] [Verify]         ← two side by side
+─── Reference picture───              ← merge into one area
+  Original reference: [Reveal] Transparency: [30%]
+  Custom reference: [Reveal] Transparency: [40%] Zoom: [100%] [Covered]
 ```
 
-### 4. 高度图 (HeightPage) — 控件太多，需要精简
+### 2. DensityPage — OK, minor changes
 
-**当前**: 7 个区域，30+ 控件
-**问题**:
-- "一键智能生成" 出现了两次（顶部大按钮 + 自动生成区域里的按钮），重复
-- 山脉画线区域很复杂(开关+峰值+衰减+确认/取消)，但只在山脉模式下用
-- 手动画笔区域的 5 个预设按钮占了一行，可以更紧凑
-- "导入高度图" 按钮位置不明显
-**优化**:
+**Currently**: 3 regions, reasonable
+**Problem**: Density map is an auxiliary for province generation, but if it is placed in a separate tab, users can easily forget to switch back.
+**Optimization**: Keep the status quo, but add a prompt at the bottom of the page "After drawing the density map, switch back to "Map Drawing" to generate provinces"
+
+### 3. Province (ProvincePage) — OK, minor changes
+
+**Current**: Information area + tool area (merge/expand/cut) + regeneration area
+**question**:
+- The province information area takes up a lot of space but is read-only and can be reduced.
+- The three merge/expand/cut toggle buttons should be more obviously mutually exclusive
+**optimization**:
 ```
-[一键智能生成高度]          ← 只保留一个
-  种子: [42] [随机]
-  山峰高度: [200]
-  [平滑]
-─── 山脉画线 ───            ← 折叠区域，点击展开
-  [开始画山脉]
-  峰值: [220] 衰减: [80px]
-  [取消] [确认]
-─── 手动微调 ───
-  高度值: [120]
-  海底 | 海平面 | 平地 | 丘陵 | 山地  ← 保持
-─── 导入 ───
-  [导入高度图]
+─── Province information───            ← Change to single line: "ID: 123 | land| plain| 450px"
+─── Editing tools───
+  [merge] [expansion] [cutting]      ← keep
+  (Status prompt)
+─── Region regeneration───
+  [Frame selection area] [Perform a rebuild]   ← keep
 ```
 
-### 5. 地形 (TerrainPage) — OK，但模式切换容易困惑
+### 4. HeightPage — too many controls and needs to be streamlined
 
-**当前**: 自动生成 + 省份模式/画笔模式切换 + 地形选择网格 + 生成参数
-**问题**:
-- 自动生成按钮在顶部和底部各一个，重复
-- 省份模式 vs 画笔模式 的区别不直观
-**优化**:
+**CURRENT**: 7 areas, 30+ controls
+**question**:
+- "One-click smart generation" appears twice (big button at the top + button in the automatic generation area), repeated
+- The mountain line drawing area is very complicated (switch+peak+attenuation+confirm/cancel), but only used in mountain mode
+- The 5 preset buttons in the manual brush area occupy one row and can be more compact
+- The location of the "Import Heightmap" button is not obvious
+**optimization**:
 ```
-[一键自动生成地形]          ← 只保留一个
-  种子: [42] [随机]
-  噪声: [20] 散布: [65%]
-─── 编辑模式 ───
-  [按省份] [画笔]           ← 加 tooltip 解释区别
-  (画笔模式才显示画笔大小和软边缘)
-─── 地形选择 ───
-  (地形网格保持不变)
-```
-
-### 6. 河流 (RiverPage) — 步骤清晰，保持
-
-**当前**: 3 步引导(选宽度→画→加标记) + 工具 + 验证
-**问题**: 无大问题，已经很清晰
-**优化**: 保持现状
-
-### 7. 州 (StatePage) — 操作顺序需要调整
-
-**当前**: 自动分组 → 批量建州 → 指派模式 → 列表 → 属性 → 详情
-**问题**:
-- "自动分组"和"批量建州"都在最上面，但新手不知道先用哪个
-- 指派模式(checkbox)和批量建州(toggle)容易混淆
-- 属性编辑(名字/人口/类别)在列表下面，但列表太矮看不全
-**优化**:
-```
-─── 快速开始 ───
-  [自动分组] 每州省份数: [15]     ← 合并成一行
-─── 手动编辑 ───
-  [拖拽分配省份]                  ← 改成明确的 toggle
-  [框选建州]
-  [确认建州]
-─── 州列表 ───                    ← 高度加大
-  (列表)
-─── 选中州属性 ───
-  名称 / 人口 / 类别
-  [详情编辑] [VP编辑]
+[Intelligently generate height with one click]          ← Keep only one
+  seeds: [42] [random]
+  mountain height: [200]
+  [Smooth]
+─── Mountain line drawing───            ← Collapse area, click to expand
+  [Start drawing mountains]
+  peak: [220] Attenuation: [80px]
+  [Cancel] [Confirm]
+─── Manual fine-tuning───
+  height value: [120]
+  seabed| sea level| flat ground| hills| Mountain← keep
+─── import───
+  [Import heightmap]
 ```
 
-### 8. 国家 (CountryPage) — OK，小改
+### 5. Terrain (TerrainPage) — OK, but mode switching is confusing
 
-**当前**: 创建 → 快速创建 → 列表 → 属性
-**问题**: 两个创建按钮容易混淆
-**优化**: 合并成一个"创建国家"按钮，点开弹对话框
-
-### 9. 大洲 (ContinentPage) — OK
-
-**当前**: 列表 + 增删改 + 拾取
-**问题**: 无大问题
-**优化**: 保持
-
-### 10. 战略区 (StrategicRegionPage) — 按钮太多太杂
-
-**当前**: 提示 → 自动生成 → 自动天气 → 从州创建 → 确认 → 指派模式 → 列表 → 新建/删除 → 属性
-**问题**:
-- 顶部连续 5 个按钮(自动生成/自动天气/从州创建/确认/指派)，用户不知道该点哪个
-- "从州创建" toggle 和 "指派模式" checkbox 功能重叠
-**优化**:
+**Current**: Automatic generation + province mode/brush mode switching + terrain selection grid + generation parameters
+**question**:
+- Automatically generate buttons one at the top and one at the bottom, repeat
+- The difference between province mode vs brush mode is not intuitive
+**optimization**:
 ```
-─── 快速开始 ───
-  [自动生成(按州分组)]
-  [自动分配天气]
-─── 手动编辑 ───
-  [拖拽分配省份(陆地+海洋)]     ← 合并指派和从州创建
-─── 区域列表 ───
-  (列表) [新建空区域] [删除]
-─── 选中区域属性 ───
-  名称 / 天气 / 海军地形
+[Automatically generate terrain with one click]          ← Keep only one
+  seeds: [42] [random]
+  noise: [20] spread: [65%]
+─── edit mode───
+  [by province] [brush]           ← addtooltip explain the difference
+  (Brush mode only shows brush size and soft edges)
+─── Terrain selection───
+  (Terrain mesh remains unchanged)
 ```
 
-### 11. 后勤 (LogisticsPage) — OK
+### 6. RiverPage — clear steps, keep
 
-**当前**: 邻接编辑 → 铁路/补给
-**问题**: 无大问题
-**优化**: 保持
+**Currently**: 3-step guide (select width → draw → mark) + tools + verification
+**Question**: No big problem, it’s very clear
+**Optimization**: Maintain status quo
 
-### 12-13. 颜色图/默认地图 — OK
+### 7. State (StatePage) — the order of operations needs to be adjusted
 
-设置类页面，控件少，保持。
+**Current**: Automatic grouping → Batch state creation → Assignment mode → List → Properties → Details
+**question**:
+- "Automatic grouping" and "batch state building" are both at the top, but novices don't know which one to use first
+- Assignment mode (checkbox) and batch establishment (toggle) are easily confused
+- Attribute editing (name/population/category) is below the list, but the list is too short to see it all
+**optimization**:
+```
+─── quick start───
+  [Automatic grouping] Number of provinces per state: [15]     ← merge into one line
+─── Manual editing───
+  [Drag and drop to assign provinces]                  ← change to explicittoggle
+  [Frame selected provinces to create states]
+  [Confirm statehood]
+─── State List───                    ← Increased height
+  (list)
+─── Select state attributes───
+  Name/ population/ Category
+  [DetailsEdit] [VPEdit]
+```
+
+### 8. Country (CountryPage) — OK, minor changes
+
+**Current**: Create → Quick Create → List → Properties
+**Problem**: The two create buttons are easily confused
+**Optimization**: Merged into a "Create Country" button, click to open the pop-up dialog box
+
+### 9. ContinentPage — OK
+
+**Current**: List + Add, Delete, Modify + Pick
+**Questions**: No major issues
+**Optimization**: Keep
+
+### 10. Strategic Region (StrategicRegionPage) — too many buttons and too complicated
+
+**Current**: Prompt → AutoGenerate → AutoWeather → Create from State → Confirm → Assign Mode → List → New/Delete → Properties
+**question**:
+- There are 5 buttons in a row at the top (Auto Generate/Auto Weather/Create from State/Confirm/Assign), the user does not know which one to click
+- "Create from State" toggle and "Assign Mode" checkbox functionality overlap
+**optimization**:
+```
+─── quick start───
+  [Automatically generated(Group by state)]
+  [Automatically assign weather]
+─── Manual editing───
+  [Drag and drop to assign provinces(land+ocean)]     ← Merge assignments and create from states
+─── Area list───
+  (list) [Create new empty area] [Delete]
+─── Select area properties───
+  Name/ weather/ naval terrain
+```
+
+### 11. Logistics (LogisticsPage) — OK
+
+**Current**: Adjacency Edit → Railroad/Supply
+**Questions**: No major issues
+**Optimization**: Keep
+
+### 12-13. Color map/default map — OK
+
+Settings page, few controls, keep it.
 
 ---
 
-## 通用优化规则
+## General optimization rules
 
-| 规则 | 说明 |
+| Rules | Description |
 |------|------|
-| **最常用的放最上面** | 一键初始化、自动生成这类按钮放页面第一个位置 |
-| **去掉重复按钮** | 同一功能只保留一个入口 |
-| **合并相关控件** | 自动生成按钮 + 参数放同一个 section |
-| **提示文字缩短** | 一行能说清楚的不要写一段 |
-| **互斥操作用 toggle 组** | 不要又有 checkbox 又有 toggle button |
-| **只读信息用单行** | 省份信息不需要 5 行，一行够了 |
-| **列表高度加大** | 州列表/战略区列表给更多空间 |
+| **Put the most commonly used ones at the top** | One-click initialization, automatically generate such buttons and put them at the first position on the page |
+| **Remove duplicate buttons** | Only keep one entry for the same function |
+| **Merge related controls** | Automatically generate buttons + parameters and put them in the same section |
+| **Tips to shorten text** | Don’t write a paragraph if you can explain it clearly in one line |
+| **Use toggle group for mutually exclusive operations** | Don’t have both checkbox and toggle button |
+| **Single line for read-only information** | Province information does not require 5 lines, one line is enough |
+| **List height increased** | More space for state list/strategic area list |
 
 ---
 
-## 改动优先级
+## Change priority
 
-| 优先级 | 页面 | 改动量 |
+| Priority | Page | Changes |
 |--------|------|--------|
-| 高 | LandPage | 大改：合并参考图、提升一键初始化、地块类型改横排 |
-| 高 | HeightPage | 中改：去掉重复按钮、山脉区折叠 |
-| 高 | StatePage | 中改：调整操作顺序、列表加大 |
-| 高 | StrategicRegionPage | 中改：按钮分组、减少顶部按钮数 |
-| 中 | TerrainPage | 小改：去掉重复生成按钮 |
-| 中 | ProvincePage | 小改：省份信息改单行 |
-| 低 | 其他页面 | 基本不动 |
+| High | LandPage | Major changes: merge reference maps, improve one-click initialization, change land type to horizontal |
+| High | HeightPage | Medium changes: remove duplicate buttons and fold mountain areas |
+| High | StatePage | Medium changes: Adjust the order of operations and enlarge the list |
+| High | StrategicRegionPage | Medium changes: button grouping, reducing the number of top buttons |
+| Medium | TerrainPage | Small change: Remove the duplicate generation button |
+| Medium | ProvincePage | Small change: Change the province information to a single line |
+| Low | Other pages | Basically motionless |

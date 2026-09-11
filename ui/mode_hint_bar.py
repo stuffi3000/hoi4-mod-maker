@@ -1,6 +1,4 @@
-"""
-模式操作提示条 — 每个编辑模式首次切换时显示一行操作说明。
-"""
+"""Mode operation prompt bar—Displays a line of operation instructions when each editing mode is switched for the first time."""
 from PyQt5.QtWidgets import QWidget, QHBoxLayout, QLabel, QPushButton
 from PyQt5.QtCore import Qt, QSettings
 
@@ -16,7 +14,7 @@ _SETTINGS_GROUP = "ModeHints"
 
 
 class ModeHintBar(QWidget):
-    """可关闭的模式提示条，自适应高度。"""
+    """Closeable mode prompt bar, adaptive height."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -63,17 +61,17 @@ class ModeHintBar(QWidget):
         self.hide()
 
     def on_mode_changed(self, mode: str) -> None:
-        """模式切换时调用，首次显示提示。"""
+        """Called when the mode is switched, the prompt is displayed for the first time."""
         self._current_mode = mode
         hint_key = f"hint_mode_{mode}"
         hint_text = tr(hint_key)
 
-        # key 没翻译 = 没有提示
+        # key not translated = no prompt
         if hint_text == hint_key:
             self.hide()
             return
 
-        # 检查是否已经看过
+        # Check if you have seen it
         if self._settings.value(f"seen_{mode}", False, type=bool):
             self.hide()
             return
@@ -82,13 +80,13 @@ class ModeHintBar(QWidget):
         self.show()
 
     def _dismiss(self) -> None:
-        """关闭并记录已看过。"""
+        """Close and record viewed."""
         if self._current_mode:
             self._settings.setValue(f"seen_{self._current_mode}", True)
         self.hide()
 
     @staticmethod
     def reset_all_hints() -> None:
-        """重置所有模式提示（帮助菜单调用）。"""
+        """Resets all mode prompts (help menu call)."""
         settings = QSettings("HOI4MapMaker", _SETTINGS_GROUP)
         settings.clear()

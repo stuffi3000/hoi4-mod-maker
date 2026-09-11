@@ -1,4 +1,4 @@
-"""省份密度编辑页面 — 独立模式，画密度热力图控制省份疏密。"""
+"""Province density editing page - independent mode, draw density heat map to control the density of provinces."""
 
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtWidgets import (
@@ -16,9 +16,9 @@ from ui.i18n import tr
 
 
 class DensityPage(QWidget):
-    """省份密度编辑页面。"""
+    """Province density editing page."""
 
-    # 输出信号
+    # Output signal
     density_value_changed = pyqtSignal(float)     # 0.0~1.0
     density_brush_size_changed = pyqtSignal(int)
     density_soft_edge_changed = pyqtSignal(int)    # 0~100%
@@ -33,17 +33,17 @@ class DensityPage(QWidget):
         lay.setContentsMargins(8, 8, 8, 8)
         lay.setSpacing(10)
 
-        # 提示
+        # Tips
         hint = QLabel(tr("density_hint"))
         hint.setStyleSheet(f"color: {_DIM}; font-size: 12px; padding: 8px;")
         hint.setWordWrap(True)
         lay.addWidget(hint)
 
-        # ── 画笔设置 ──
+        # ── Brush settings ──
         brush_box = _make_section(tr("density_section_brush"))
         bl = brush_box.layout()
 
-        # 画笔大小
+        # brush size
         size_row = QHBoxLayout()
         size_lbl = QLabel(tr("density_label_brush_size"))
         size_lbl.setStyleSheet(_LABEL_STYLE)
@@ -61,7 +61,7 @@ class DensityPage(QWidget):
         self._size_slider.valueChanged.connect(self._on_size)
         bl.addWidget(self._size_slider)
 
-        # 软边缘
+        # soft edge
         soft_row = QHBoxLayout()
         soft_lbl = QLabel(tr("density_label_soft_edge"))
         soft_lbl.setStyleSheet(_LABEL_STYLE)
@@ -81,11 +81,11 @@ class DensityPage(QWidget):
 
         lay.addWidget(brush_box)
 
-        # ── 密度值 ──
+        # ── Density value ──
         val_box = _make_section(tr("density_section_value"))
         vl = val_box.layout()
 
-        # 密度滑块 + 色块预览
+        # Density slider + color patch preview
         val_row = QHBoxLayout()
         val_lbl = QLabel(tr("density_label_value"))
         val_lbl.setStyleSheet(_LABEL_STYLE)
@@ -109,7 +109,7 @@ class DensityPage(QWidget):
         self._val_slider.valueChanged.connect(self._on_value)
         vl.addWidget(self._val_slider)
 
-        # 快捷预设
+        # Quick preset
         preset_row = QHBoxLayout()
         preset_row.setSpacing(4)
         for name, val in [
@@ -125,7 +125,7 @@ class DensityPage(QWidget):
 
         lay.addWidget(val_box)
 
-        # 清空按钮 — 破坏性次要操作，视觉降权直接挂在外层（无需独立 section）
+        # Clear button - destructive secondary operation, visual right reduction is directly hung on the outer layer (no need for independent section)
         clear_btn = QPushButton(tr("density_btn_clear"))
         clear_btn.setStyleSheet(
             _SECONDARY_BTN_STYLE
@@ -137,10 +137,10 @@ class DensityPage(QWidget):
 
         lay.addStretch()
 
-        # 初始化色块预览
+        # Initialize color patch preview
         self._update_color_preview(80)
 
-    # ── 槽函数 ──
+    # ── Slot function ──
 
     def _on_size(self, v: int) -> None:
         self._size_label.setText(f"{v}px")
@@ -156,7 +156,7 @@ class DensityPage(QWidget):
         self.density_value_changed.emit(v / 100.0)
 
     def _update_color_preview(self, percent: int) -> None:
-        """更新色块预览（与热力图一致：红=密集，蓝=稀疏）。"""
+        """Updated color patch preview (consistent with heatmap: red = dense, blue = sparse)."""
         d = percent / 100.0
         r = int(d * 255)
         b = int((1 - d) * 200)

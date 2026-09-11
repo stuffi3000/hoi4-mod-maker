@@ -1,6 +1,4 @@
-"""
-欢迎页面 — 启动时显示，提供新建/打开/最近项目入口。
-"""
+"""Welcome page - displayed at startup, providing entry to new/open/recent projects."""
 from __future__ import annotations
 
 from PyQt5.QtWidgets import (
@@ -14,7 +12,7 @@ from PyQt5.QtGui import QFont
 from ui.i18n import tr
 
 
-# ── 色板 (与 ui/styles.py 保持一致) ──
+# ── Color palette (consistent with ui/styles.py) ──
 _BG = "#17181c"
 _INPUT_BG = "#1f2126"
 _BORDER = "#2c2f36"
@@ -27,7 +25,7 @@ _MAX_RECENT = 10
 
 
 def _load_recent_projects() -> list[str]:
-    """从 QSettings 读取最近项目列表。"""
+    """Read the list of recent items from QSettings."""
     settings = QSettings("HOI4MapMaker", "RecentProjects")
     paths = settings.value("paths", [])
     if isinstance(paths, str):
@@ -36,7 +34,7 @@ def _load_recent_projects() -> list[str]:
 
 
 def save_recent_project(path: str) -> None:
-    """添加路径到最近项目列表（去重、限数量）。"""
+    """Add path to recent items list (duplicate, limited quantity)."""
     recent = _load_recent_projects()
     if path in recent:
         recent.remove(path)
@@ -47,7 +45,7 @@ def save_recent_project(path: str) -> None:
 
 
 class _SizePickerDialog(QDialog):
-    """地图尺寸选择对话框。"""
+    """Map size selection dialog."""
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -82,13 +80,13 @@ class _SizePickerDialog(QDialog):
 
 
 class WelcomePage(QWidget):
-    """启动欢迎页，新建/打开/最近项目。"""
+    """Start the welcome page, create new/open/recent projects."""
 
     new_project_requested = pyqtSignal(int, int)   # width, height
     open_project_requested = pyqtSignal()
     open_recent_requested = pyqtSignal(str)         # path
-    import_mod_requested = pyqtSignal()              # 导入MOD地图
-    open_vanilla_requested = pyqtSignal()            # 打开原版游戏地图(只读参考)
+    import_mod_requested = pyqtSignal()              # Import MOD map
+    open_vanilla_requested = pyqtSignal()            # Open the original game map (read-only reference)
     language_changed = pyqtSignal(str)               # retained for compatibility; always "en"
 
     def __init__(self, parent: QWidget | None = None) -> None:
@@ -100,34 +98,34 @@ class WelcomePage(QWidget):
     _CARD_SPACING = 40
 
     def _init_ui(self) -> None:
-        # 布局：左占位 | stretch | 主菜单(居中) | 间距 | 社区卡片 | stretch
-        # 左占位宽度 = 卡片宽 + 间距，使主菜单保持屏幕正中
+        # Layout: left spacer | stretch | main menu (centered) | spacing | community card | stretch
+        # Left spacer width = card width + spacing to keep the main menu in the center of the screen
         outer = QHBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(0)
 
-        # 左侧平衡占位（和右侧卡片+间距等宽）
+        # Balanced placeholder on the left (same width as the card + spacing on the right)
         left_spacer = QWidget()
         left_spacer.setFixedWidth(self._CARD_WIDTH + self._CARD_SPACING)
         left_spacer.setStyleSheet("background: transparent;")
         outer.addWidget(left_spacer)
         outer.addStretch(1)
 
-        # ══════ 主菜单（居中主体） ══════
+        # ══════ Main menu (centered body) ══════
         left = QVBoxLayout()
         left.setAlignment(Qt.AlignmentFlag.AlignCenter)
         left.setSpacing(16)
 
-        # 标题
+        # Title
         title = QLabel(tr("welcome_title"))
         title_font = QFont("Segoe UI", 28, QFont.Weight.Bold)
-        title_font.setFamilies(["Segoe UI", "Microsoft YaHei", "Noto Sans SC"])
+        title_font.setFamilies(["Segoe UI", "Arial", "sans-serif"])
         title.setFont(title_font)
         title.setStyleSheet(f"color: {_TEXT}; background: transparent;")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         left.addWidget(title)
 
-        # 版本
+        # version
         from version import VERSION
         version = QLabel(f"v{VERSION}")
         version.setStyleSheet(f"color: {_DIM}; font-size: 14px; background: transparent;")
@@ -136,7 +134,7 @@ class WelcomePage(QWidget):
 
         left.addSpacing(24)
 
-        # 按钮样式
+        # button style
         btn_style = f"""
             QPushButton {{
                 background: {_INPUT_BG};
@@ -180,14 +178,14 @@ class WelcomePage(QWidget):
 
         left.addSpacing(12)
 
-        # 最近项目
+        # Recent projects
         recent_label = QLabel(tr("welcome_recent"))
         recent_label.setStyleSheet(f"color: {_DIM}; font-size: 12px; background: transparent;")
         recent_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         left.addWidget(recent_label)
 
         self._recent_list = QListWidget()
-        # 软约束: 最小 640x220, 窗口大时可自适应
+        # Soft constraints: minimum 640x220, adaptive when the window is large
         self._recent_list.setMinimumSize(640, 220)
         self._recent_list.setToolTip(tr("welcome_recent_tooltip"))
         self._recent_list.setStyleSheet(f"""
@@ -217,7 +215,7 @@ class WelcomePage(QWidget):
 
         outer.addSpacing(self._CARD_SPACING)
 
-        # ══════ 社区卡片（紧贴主菜单右边，垂直居中） ══════
+        # ══════ Community Card (next to the right of the main menu, vertically centered) ══════
         right = QVBoxLayout()
         right.setSpacing(0)
         right.addStretch(1)
@@ -235,7 +233,7 @@ class WelcomePage(QWidget):
         card_lay.setContentsMargins(24, 24, 24, 24)
         card_lay.setSpacing(16)
 
-        # 社区支持
+        # community support
         community_title = QLabel(tr("welcome_community_title"))
         community_title.setStyleSheet(f"color: {_ACCENT}; font-size: 15px; font-weight: bold; background: transparent; border: none;")
         card_lay.addWidget(community_title)
@@ -250,13 +248,13 @@ class WelcomePage(QWidget):
         community.setStyleSheet(f"color: {_TEXT}; font-size: 13px; line-height: 1.8; background: transparent; border: none;")
         card_lay.addWidget(community)
 
-        # 分隔线
+        # divider
         sep = QLabel()
         sep.setFixedHeight(1)
         sep.setStyleSheet(f"background: {_BORDER}; border: none;")
         card_lay.addWidget(sep)
 
-        # GitHub + 反馈
+        # GitHub + Feedback
         links = QLabel(tr("welcome_links"))
         links.setWordWrap(True)
         links.setTextFormat(Qt.TextFormat.RichText)
@@ -274,7 +272,7 @@ class WelcomePage(QWidget):
         for path in _load_recent_projects():
             item = QListWidgetItem(path)
             item.setData(Qt.ItemDataRole.UserRole, path)
-            item.setToolTip(path)  # 悬停显示完整路径（万一还是超出）
+            item.setToolTip(path)  # Hover to show the full path (in case it's still exceeded)
             self._recent_list.addItem(item)
         if self._recent_list.count() == 0:
             empty = QListWidgetItem(tr("welcome_no_recent"))
@@ -299,8 +297,8 @@ class WelcomePage(QWidget):
         self.language_changed.emit("en")
 
     def retranslateUi(self) -> None:
-        """语言切换后重建整个欢迎页。"""
-        # 删除旧 layout 和所有子 widget
+        """Rebuild the entire welcome page after language switching."""
+        # Delete the old layout and all child widgets
         old_layout = self.layout()
         if old_layout:
             from PyQt5 import sip
@@ -318,7 +316,7 @@ class WelcomePage(QWidget):
 
     @staticmethod
     def _clear_layout(layout) -> None:
-        """递归清除 layout 下的所有 widget 和子 layout。"""
+        """Recursively clear all widgets and sub-layouts under the layout."""
         while layout.count():
             item = layout.takeAt(0)
             w = item.widget()

@@ -1,8 +1,4 @@
-"""
-status — en 翻译
-
-本文件由 tools/migrate_i18n.py 生成。后续手动维护。
-"""
+"""English status messages for map editing and background tasks."""
 
 STRINGS: dict[str, str] = {
     "status_all_assigned": "✅ All provinces assigned to states",

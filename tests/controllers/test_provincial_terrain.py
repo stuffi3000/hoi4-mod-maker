@@ -1,4 +1,4 @@
-"""ProvincialTerrainController 单元测试 — 重点覆盖 sync_from_visual。"""
+"""ProvincialTerrainController unit test - focus on covering sync_from_visual."""
 import numpy as np
 import pytest
 
@@ -12,11 +12,10 @@ from data.terrain_types import TERRAIN_PALETTE_INDEX
 
 @pytest.fixture
 def pterrain_setup():
-    """创建 Project + CommandHistory + ProvincialTerrainController。
+    """Create Project + CommandHistory + ProvincialTerrainController.
 
-    地图: 8x8, 省份 1 (左半) + 省份 2 (右半), 全陆地。
-    视觉地形: 省份 1 = forest, 省份 2 = mountain。
-    """
+    Map: 8x8, province 1 (left half) + province 2 (right half), all land.
+    Visual terrain: Province 1 = forest, Province 2 = mountain."""
     bus = EventBus()
     project = Project(event_bus=bus)
     history = CommandHistory(event_bus=bus)
@@ -32,11 +31,11 @@ def pterrain_setup():
 
 
 def test_sync_from_visual_overwrites_manual(pterrain_setup):
-    """手动设过的属性也会被视觉多数地形覆盖。"""
+    """Manually set attributes will also be overridden by visual majority terrain."""
     ctrl, project, _ = pterrain_setup
     md = project.map_data
-    md.provincial_terrain[1] = "urban"   # 手动设置, 与视觉 (forest) 不一致
-    md.provincial_terrain[2] = "mountain"  # 已与视觉一致
+    md.provincial_terrain[1] = "urban"   # Manual setting, inconsistent with vision (forest)
+    md.provincial_terrain[2] = "mountain"  # Already consistent with vision
 
     ctrl.sync_from_visual()
 
@@ -45,7 +44,7 @@ def test_sync_from_visual_overwrites_manual(pterrain_setup):
 
 
 def test_sync_from_visual_undoable(pterrain_setup):
-    """同步走命令历史, Ctrl+Z 能还原手动设置。"""
+    """Synchronize command history, Ctrl+Z can restore manual settings."""
     ctrl, project, history = pterrain_setup
     md = project.map_data
     md.provincial_terrain[1] = "urban"
@@ -58,7 +57,7 @@ def test_sync_from_visual_undoable(pterrain_setup):
 
 
 def test_sync_from_visual_nochange_no_command(pterrain_setup):
-    """属性已一致时不产生命令 (撤销栈不变)。"""
+    """No command is generated when the attributes are consistent (the undo stack remains unchanged)."""
     ctrl, project, history = pterrain_setup
     md = project.map_data
     md.provincial_terrain[1] = "forest"
@@ -70,10 +69,10 @@ def test_sync_from_visual_nochange_no_command(pterrain_setup):
 
 
 def test_sync_from_visual_skips_sea_province(pterrain_setup):
-    """海洋省份不写入属性 dict。"""
+    """Maritime provinces are not written to the attribute dict."""
     ctrl, project, _ = pterrain_setup
     md = project.map_data
-    md.tile_map[:, 4:] = TILE_SEA  # 省份 2 变海洋
+    md.tile_map[:, 4:] = TILE_SEA  # Province 2 becomes ocean
 
     ctrl.sync_from_visual()
 

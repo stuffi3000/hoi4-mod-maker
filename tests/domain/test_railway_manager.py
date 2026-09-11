@@ -1,6 +1,4 @@
-"""
-RailwayManager 单元测试.
-"""
+"""RailwayManager unit tests."""
 
 import pytest
 
@@ -13,7 +11,7 @@ def test_add_and_line_format():
     assert idx == 0
     assert m.count() == 1
     line = m.get_all()[0].to_line()
-    # 参考文档 L540 示例: "4 4 693 1444 12 11"
+    # Reference document L540 Example: "4 4 693 1444 12 11"
     assert line == "4 4 693 1444 12 11"
 
 
@@ -62,7 +60,7 @@ def test_drop_provinces_removes_affected_railways():
     m = RailwayManager()
     m.add(level=1, province_ids=[1, 2, 3])
     m.add(level=2, province_ids=[4, 5])
-    m.drop_provinces({2})  # 删除省份 2 会影响第一条
+    m.drop_provinces({2})  # Deleting province 2 will affect Article 1
     assert m.count() == 1
     assert m.get_all()[0].province_ids == [4, 5]
 
@@ -75,10 +73,10 @@ def test_remap_provinces():
 
 
 def test_remap_drops_incomplete():
-    """映射中任一省份缺失, 整条丢弃."""
+    """If any province in the map is missing, the entire map will be discarded."""
     m = RailwayManager()
     m.add(level=1, province_ids=[1, 2, 3])
-    m.remap_provinces({1: 11, 3: 33})  # 省份 2 不在映射
+    m.remap_provinces({1: 11, 3: 33})  # Province 2 is not mapped
     assert m.count() == 0
 
 

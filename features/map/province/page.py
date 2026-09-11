@@ -1,8 +1,7 @@
-"""province feature 页面 — 独立 QWidget, 不依赖 ToolPanel.
+"""feature province page — independent QWidget, does not depend on ToolPanel.
 
-默认点击 = 查看省份数据
-合并/扩张 需要手动开启，操作完自动关闭回到查看模式。
-"""
+Default click = View province data
+Merge/expansion needs to be turned on manually, and will automatically turn off and return to view mode after the operation."""
 
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QIntValidator
@@ -18,9 +17,9 @@ from ui.styles import (
     _PRIMARY_BTN_STYLE, _SECONDARY_BTN_STYLE, _LINEEDIT_STYLE,
     _TOOL_BTN_STYLE, _SLIDER_STYLE, _SPINBOX_STYLE,
 )
-from ui.i18n import tr, tr_pair
+from ui.i18n import tr
 
-# 模式激活时的按钮样式（醒目橙色）
+# Button style when mode is activated (eye-catching orange)
 _ACTIVE_MODE_BTN_STYLE = """
     QPushButton {
         background: #e67e22;
@@ -36,7 +35,7 @@ _ACTIVE_MODE_BTN_STYLE = """
     }
 """
 
-# 模式激活时的提示样式（橙色背景）
+# Prompt style when mode is activated (orange background)
 _ACTIVE_HINT_STYLE = """
     color: white;
     font-size: 13px;
@@ -53,9 +52,9 @@ _NORMAL_HINT_STYLE = f"color: {_DIM}; font-size: 12px; padding: 8px;"
 
 
 class ProvincePage(QWidget):
-    """省份编辑页面."""
+    """Province editing page."""
 
-    # 输出信号
+    # Output signal
     split_mode_toggled = pyqtSignal(bool)
     lasso_province_toggled = pyqtSignal(bool)
     merge_mode_toggled = pyqtSignal(bool)
@@ -78,7 +77,7 @@ class ProvincePage(QWidget):
         lay.setContentsMargins(8, 8, 8, 8)
         lay.setSpacing(10)
 
-        # ── 省份查找（顶部）──
+        # ──Province search (top)──
         find_row = QHBoxLayout()
         find_row.setSpacing(4)
         find_icon = QLabel("🔍")
@@ -99,13 +98,13 @@ class ProvincePage(QWidget):
         find_row.addWidget(self._find_btn)
         lay.addLayout(find_row)
 
-        # 提示 (动态更新)
+        # Tips (dynamic updates)
         self._province_hint = QLabel(tr("province_hint_default"))
         self._province_hint.setStyleSheet(f"color: {_DIM}; font-size: 12px; padding: 8px;")
         self._province_hint.setWordWrap(True)
         lay.addWidget(self._province_hint)
 
-        # ── 省份信息（单行紧凑） ──
+        # ── Province information (single line compact) ──
         self._prov_info_label = QLabel(tr("province_info_compact_default"))
         self._prov_info_label.setStyleSheet(
             f"color: #aaa; font-size: 11px; padding: 4px 8px;"
@@ -113,7 +112,7 @@ class ProvincePage(QWidget):
         )
         lay.addWidget(self._prov_info_label)
 
-        # ── 省份统计 ──
+        # ── Provincial statistics ──
         self._stats_label = QLabel()
         self._stats_label.setWordWrap(True)
         self._stats_label.setStyleSheet(f"color: {_DIM}; font-size: 12px; padding: 4px 8px;")
@@ -200,7 +199,7 @@ class ProvincePage(QWidget):
         generation_box.layout().addWidget(validate_button)
         lay.addWidget(generation_box)
 
-        # ── 手动画省份（与自动生成共用同一 province_map）──
+        # ── Manually generated provinces (share the same province_map with automatic generation)──
         draw_box = _make_section(tr("province_section_manual_draw"))
 
         ref_row = QHBoxLayout()
@@ -271,7 +270,7 @@ class ProvincePage(QWidget):
         draw_box.layout().addWidget(self._manual_target_label)
         lay.addWidget(draw_box)
 
-        # ── 工具按钮（横排） ──
+        # ── Tool buttons (horizontal) ──
         tools_box = _make_section(tr("province_section_tools"))
         tools_row = QHBoxLayout()
 
@@ -314,16 +313,16 @@ class ProvincePage(QWidget):
         tools_box.layout().addLayout(random_row)
         lay.addWidget(tools_box)
 
-        # ── 信号连接 ──
+        # ── Signal connection ──
         self._merge_btn.toggled.connect(self._on_merge_toggled)
         self._expand_btn.toggled.connect(self._on_expand_toggled)
         self._split_btn.toggled.connect(self._on_split_toggled)
 
         lay.addStretch()
 
-    # ── 槽函数 ──
+    # ── Slot function ──
     def _clear_other_modes(self, *keep: QPushButton) -> None:
-        """关闭除 keep 之外的所有模式按钮。"""
+        """Turn off all mode buttons except keep."""
         for btn in (self._merge_btn, self._expand_btn, self._split_btn):
             if btn not in keep and btn.isChecked():
                 btn.setChecked(False)
@@ -391,24 +390,24 @@ class ProvincePage(QWidget):
         if pid <= 0:
             return
         self.find_province_requested.emit(pid)
-        # 重置输入框红色边框（如果上次查无）
+        # Reset the red border of the input box (if it was not found last time)
         self._find_input.setStyleSheet(_LINEEDIT_STYLE)
 
     def mark_find_not_found(self) -> None:
-        """外部 handler 在 ID 不存在时调用 — 输入框边框变红。"""
+        """The external handler is called when the ID does not exist - the input box border turns red."""
         self._find_input.setStyleSheet(
             _LINEEDIT_STYLE + "QLineEdit { border: 1px solid #ef4444; }"
         )
 
     def _update_mode_visuals(self) -> None:
-        """根据当前激活模式更新按钮样式和提示条。"""
+        """Update button styles and tooltips based on the current activation mode."""
         merging = self._merge_btn.isChecked()
         expanding = self._expand_btn.isChecked()
         splitting = self._split_btn.isChecked()
         painting = self._paint_brush_btn.isChecked()
         filling = self._paint_fill_btn.isChecked()
 
-        # 按钮样式：激活时变橙色
+        # Button style: turns orange when activated
         for btn, active in [
             (self._merge_btn, merging),
             (self._expand_btn, expanding),
@@ -416,7 +415,7 @@ class ProvincePage(QWidget):
         ]:
             btn.setStyleSheet(_ACTIVE_MODE_BTN_STYLE if active else _SECONDARY_BTN_STYLE)
 
-        # 提示条
+        # Prompt bar
         if merging:
             self._province_hint.setText(tr("province_hint_merge"))
             self._province_hint.setStyleSheet(_ACTIVE_HINT_STYLE)
@@ -436,11 +435,11 @@ class ProvincePage(QWidget):
             self._province_hint.setText(tr("province_hint_default"))
             self._province_hint.setStyleSheet(_NORMAL_HINT_STYLE)
 
-    # ── 公共更新方法 ──
+    # ── Public update method ──
     def update_province_info(
         self, pid: int, ptype: str, terrain: str, pixels: int, coastal: bool
     ) -> None:
-        """更新省份信息面板（单行紧凑格式，加字段标签）"""
+        """Update province information panel (single-line compact format, plus field labels)"""
         parts = [
             f"ID: {pid}",
             f"{tr('province_info_type')}: {ptype}",
@@ -462,7 +461,7 @@ class ProvincePage(QWidget):
             self._manual_target_label.setText(tr("province_target_selected", pid=pid))
 
     def update_province_gaps(self, gap_ids: list[int]) -> None:
-        """更新省份 ID 空洞提示。"""
+        """Updated province ID hole prompts."""
         if not gap_ids:
             self._stats_label.setText("")
             self._stats_label.setStyleSheet(f"color: {_DIM}; font-size: 12px; padding: 4px 8px;")
@@ -471,13 +470,10 @@ class ProvincePage(QWidget):
         if len(gap_ids) <= 10:
             ids_str = ", ".join(str(i) for i in gap_ids)
         else:
-            ids_str = ", ".join(str(i) for i in gap_ids[:10]) + tr_pair(f" ... 共 {len(gap_ids)} 个", f" ... {len(gap_ids)} total")
+            ids_str = ", ".join(str(i) for i in gap_ids[:10]) + f" ... {len(gap_ids)} total"
 
         self._stats_label.setText(
-            tr_pair(
-                f"缺失省份 ID: {ids_str}\n需要用切割或增量生成补回",
-                f"Missing province IDs: {ids_str}\nRestore them by splitting or incremental generation",
-            )
+            f"Missing province IDs: {ids_str}\nRestore them by splitting or incremental generation"
         )
         self._stats_label.setStyleSheet(
             "color: #f59e0b; font-size: 12px; font-weight: bold; padding: 8px;"

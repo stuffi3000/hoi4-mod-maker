@@ -1,14 +1,12 @@
-"""
-common/defines/01_mod_defines.lua 写入器.
+"""common/defines/01_mod_defines.lua writer.
 
-全转换 MOD 必须覆盖部分 NDefines，否则 AI 在非标准地图上除零崩溃。
-主要问题：
-- 空军 AI 用 (像素数 * 系数) 做除数，战略区域过小时除零
-- 海军 AI 尝试登陆/巡逻不存在的区域
-- 补给系统引用不匹配的省份数
+Full conversion mods must cover some NDefines, otherwise the AI crashes on divide-by-zero on non-standard maps.
+Main questions:
+- The Air Force AI uses (number of pixels * coefficient) as a divisor, and the strategic area is divided by zero if it is too small
+- Naval AI attempts to land/patrol areas that don't exist
+- Supply system references mismatched province numbers
 
-策略：保守覆盖，只改会崩的参数，不改游戏平衡。
-"""
+Strategy: Conservative coverage, only changing the parameters that will crash, not changing the game balance."""
 
 from __future__ import annotations
 
@@ -16,7 +14,7 @@ import os
 
 
 def write_defines_lua(output_dir: str, province_count: int = 0) -> None:
-    """生成 common/defines/01_mod_defines.lua。"""
+    """Generate common/defines/01_mod_defines.lua."""
     d = os.path.join(output_dir, "common", "defines")
     os.makedirs(d, exist_ok=True)
     path = os.path.join(d, "01_mod_defines.lua")

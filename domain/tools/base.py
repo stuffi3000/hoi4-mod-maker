@@ -1,6 +1,4 @@
-"""
-Tool 基类 + ToolContext + CleanupLevel 枚举
-"""
+"""Tool base class + ToolContext + CleanupLevel enumeration"""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -13,17 +11,16 @@ if TYPE_CHECKING:
 
 
 class CleanupLevel(Enum):
-    """工具完成一次操作后要做的清理级别。
+    """The level of cleanup to be done after the tool completes an operation.
 
-    - NONE: 不做任何清理（拖动中实时操作）
-    - FAST: 仅在受影响 bbox 内做轻量修复（X-crossing 局部修）
-    - FULL: 全图清理（X-crossing 修复 + 不连通修复 + ID 压实）
+    - NONE: No cleaning is done (real-time operation during dragging)
+    - FAST: Only make light repairs in the affected bbox (X-crossing partial repair)
+    - FULL: Full image cleaning (X-crossing repair + disconnection repair + ID compaction)
 
-    一般规则：
-    - 拖动中（drag）→ NONE
-    - 单步操作末尾（release）→ FAST
-    - 导出前 / 手动触发 → FULL
-    """
+    General rules:
+    - Dragging → NONE
+    - End of single step operation (release) → FAST
+    - Before export/manual trigger → FULL"""
     NONE = "none"
     FAST = "fast"
     FULL = "full"
@@ -31,35 +28,34 @@ class CleanupLevel(Enum):
 
 @dataclass
 class ToolContext:
-    """工具操作时的共享上下文。
+    """The shared context in which the tool operates.
 
-    工具不直接访问 canvas / main_window，所有需要的对象通过 ctx 拿。
-    canvas 在调用工具时构造 ctx 并传入。
-    """
+    The tool does not directly access canvas/main_window, all required objects are obtained through ctx.
+    canvas is constructed and passed in ctx when calling the tool."""
     map_data: "MapData"
     undo_mgr: "UndoManager"
 
-    # 引用更新需要的管理器（压实 ID 时同步 state/country 的省份引用）
+    # Reference to the manager required for update (synchronize the province reference of state/country when compacting the ID)
     state_mgr: object = None
     country_mgr: object = None
 
-    # 当前选中状态（被多个工具共享）
+    # Currently selected state (shared by multiple tools)
     selected_province_id: int = 0
     selected_state_id: int = 0
     selected_country_tag: str = ""
 
-    # 当前操作的元数据
+    # Metadata for the current operation
     brush_size: int = 10
     display_mode: str = "land"
 
-    # 工具状态机用的临时数据（每个工具自己 push/pop）
+    # Temporary data used by tool state machines (each tool’s own push/pop)
     state: dict[str, Any] = field(default_factory=dict)
 
-    # 标记本次操作影响的 bbox（用于 FAST 清理）
+    # Mark the bbox affected by this operation (for FAST cleaning)
     dirty_bbox: tuple[int, int, int, int] | None = None  # (x0, y0, x1, y1)
 
     def expand_dirty(self, x: int, y: int) -> None:
-        """把 (x, y) 加入受影响范围。"""
+        """Add (x, y) to the affected range."""
         if self.dirty_bbox is None:
             self.dirty_bbox = (x, y, x + 1, y + 1)
         else:
@@ -71,50 +67,49 @@ class ToolContext:
 
 
 class Tool:
-    """所有编辑工具的基类。
+    """Base class for all editing tools.
 
-    子类必须设置类属性：
-        name: 唯一标识符（"lasso_province", "land_brush"...）
-        display_modes: 在哪些 display_mode 下激活（["province"]）
-        cleanup_level: 操作完成后清理级别
+    Subclasses must set class attributes:
+        name: unique identifier ("lasso_province", "land_brush"...)
+        display_modes: under which display_modes are activated (["province"])
+        cleanup_level: Cleanup level after the operation is completed
 
-    可选实现：
-        on_press / on_drag / on_release
-        get_undo_array_names: 这个工具影响哪些 numpy 数组
-    """
+    Optional implementation:
+        on_press/on_drag/on_release
+        get_undo_array_names: which numpy arrays this tool affects"""
 
     name: str = ""
     display_modes: tuple[str, ...] = ()
     cleanup_level: CleanupLevel = CleanupLevel.NONE
     cursor: str = "cross"
-    label: str = ""  # 按钮显示文字
-    description: str = ""  # 状态栏提示
+    label: str = ""  # Button display text
+    description: str = ""  # Status bar prompt
 
     def get_undo_array_names(self, ctx: ToolContext) -> list[str]:
-        """这个工具影响哪些数组。默认空——必须由子类指定。"""
+        """Which arrays this tool affects. Default empty - must be specified by subclass."""
         return []
 
     def on_press(self, ctx: ToolContext, x: int, y: int) -> None:
-        """鼠标按下。"""
+        """Mouse pressed."""
         pass
 
     def on_drag(self, ctx: ToolContext, x: int, y: int) -> None:
-        """鼠标拖动（按下后移动）。"""
+        """Mouse drag (move after pressing)."""
         pass
 
     def on_release(self, ctx: ToolContext, x: int, y: int) -> None:
-        """鼠标松开。子类不需要调清理函数——框架会根据 cleanup_level 自动调。"""
+        """Release the mouse. Subclasses do not need to adjust the cleanup function - the framework will automatically adjust it based on cleanup_level."""
         pass
 
     def on_cancel(self, ctx: ToolContext) -> None:
-        """操作被取消（ESC 或切换工具）。"""
+        """The operation was canceled (ESC or tool switch)."""
         ctx.state.clear()
         ctx.dirty_bbox = None
 
-    # ───── 框架辅助方法 ─────
+    # ───── Framework helper methods ─────
 
     def begin_undo(self, ctx: ToolContext) -> None:
-        """开始记录撤销快照。框架会在 on_press 前调用。"""
+        """Start recording undo snapshot. The framework will be called before on_press."""
         names = self.get_undo_array_names(ctx)
         if not names:
             return
@@ -122,7 +117,7 @@ class Tool:
         ctx.undo_mgr.begin_stroke(self.name, arrays)
 
     def end_undo(self, ctx: ToolContext) -> None:
-        """结束撤销快照并入栈。框架会在清理后调用。"""
+        """End the undo snapshot and push it onto the stack. The framework will be called after cleanup."""
         names = self.get_undo_array_names(ctx)
         if not names:
             return
@@ -130,7 +125,7 @@ class Tool:
         ctx.undo_mgr.end_stroke(arrays)
 
     def run_cleanup(self, ctx: ToolContext) -> None:
-        """根据 cleanup_level 执行清理。框架在 on_release 后自动调。"""
+        """Perform cleanup based on cleanup_level. The framework is automatically adjusted after on_release."""
         if self.cleanup_level == CleanupLevel.NONE:
             return
         if self.cleanup_level == CleanupLevel.FULL:
@@ -140,14 +135,14 @@ class Tool:
                 if fix_x_crossings(ctx.map_data.province_map) == 0:
                     break
             _fix_non_contiguous_fast(ctx.map_data.province_map)
-            # 不压实 ID — 保留空洞供切割填补，导出时自动处理
+            # No compaction of ID - retain holes for cutting and filling, automatically processed during export
         elif self.cleanup_level == CleanupLevel.FAST:
-            # 仅在 dirty_bbox 内修 X-crossing
+            # Fix X-crossing only in dirty_bbox
             from domain.validators.province import fix_x_crossings
             if ctx.dirty_bbox is None:
                 return
             x0, y0, x1, y1 = ctx.dirty_bbox
-            # 留 2 像素 margin 防止边缘漏检
+            # Leave 2 pixels margin to prevent edge detection
             from data.constants import MAP_WIDTH, MAP_HEIGHT
             x0 = max(0, x0 - 2); y0 = max(0, y0 - 2)
             x1 = min(MAP_WIDTH, x1 + 2); y1 = min(MAP_HEIGHT, y1 + 2)

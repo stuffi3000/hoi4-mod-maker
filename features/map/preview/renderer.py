@@ -1,16 +1,14 @@
-"""
-预览渲染器 — 合成游戏观感画面写入画布显示缓冲。
+"""Preview Renderer — Synthesizes the look and feel of the game and writes it to the canvas display buffer.
 
-约定 (views/canvas/render_registry.py):
-- 本模块刻意**不提供 partial_render**: 预览是整图合成, 局部刷新无意义,
-  画布派发会自动回退全量渲染。
-- 合成结果缓存在 canvas._preview_cache (H, W, 3 RGB uint8);
-  invalidate_cache() 清缓存, 下次 render 重新合成 —
-  预览页的"刷新预览"按钮走这条路。
+Convention (views/canvas/render_registry.py):
+- This module deliberately does not provide partial_render: the preview is a composite of the whole image, and partial refresh is meaningless.
+  Canvas dispatch will automatically fall back to full rendering.
+- The synthesis results are cached in canvas._preview_cache (H, W, 3 RGB uint8);
+  invalidate_cache() clears the cache and resynthesizes the next render —
+  The "Refresh Preview" button on the preview page goes this way.
 
-游戏资产不可用时降级为大陆视图, 原因存到 canvas._preview_error
-供侧栏页面显示。
-"""
+When the game assets are unavailable, it is downgraded to the mainland view, and the reason is saved to canvas._preview_error
+For display on sidebar pages."""
 
 from __future__ import annotations
 
@@ -18,7 +16,7 @@ from services.game_assets import get_default_assets
 
 
 def invalidate_cache(canvas) -> None:
-    """清掉合成缓存, 下次渲染重新合成。"""
+    """Clear the synthesis cache and re-synthesize the next rendering."""
     canvas._preview_cache = None
     canvas._preview_political_cache = None
     canvas._preview_night_cache = None
@@ -26,7 +24,7 @@ def invalidate_cache(canvas) -> None:
 
 
 def render(canvas) -> None:
-    """全量渲染: 有缓存直接贴, 无缓存先合成。"""
+    """Full rendering: Paste directly if there is cache, synthesize first if there is no cache."""
     cache = getattr(canvas, "_preview_cache", None)
     if cache is None or cache.shape[:2] != canvas._tile_map.shape:
         cache = _compose(canvas)
@@ -34,12 +32,12 @@ def render(canvas) -> None:
         canvas._preview_political_cache = None
 
     if cache is None:
-        # 游戏资产不可用 → 降级大陆视图 (原因已写入 canvas._preview_error)
+        # Game assets are unavailable → downgrade continent view (the reason has been written to canvas._preview_error)
         from features.map.land.renderer import render as land_render
         land_render(canvas)
         return
 
-    # 政治视图开关: 底图上叠国家势力色 (结果单独缓存)
+    # Political view switch: Overlay national power colors on the base map (results are cached separately)
     if getattr(canvas, "_preview_political", False):
         pcache = getattr(canvas, "_preview_political_cache", None)
         if pcache is None or pcache.shape[:2] != cache.shape[:2]:
@@ -52,8 +50,8 @@ def render(canvas) -> None:
             canvas._preview_political_cache = pcache
         cache = pcache
 
-    # 夜景开关: 压暗 + urban 城市灯光 (以底图对象为缓存源,
-    # 政治视图开/关换了底图会自动重算)
+    # Night scene switch: darken + urban city lights (use the basemap object as the cache source,
+    # If the political view is turned on/off and the base map is changed, it will be automatically recalculated)
     if getattr(canvas, "_preview_night", False):
         ncache = getattr(canvas, "_preview_night_cache", None)
         if ncache is None or getattr(canvas, "_preview_night_src", None) is not cache:
@@ -63,7 +61,7 @@ def render(canvas) -> None:
             canvas._preview_night_src = cache
         cache = ncache
 
-    # RGB → 显示缓冲 (BGRA)
+    # RGB → display buffer (BGRA)
     buf = canvas._display_buffer
     buf[:, :, 0] = cache[:, :, 2]
     buf[:, :, 1] = cache[:, :, 1]
@@ -72,13 +70,12 @@ def render(canvas) -> None:
 
 
 def _compose(canvas):
-    """用当前地图数据 + 游戏贴图合成, 失败返回 None。"""
+    """Composite using current map data + game texture, returning None on failure."""
     assets = get_default_assets()
     tiles = assets.atlas_tiles()
     mapping = assets.terrain_to_texture()
     if tiles is None or mapping is None:
-        from ui.i18n import tr_pair
-        canvas._preview_error = assets.last_error or tr_pair("未找到 HOI4 安装目录", "HOI4 installation directory was not found")
+        canvas._preview_error = assets.last_error or "HOI4 installation directory was not found"
         return None
     canvas._preview_error = ""
 

@@ -1,6 +1,4 @@
-"""
-AdjacencyRuleManager 单元测试.
-"""
+"""AdjacencyRuleManager unit test."""
 
 import pytest
 
@@ -11,7 +9,7 @@ from domain.managers.adjacency_rule import (
 
 def test_default_rule_friend_passes_neutral_passes():
     r = AdjacencyRule(name="TEST")
-    # 默认 friend 和 neutral 全部 yes
+    # Default friend and neutral are all yes
     for p in ALL_PASS_TYPES:
         assert r.friend[p] is True
         assert r.neutral[p] is True
@@ -85,8 +83,8 @@ def test_serialize_roundtrip():
     m.add(AdjacencyRule(
         name="SUEZ", required_provinces=[1, 2, 3], icon_province=5,
     ))
-    # 改一些 friend/enemy 设置
-    m.get("SUEZ").enemy["army"] = True  # 通常 enemy 全 no, 改一个验证序列化
+    # Change some friend/enemy settings
+    m.get("SUEZ").enemy["army"] = True  # Usually enemy is all no, change it to a verification serialization
     data = m.to_dict()
 
     m2 = AdjacencyRuleManager()

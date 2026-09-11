@@ -1,6 +1,4 @@
-"""
-services/* 测试.
-"""
+"""services/* tests."""
 
 import numpy as np
 import pytest
@@ -29,7 +27,7 @@ def test_terrain_service_auto_terrain():
     ], dtype=np.uint8)
     terrain = auto_terrain(tm)
     assert terrain.shape == tm.shape
-    # 陆地像素的 terrain 值必须是 DEFAULT_TERRAIN_FOR_TILE[LAND] 对应的调色板索引
+    # The terrain value for land pixels must be the palette index corresponding to DEFAULT_TERRAIN_FOR_TILE[LAND]
     expected_land = TERRAIN_PALETTE_INDEX[DEFAULT_TERRAIN_FOR_TILE[TILE_LAND]]
     assert terrain[0, 0] == expected_land
 
@@ -46,7 +44,7 @@ def test_terrain_service_auto_height_range():
     assert hm.dtype == np.uint8
     assert hm.min() >= 0
     assert hm.max() <= 255
-    # 陆地中心高度应该 > sea level
+    # Land center height should be > sea level
     mid_y, mid_x = MAP_HEIGHT // 2, MAP_WIDTH // 2
     assert hm[mid_y, mid_x] > SEA_LEVEL
 
@@ -97,7 +95,7 @@ def test_export_service_validate_missing_owner():
 
 
 def test_export_service_validate_river_issues():
-    """河流缺源头 → 预检警告; 河流合法 → 无河流警告。"""
+    """The river lacks source → pre-clearance warning; the river is legal → no river warning."""
     from services.export_service import validate_before_export
     from domain.managers.state import StateManager
     from domain.managers.country import CountryManager
@@ -107,12 +105,12 @@ def test_export_service_validate_river_issues():
         river_map = np.full((10, 10), 255, dtype=np.uint8)
 
     canvas = _FakeCanvas()
-    canvas.river_map[5, 2:8] = 3  # 一段河, 没放源头标记
+    canvas.river_map[5, 2:8] = 3  # A section of river without source markers
 
     warnings = validate_before_export(canvas, StateManager(), CountryManager())
     assert any("river" in w.lower() and "source" in w.lower() for w in warnings)
 
-    canvas.river_map[5, 2] = 0  # 补上源头
+    canvas.river_map[5, 2] = 0  # Make up for the source
     warnings = validate_before_export(canvas, StateManager(), CountryManager())
     assert not any(
         w.startswith("River:") and "validation passed" not in w.lower()
@@ -120,10 +118,10 @@ def test_export_service_validate_river_issues():
     )
 
 
-# ────────── state ↔ 战略区对齐 (pre_export_check_and_fix 5.4/5.6) ──────────
+# ────────── state ↔ strategic area alignment (pre_export_check_and_fix 5.4/5.6) ──────────
 
 def _make_align_fixture(province_map, tile_map, state_provs, region_provs):
-    """构造 state/country/strategic_region 三个 manager."""
+    """Construct three managers of state/country/strategic_region."""
     from domain.managers.state import StateManager
     from domain.managers.country import CountryManager
     from domain.managers.strategic_region import StrategicRegionManager
@@ -141,11 +139,11 @@ def _make_align_fixture(province_map, tile_map, state_provs, region_provs):
 
 
 def test_pre_export_aligns_split_state_to_one_region():
-    """连通的 state 被两个战略区切开 → 自动归并到同一个战略区."""
+    """The connected state is divided by two strategic areas → automatically merged into the same strategic area."""
     from services.export_service import pre_export_check_and_fix
     from data.constants import TILE_LAND
 
-    # 省份 1 (左半) + 省份 2 (右半), 全陆地, 同属 state 1
+    # Province 1 (left half) + Province 2 (right half), all land, both belong to state 1
     pm = np.ones((6, 6), dtype=np.int32)
     pm[:, 3:] = 2
     tm = np.full((6, 6), TILE_LAND, dtype=np.uint8)
@@ -158,17 +156,17 @@ def test_pre_export_aligns_split_state_to_one_region():
     r1 = sr_mgr.get_region_of_province(1)
     r2 = sr_mgr.get_region_of_province(2)
     assert r1 == r2 and r1 != 0
-    assert sr_mgr.count() == 1  # 被挪空的战略区已删除
+    assert sr_mgr.count() == 1  # The vacated strategic area has been deleted
     assert any("strategic-region" in f for f in report.fixed)
     assert not any("exclave" in w for w in report.warnings)
 
 
 def test_pre_export_enclave_state_warns():
-    """state 本身不连通(隔海两块) → 无法归并, 只发警告不动数据."""
+    """The state itself is not connected (two blocks across the sea) → cannot be merged, only a warning is issued and the data is not moved."""
     from services.export_service import pre_export_check_and_fix
     from data.constants import TILE_LAND, TILE_SEA
 
-    # 省份 1 (左岛) | 省份 3 (海) | 省份 2 (右岛), state 1 = [1, 2]
+    # Province 1 (left island) | Province 3 (sea) | Province 2 (right island), state 1 = [1, 2]
     pm = np.ones((5, 7), dtype=np.int32)
     pm[:, 2:5] = 3
     pm[:, 5:] = 2
@@ -180,20 +178,20 @@ def test_pre_export_enclave_state_warns():
     report = pre_export_check_and_fix(tm, pm, None, state_mgr, country_mgr,
                                       strategic_region_mgr=sr_mgr)
 
-    # 两块地各留原区, 不许被硬拉到一起 (会造出不连通的战略区)
+    # Each of the two pieces of land should keep its original area and cannot be forcibly pulled together (it will create disconnected strategic areas)
     assert sr_mgr.get_region_of_province(1) != sr_mgr.get_region_of_province(2)
     assert any("exclave" in w for w in report.warnings)
 
 
 def test_pre_export_pulls_unassigned_province_into_state_region():
-    """state 里有省份没分配战略区 → 跟随本州其他省份进同一战略区."""
+    """There are provinces in the state but no strategic areas are allocated → Follow other provinces in the state to enter the same strategic area."""
     from services.export_service import pre_export_check_and_fix
     from data.constants import TILE_LAND
 
     pm = np.ones((6, 6), dtype=np.int32)
     pm[:, 3:] = 2
     tm = np.full((6, 6), TILE_LAND, dtype=np.uint8)
-    # 省份 2 未分配任何战略区
+    # Province 2 has no strategic areas assigned to it
     state_mgr, country_mgr, sr_mgr = _make_align_fixture(
         pm, tm, state_provs=[[1, 2]], region_provs=[[1]])
 

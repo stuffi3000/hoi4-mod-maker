@@ -1,9 +1,8 @@
-"""胜利点对话框 — 数值 + 城市名一次填完.
+"""Victory point dialog box — numerical value + city name are filled in at once.
 
-效果: 设置省份的胜利点数值(0 = 移除)和城市名字;
-     名字显示在地图红点旁, 导出后就是游戏地图上的城市名.
-调用: ask_vp(parent, pid, cur_vp, cur_name) → (value, name, ok)
-"""
+Effect: Sets the province's victory point value (0 = removed) and city name;
+     The name is displayed next to the red dot on the map, and after exporting it is the city name on the game map.
+Call: ask_vp(parent, pid, cur_vp, cur_name) → (value, name, ok)"""
 from __future__ import annotations
 
 from PyQt5.QtWidgets import (
@@ -19,7 +18,7 @@ def ask_vp(
     cur_vp: int = 0,
     cur_name: str = "",
 ) -> tuple[int, str, bool]:
-    """弹出 VP 设置对话框, 返回 (数值, 城市名, 是否确认)。"""
+    """The VP setting dialog box pops up and returns (value, city name, confirmation or not)."""
     dlg = QDialog(parent)
     dlg.setWindowTitle(tr("dlg_vp_title_fmt", pid))
     form = QFormLayout(dlg)

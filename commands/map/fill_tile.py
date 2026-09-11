@@ -1,8 +1,6 @@
-"""
-FillTileCommand — 洪水填充 tile_map。
+"""FillTileCommand — Flood fill tile_map.
 
-使用 numpy bool mask 标记受影响区域，存储旧值 delta。
-"""
+Use a numpy bool mask to mark the affected area, storing the old value delta."""
 
 from __future__ import annotations
 
@@ -13,9 +11,9 @@ from domain.map_data import MapData
 
 
 class FillTileCommand(Command):
-    """洪水填充 tile_map。"""
+    """Flood fills tile_map."""
 
-    label = "填充地块"
+    label = "Fill tiles"
 
     def __init__(
         self,
@@ -23,25 +21,23 @@ class FillTileCommand(Command):
         fill_mask: np.ndarray,
         fill_value: int,
     ) -> None:
-        """
-        参数:
-            map_data: 地图数据对象
-            fill_mask: bool 数组，True 的像素会被填充
-            fill_value: 填充值
-        """
+        """Parameters:
+            map_data: map data object
+            fill_mask: bool array, True pixels will be filled
+            fill_value: fill value"""
         self._map_data = map_data
         self._fill_mask = fill_mask.copy()
         self._fill_value = fill_value
-        # 只存被改变的旧值（压缩存储）
+        # Only store old values that have been changed (compressed storage)
         self._old_values: np.ndarray | None = None
 
     def execute(self) -> None:
-        """保存 mask 区域旧值，写入填充值。"""
+        """Save the old value of the mask area and write the fill value."""
         tile_map = self._map_data.tile_map
         self._old_values = tile_map[self._fill_mask].copy()
         tile_map[self._fill_mask] = self._fill_value
 
     def undo(self) -> None:
-        """恢复 mask 区域的旧值。"""
+        """Restore the old value of the mask area."""
         if self._old_values is not None:
             self._map_data.tile_map[self._fill_mask] = self._old_values

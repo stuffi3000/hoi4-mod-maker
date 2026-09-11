@@ -1,27 +1,25 @@
-"""
-LassoProvinceTool (省份扩张) 行为测试.
+"""LassoProvinceTool (province expansion) behavioral test.
 
-验证 2026-04-09 修正:
-- 松开鼠标后 active 必须变 False
-- 下次点击同一省份应重新走 Case 2 (激活 + 画第一笔)
-- 单次 stroke 不能跨越当前 allowed_mask
-"""
+Verification 2026-04-09 Correction:
+- active must change to False after releasing the mouse
+- Next time you click on the same province, you should go to Case 2 again (activate + draw the first stroke)
+- A single stroke cannot span the current allowed_mask"""
 
 import numpy as np
 import pytest
 
 
 def _make_ctx_with_map():
-    """构造一个最小 MapData + ToolContext, 用来驱动 LassoProvinceTool."""
+    """Construct a minimal MapData + ToolContext to drive LassoProvinceTool."""
     from domain.map_data import MapData
     from domain.tools.base import ToolContext
     from data.constants import TILE_LAND
 
-    # 10x10 全陆地, 3 省份: 1 占左半, 2 占右半, 3 在角落
+    # 10x10 full land, 3 provinces: 1 on the left half, 2 on the right half, 3 in the corners
     pm = np.zeros((10, 10), dtype=np.int32)
     pm[:, :5] = 1
     pm[:, 5:] = 2
-    pm[0:2, 0:2] = 3  # 角落一小块
+    pm[0:2, 0:2] = 3  # A small piece in the corner
     tm = np.full((10, 10), TILE_LAND, dtype=np.uint8)
 
     md = MapData.__new__(MapData)
@@ -36,44 +34,44 @@ def _make_ctx_with_map():
 
 
 def test_release_deactivates_expand_mode():
-    """松开鼠标后 active 应为 False, 防止继续扩张到新邻居."""
+    """active should be False after releasing the mouse to prevent further expansion to new neighbors."""
     from domain.tools.lasso_province import LassoProvinceTool
     tool = LassoProvinceTool()
     ctx = _make_ctx_with_map()
 
-    # 第一次点击省份 1 (位置 5, 5 是 2 号省, 我们点 3,3 应该是 1 号省)
+    # Click province 1 for the first time (position 5, 5 is province 2, we click 3, 3 should be province 1)
     tool.on_press(ctx, 3, 3)
     assert ctx.state.get("pid") == 1
     assert ctx.state.get("active") is False
 
-    # 第二次点击同省进入扩张
+    # Click the same province for the second time to enter the expansion
     tool.on_press(ctx, 3, 3)
     assert ctx.state.get("active") is True
     assert ctx.state.get("painting") is True
 
-    # 拖动几下
+    # Drag a few times
     tool.on_drag(ctx, 4, 4)
 
-    # 松开 → active 必须变 False
+    # Release → active must become False
     tool.on_release(ctx, 4, 4)
     assert ctx.state.get("painting") is False
     assert ctx.state.get("active") is False, (
-        "松开后 active 必须 False, 否则一次拖拽能吃整条大陆"
+        "active must be False after release; otherwise one drag can consume the whole landmass"
     )
 
 
 def test_next_press_on_same_province_reactivates():
-    """松开后再次点击同一省份, 应走 Case 2 重新激活 (而非 Case 3 继续画)."""
+    """If you click on the same province again after releasing it, you should go to Case 2 to reactivate (instead of Case 3 to continue drawing)."""
     from domain.tools.lasso_province import LassoProvinceTool
     tool = LassoProvinceTool()
     ctx = _make_ctx_with_map()
 
-    tool.on_press(ctx, 3, 3)   # Case 1: 选中
-    tool.on_press(ctx, 3, 3)   # Case 2: 激活
+    tool.on_press(ctx, 3, 3)   # Case 1: Selected
+    tool.on_press(ctx, 3, 3)   # Case 2: Activation
     tool.on_release(ctx, 3, 3)
     assert not ctx.state.get("active")
 
-    # 下一次点击同一省份应该再次激活 (Case 2), 不是继续 (Case 3)
+    # The next click on the same province should activate again (Case 2), not continue (Case 3)
     tool.on_press(ctx, 3, 3)
     assert ctx.state.get("active") is True
     assert ctx.state.get("painting") is True

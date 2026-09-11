@@ -1,10 +1,8 @@
-"""
-预览页 — 侧栏面板: 刷新按钮 + 游戏目录状态。
+"""Preview page - sidebar panel: refresh button + game directory status.
 
-页面只发信号, 不直接碰画布 (与其他 page 一致):
-- refresh_requested: 用户点了"刷新预览"
-- game_dir_changed(str): 用户选择了新的游戏目录
-"""
+The page only sends signals and does not touch the canvas directly (consistent with other pages):
+- refresh_requested: The user clicked "Refresh Preview"
+- game_dir_changed(str): The user selected a new game directory"""
 
 from __future__ import annotations
 
@@ -51,7 +49,7 @@ class PreviewPage(QWidget):
         hint.setStyleSheet(f"color: {_DIM}; font-size: 11px;")
         layout.addWidget(hint)
 
-        # 政治视图: 底图上叠加国家势力色 (需要先建国家并分配领土)
+        # Political view: National power color is superimposed on the base map (need to build a country and allocate territory first)
         self._political_chk = QCheckBox(tr("preview_political_label"))
         self._political_chk.toggled.connect(self.political_toggled.emit)
         layout.addWidget(self._political_chk)
@@ -60,7 +58,7 @@ class PreviewPage(QWidget):
         political_hint.setStyleSheet(f"color: {_DIM}; font-size: 11px;")
         layout.addWidget(political_hint)
 
-        # 夜景: 压暗底图 + urban 地形处点亮城市灯光
+        # Night scene: Dark base map + urban terrain with city lights on
         self._night_chk = QCheckBox(tr("preview_night_label"))
         self._night_chk.toggled.connect(self.night_toggled.emit)
         layout.addWidget(self._night_chk)
@@ -69,7 +67,7 @@ class PreviewPage(QWidget):
         night_hint.setStyleSheet(f"color: {_DIM}; font-size: 11px;")
         layout.addWidget(night_hint)
 
-        # ── 游戏目录状态 ──
+        # ── Game directory status ──
         dir_title = QLabel(tr("preview_game_dir_title"))
         dir_title.setStyleSheet(_SECTION_STYLE)
         layout.addWidget(dir_title)
@@ -87,7 +85,7 @@ class PreviewPage(QWidget):
         self.refresh_dir_status()
 
     def refresh_dir_status(self) -> None:
-        """更新游戏目录状态显示。"""
+        """Updated game directory status display."""
         assets = get_default_assets()
         if assets.available():
             self._dir_label.setText(

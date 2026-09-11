@@ -1,12 +1,10 @@
-"""
-大陆分区 feature - 多洲定义 + 省份指派.
-"""
+"""Continental partition feature - multi-continent definition + province assignment."""
 
 from features.base import BaseFeature
 
 
 class ContinentFeature(BaseFeature):
     id = "map.continent"
-    display_name = "大陆分区"
+    display_name = "Continents"
     category = "map"
-    # 1.0 已实现, page/renderer 在同目录
+    # 1.0 has been implemented, page/renderer is in the same directory

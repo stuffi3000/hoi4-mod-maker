@@ -1,8 +1,6 @@
-"""
-game_assets 测试 — 映射表解析 / 图集切片 / 缺失降级。
+"""game_assets test - map parsing / atlas slicing / missing degradation.
 
-真实游戏文件不进 CI: 集成测试仅在本机存在 HOI4 安装时运行。
-"""
+Real game files are not included in CI: Integration tests are only run if there is a HOI4 installation on the machine."""
 
 import json
 import os
@@ -19,7 +17,7 @@ from services.game_assets import (
 from data.constants import DEFAULT_HOI4_PATH
 
 
-# ═══════ 映射表解析 ═══════
+# ═══════ Mapping table analysis ═══════
 
 SAMPLE = """
 categories =  {
@@ -41,7 +39,7 @@ categories =  {
 terrain = {
     terrain_0   = { type = plains  color = { 	0	 } texture = 1 }
     desert      = { type = desert  color = { 3 } texture = 9 }
-    multi       = { type = plains  color = { 20 21 } texture = 7 }  # 多索引
+    multi       = { type = plains  color = { 20 21 } texture = 7 }  # multiple indices
     lake_14     = { type = lakes   color = { 14 } texture = 255 }
     ocean_15    = { type = ocean   color = { 15 } texture = 9 }
     city        = { type = urban   color = { 13 } texture = 10 spawn_city = yes }
@@ -50,7 +48,7 @@ terrain = {
 
 
 def test_parse_graphical_terrain_captures_type():
-    """每个图形地形条目带回 type, 跨条目不会串。"""
+    """Each graphical terrain entry brings back type, which does not string across entries."""
     entries = parse_graphical_terrain(SAMPLE)
     by_texture = {e["texture"]: e["type"] for e in entries}
     assert by_texture[1] == "plains"
@@ -59,35 +57,35 @@ def test_parse_graphical_terrain_captures_type():
 
 
 def test_parse_water_palette_indices():
-    """ocean/lakes 类型的调色板索引被识别为水体。"""
+    """Palette indexes of type ocean/lakes are recognized as water bodies."""
     assert parse_water_palette_indices(SAMPLE) == {14, 15}
 
 
 def test_parse_graphical_terrain_entries():
-    """图形地形条目被解析, 多索引共享同一瓦片号。"""
+    """Graphical terrain entries are parsed, with multiple indexes sharing the same tile number."""
     mapping = parse_terrain_to_texture(SAMPLE)
     assert mapping[0] == 1
     assert mapping[3] == 9
     assert mapping[20] == 7
     assert mapping[21] == 7
     assert mapping[13] == 10
-    assert mapping[14] == 255  # 湖泊原样保留
+    assert mapping[14] == 255  # The lake remains intact
 
 
 def test_parse_ignores_categories_block():
-    """categories 块的 RGB color (无 texture) 不会被误认成调色板索引。"""
+    """RGB color (without texture) of the categories block is not mistaken for a palette index."""
     mapping = parse_terrain_to_texture(SAMPLE)
-    # unknown 的 color = {255 0 0} 若被误解析, 索引 255 会出现在映射里
+    # unknown's color = {255 0 0} If misparsed, index 255 will appear in the mapping
     assert 255 not in mapping
-    assert 89 not in mapping  # forest 类别的 RGB 同理
+    assert 89 not in mapping  # The same goes for RGB of the forest category.
 
 
-# ═══════ 图集切片 ═══════
+# ═══════ Gallery slice ═══════
 
 def test_slice_atlas_row_major_order():
-    """8×8 图集按 4×4 网格切成 16 个 2×2 瓦片, 行优先排列。"""
+    """The 8×8 atlas is cut into 16 2×2 tiles on a 4×4 grid, arranged row-first."""
     atlas = np.zeros((8, 8, 4), dtype=np.uint8)
-    # 每个瓦片填充自己的行优先编号
+    # Each tile is populated with its own row-major number
     for row in range(4):
         for col in range(4):
             atlas[row * 2:(row + 1) * 2, col * 2:(col + 1) * 2] = row * 4 + col
@@ -99,12 +97,12 @@ def test_slice_atlas_row_major_order():
         assert int(tiles[i].min()) == i == int(tiles[i].max())
 
 
-# ═══════ 缺失降级 ═══════
+# ═══════ missing downgrade ═══════
 
 def test_missing_install_dir_degrades_to_none(tmp_path):
-    """目录不存在: available() False, 各 getter 返回 None 并记录原因。"""
+    """Directory does not exist: available() False, each getter returns None and logs the reason."""
     assets = GameAssets(install_dir=None)
-    # find_hoi4_install 可能在本机找到真实安装, 强制指向空目录测降级
+    # find_hoi4_install may find the real installation on the local machine and force it to point to an empty directory to test for downgrade.
     assets.install_dir = None
     assert not assets.available()
     assert assets.terrain_to_texture() is None
@@ -113,13 +111,13 @@ def test_missing_install_dir_degrades_to_none(tmp_path):
 
 
 def test_missing_file_degrades_to_none(tmp_path):
-    """目录存在但缺文件: getter 返回 None 并记录路径。"""
+    """The directory exists but the file is missing: the getter returns None and records the path."""
     assets = GameAssets(install_dir=str(tmp_path))
     assert assets.terrain_to_texture() is None
     assert TERRAIN_DEF_RELPATH.split("/")[-1] in assets.last_error
 
 
-# ═══════ 游戏目录持久化配置 ═══════
+# ═══════ Game directory persistence configuration ═══════
 
 def _fake_game_dir(tmp_path):
     game = tmp_path / "game"
@@ -130,9 +128,9 @@ def _fake_game_dir(tmp_path):
 
 
 def test_chosen_game_dir_persists_and_wins(tmp_path, monkeypatch):
-    """选择目录写进配置 (保留已有键), 之后查找优先用它。"""
+    """Select the directory to write the configuration (keep the existing keys), and use it first for subsequent searches."""
     cfg = tmp_path / "cfg.json"
-    cfg.write_text('{"language": "zh"}', encoding="utf-8")
+    cfg.write_text('{"language": "en"}', encoding="utf-8")
     monkeypatch.setattr(ga, "CONFIG_PATH", str(cfg))
     monkeypatch.setattr(ga, "_default_assets", None)
     game_dir = _fake_game_dir(tmp_path)
@@ -141,13 +139,13 @@ def test_chosen_game_dir_persists_and_wins(tmp_path, monkeypatch):
 
     data = json.loads(cfg.read_text(encoding="utf-8"))
     assert data["hoi4_game_dir"] == game_dir
-    assert data["language"] == "zh"          # 不丢其他设置
+    assert data["language"] == "en"          # Do not lose other settings
     assert ga.find_hoi4_install() == game_dir
     assert assets.install_dir == game_dir
 
 
 def test_stale_config_game_dir_ignored(tmp_path, monkeypatch):
-    """配置里的目录已失效 (游戏被卸载/盘符变了) → 忽略, 走默认查找。"""
+    """The directory in the configuration is invalid (the game was uninstalled/the drive letter was changed) → Ignore it and use the default search."""
     cfg = tmp_path / "cfg.json"
     cfg.write_text('{"hoi4_game_dir": "Z:/no/such/dir"}', encoding="utf-8")
     monkeypatch.setattr(ga, "CONFIG_PATH", str(cfg))
@@ -155,7 +153,7 @@ def test_stale_config_game_dir_ignored(tmp_path, monkeypatch):
 
 
 def test_detect_supported_version(tmp_path, monkeypatch):
-    """从 launcher-settings.json 解析版本 → '主.次.*'; 坏数据返回 None。"""
+    """Parse version from launcher-settings.json → 'primary.secondary.*'; bad data returns None."""
     game = _fake_game_dir(tmp_path)
     (tmp_path / "game" / "launcher-settings.json").write_text(
         '{"rawVersion": "1.19.2.0"}', encoding="utf-8")
@@ -167,7 +165,7 @@ def test_detect_supported_version(tmp_path, monkeypatch):
     assert ga.detect_supported_version() == "1.19.*"
     assert ga.resolve_supported_version() == "1.19.*"
 
-    # 坏数据 → None, resolve 回退默认常量
+    # bad data → None, resolve fallback to default constant
     (tmp_path / "game" / "launcher-settings.json").write_text(
         '{"rawVersion": "abc"}', encoding="utf-8")
     from data.constants import DEFAULT_SUPPORTED_VERSION
@@ -175,22 +173,22 @@ def test_detect_supported_version(tmp_path, monkeypatch):
     assert ga.resolve_supported_version() == DEFAULT_SUPPORTED_VERSION
 
 
-# ═══════ 真实游戏文件集成 (仅本机) ═══════
+# ═══════ Real game file integration (native only) ═══════
 
 _HAS_GAME = os.path.isfile(os.path.join(DEFAULT_HOI4_PATH, TERRAIN_DEF_RELPATH))
 
 
-@pytest.mark.skipif(not _HAS_GAME, reason="本机无 HOI4 安装")
+@pytest.mark.skipif(not _HAS_GAME, reason="HOI4 is not installed locally")
 def test_real_game_assets_load():
-    """真实游戏资产: 映射表非空, 图集为 16 个 512×512 RGBA 瓦片。"""
+    """Real game assets: The mapping table is not empty, and the atlas is 16 512×512 RGBA tiles."""
     assets = GameAssets()
     assert assets.available()
 
     mapping = assets.terrain_to_texture()
     assert mapping is not None
-    # vanilla 已知映射抽查 (00_terrain.txt 行 324/331)
-    assert mapping[0] == 1    # 平原
-    assert mapping[6] == 11   # 山地
+    # vanilla known mapping spot check (00_terrain.txt lines 324/331)
+    assert mapping[0] == 1    # plain
+    assert mapping[6] == 11   # Mountain
 
     tiles = assets.atlas_tiles()
     assert tiles is not None

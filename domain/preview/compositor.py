@@ -1,15 +1,13 @@
-"""
-预览合成器 — 把项目数据 + 游戏原版贴图合成"游戏内观感"的画面。
+"""Preview compositor — combines project data + original game textures into an "in-game look and feel" screen.
 
-分层叠加 (全部 numpy 向量化, 零 Qt):
-1. 地形材质铺底: terrain_map 调色板索引 → atlas 瓦片 → 按像素坐标平铺采样
-2. 高度光影: 高度图梯度算法线, 与平行光点积得到明暗 (近似游戏 shader)
-3. 海洋/湖泊: 距岸渐变, 公式与导出的 colormap_water 相同 (domain/water_colormap)
-4. 河流: 河流像素覆盖为河水色
+Layered overlay (all numpy vectorized, zero Qt):
+1. Terrain material base: terrain_map palette index → atlas tile → tile sampling according to pixel coordinates
+2. Height light and shadow: height map gradient algorithm line, and dot product of parallel light to obtain light and shade (approximate game shader)
+3. Ocean/Lake: Shore gradient, the formula is the same as the exported colormap_water (domain/water_colormap)
+4. River: River pixels are overlaid with river color
 
-材质/映射来自游戏本体 (services/game_assets), 光影公式是近似——
-定位是"够判断地图长什么样", 不追求和游戏逐像素一致。
-"""
+The material/mapping comes from the game body (services/game_assets), and the light and shadow formula is approximate——
+The positioning is "enough to judge what the map looks like" and does not seek to be consistent with the game pixel by pixel."""
 
 from __future__ import annotations
 
@@ -17,26 +15,25 @@ import numpy as np
 
 from data.constants import TILE_LAND
 
-# 河流颜色 (略亮于浅滩, 在陆地上才看得清)
+# The color of the river (slightly brighter than the shallows, can only be seen clearly on land)
 RIVER_RGB = np.array([60, 120, 190], dtype=np.float32)
-# river_map 中 <= 11 的索引是河流数据 (254/255 是背景)
+# Indexes <= 11 in river_map are river data (254/255 are background)
 RIVER_MAX_INDEX = 11
 
-# 光照: 西北上方平行光 + 环境光底色 (游戏的光也来自西北)
+# Lighting: parallel light from the northwest + ambient light background (the light in the game also comes from the northwest)
 LIGHT_DIR = (-0.5, -0.5, 1.0)
-AMBIENT = 0.55       # 环境光强度 (没有光照时的最低亮度)
-DIFFUSE = 0.65       # 漫反射强度 (受坡向影响的部分)
-# 高度梯度转法线的陡峭系数: 越大山体明暗对比越强
+AMBIENT = 0.55       # Ambient light intensity (minimum brightness without light)
+DIFFUSE = 0.65       # Diffuse reflection intensity (part affected by slope aspect)
+# Steepness coefficient for converting height gradient to normal: The larger the mountain, the stronger the contrast between light and dark.
 SLOPE_SCALE = 3.0
 
 
 def _texture_lut(terrain_to_texture: dict[int, int], tile_count: int) -> np.ndarray:
-    """调色板索引(0..255) → 瓦片号 的查找表。
+    """Lookup table for palette index (0..255) → tile number.
 
-    未定义的索引和越界瓦片号 (如湖泊的 texture=255) 回落到
-    平原瓦片 (索引 0 的映射, 没有就用 0 号瓦片) —— 这些像素
-    随后会被水体层覆盖, 铺什么底无所谓, 只要不越界。
-    """
+    Undefined indexes and out-of-bounds tile numbers (e.g. texture=255 for lakes) fall back to
+    Plain tiles (map with index 0, if not, use tile 0) - these pixels
+    It will then be covered by a layer of water, and it doesn’t matter what kind of bottom it is laid on, as long as it doesn’t cross the boundary."""
     fallback = terrain_to_texture.get(0, 0)
     if not (0 <= fallback < tile_count):
         fallback = 0
@@ -48,10 +45,10 @@ def _texture_lut(terrain_to_texture: dict[int, int], tile_count: int) -> np.ndar
 
 
 def _hillshade(height_map: np.ndarray) -> np.ndarray:
-    """高度图 → 每像素亮度系数 (H, W) float32, 约 [AMBIENT, AMBIENT+DIFFUSE]。"""
+    """Heightmap → Luminance coefficients per pixel (H, W) float32, approximately [AMBIENT, AMBIENT+DIFFUSE]."""
     h = height_map.astype(np.float32)
     gy, gx = np.gradient(h)
-    # 法线 ∝ (-gx*k, -gy*k, 1), 归一化
+    # normal ∝ (-gx*k, -gy*k, 1), normalized
     nx = -gx * SLOPE_SCALE
     ny = -gy * SLOPE_SCALE
     nz = np.ones_like(nx)
@@ -72,47 +69,46 @@ def compose_preview(
     terrain_to_texture: dict[int, int],
     tint: np.ndarray | None = None,
 ) -> np.ndarray:
-    """合成预览图, 返回 (H, W, 3) uint8。
+    """Synthesize preview, return (H, W, 3) uint8.
 
-    参数:
-        tile_map: 陆/海/湖分类 (H, W) uint8
-        terrain_map: 图形地形调色板索引 (H, W) uint8
-        height_map: 高度图 (H, W) uint8
-        river_map: 河流图 (H, W) uint8, None = 不画河流
-        atlas_tiles: 游戏材质瓦片 (N, th, tw, 4) uint8 (game_assets.atlas_tiles)
-        terrain_to_texture: 调色板索引 → 瓦片号 (game_assets.terrain_to_texture)
-        tint: 区域色调图 (H, W, 3) uint8, None = 不调色。
-              P社 shader 惯例: 材质 × 色调 × 2 (色调 128 即原色)
-    """
+    Parameters:
+        tile_map: land/sea/lake classification (H, W) uint8
+        terrain_map: graphics terrain palette index (H, W) uint8
+        height_map: height map (H, W) uint8
+        river_map: river map (H, W) uint8, None = do not draw rivers
+        atlas_tiles: game material tiles (N, th, tw, 4) uint8 (game_assets.atlas_tiles)
+        terrain_to_texture: palette index → tile number (game_assets.terrain_to_texture)
+        tint: area tone map (H, W, 3) uint8, None = no tint.
+              P company shader convention: material × hue × 2 (hue 128 is the original color)"""
     h, w = tile_map.shape
     tile_count, th, tw = atlas_tiles.shape[0], atlas_tiles.shape[1], atlas_tiles.shape[2]
 
-    # ── 1. 地形材质铺底 ──
+    # ── 1. Terrain material base ──
     lut = _texture_lut(terrain_to_texture, tile_count)
-    tex_idx = lut[terrain_map]                      # (H, W) 每像素瓦片号
+    tex_idx = lut[terrain_map]                      # (H, W) Tile number per pixel
     ys = np.arange(h, dtype=np.int32) % th
     xs = np.arange(w, dtype=np.int32) % tw
-    ty = np.broadcast_to(ys[:, None], (h, w))       # 瓦片内坐标 (平铺采样)
+    ty = np.broadcast_to(ys[:, None], (h, w))       # Coordinates within tiles (tiled sampling)
     tx = np.broadcast_to(xs[None, :], (h, w))
     base = atlas_tiles[tex_idx, ty, tx, :3].astype(np.float32)
 
-    # ── 1.5 区域色调 (北非偏黄/西欧偏绿的来源) ──
+    # ── 1.5 regional hue (origin of yellowish color in North Africa/greenish color in Western Europe) ──
     if tint is not None:
         base = base * (tint.astype(np.float32) / 255.0) * 2.0
 
-    # ── 2. 高度光影 ──
+    # ── 2. High light and shadow ──
     shade = _hillshade(height_map)
     rgb = base * shade[:, :, None]
 
-    # ── 3. 海洋/湖泊: 与导出的 colormap_water 同一渐变公式 ──
-    # 游戏海面色源就是那张贴图, 预览直接用同款距岸渐变 → 所见即导出。
+    # ── 3. Ocean/Lake: The same gradient formula as the exported colormap_water ──
+    # The color source of the sea surface in the game is that texture, and the preview directly uses the same offshore gradient → export as you see it.
     water = tile_map != TILE_LAND
     if np.any(water):
         from domain.water_colormap import water_color_rgb
         water_rgb = water_color_rgb(tile_map)
         rgb[water] = water_rgb[water]
 
-    # ── 4. 河流覆盖 ──
+    # ── 4. River coverage ──
     if river_map is not None:
         rivers = river_map <= RIVER_MAX_INDEX
         rgb[rivers] = RIVER_RGB

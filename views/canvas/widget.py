@@ -1,18 +1,16 @@
-"""
-地图画布组件 — 基于 QGraphicsView 的大画布
-支持六种编辑模式：land / terrain / height / province / state / country
-性能优化：脏矩形局部更新，避免每次操作渲染整张地图
+"""Map canvas component — a large canvas based on QGraphicsView
+Supports six editing modes: land/terrain/height/province/state/country
+Performance optimization: Partial update of dirty rectangles to avoid rendering the entire map for each operation
 
-从 ui/canvas_widget.py 拆分而来，保留核心逻辑:
-- __init__: 场景/图层/状态初始化
-- 数据属性 (tile_map, province_map 等)
-- 渲染分发 (_full_render / _partial_render)
-- 绘制操作 (_stamp_brush / _paint_at / _flood_fill)
-- 变换操作 (_apply_transform / _cancel_transform / _end_transform)
-- 省份操作 (merge / split / cleanup)
-- 模式/工具设置
-- 导航辅助
-"""
+Split from ui/canvas_widget.py, retaining the core logic:
+- __init__: scene/layer/state initialization
+- Data attributes (tile_map, province_map, etc.)
+- Render distribution (_full_render / _partial_render)
+- Paint operations (_stamp_brush / _paint_at / _flood_fill)
+- Transform operations (_apply_transform / _cancel_transform / _end_transform)
+- Province operations (merge / split / cleanup)
+- Mode/Tool settings
+- Navigation aid"""
 import numpy as np
 from PyQt5.QtWidgets import (
     QGraphicsView, QGraphicsScene, QGraphicsPixmapItem,
@@ -43,34 +41,34 @@ from views.canvas.name_labels import NameLabelsMixin
 
 
 class MapCanvas(InputMixin, OverlayMixin, NameLabelsMixin, RefImageMixin, QGraphicsView):
-    """地图画布，支持缩放/拖动/绘制，脏矩形局部更新"""
+    """Map canvas, supports zoom/drag/draw, dirty rectangle local update"""
 
     mouse_moved = pyqtSignal(int, int)
     zoom_changed = pyqtSignal(float)
     province_clicked = pyqtSignal(int)
-    province_double_clicked = pyqtSignal(int)   # 双击省份（设VP）
-    province_right_clicked = pyqtSignal(int)    # 右键省份（设首都）
-    province_right_clicked_at = pyqtSignal(int, int, int)  # pid, screen_x, screen_y (右键菜单用)
-    provinces_cleared = pyqtSignal()  # 大陆模式修改时自动清除省份
-    stroke_started = pyqtSignal()     # 画笔操作开始
-    stroke_ended = pyqtSignal()       # 画笔操作结束
-    ridge_drawn = pyqtSignal(list)    # 山脉画线完成, [(y,x), ...]
-    downgrade_lasso_drawn = pyqtSignal(list)  # 选区降级套索完成, [(y,x), ...]
-    split_line_drawn = pyqtSignal(int, list)  # 切割线完成, (pid, [(y,x), ...])
-    province_gaps_detected = pyqtSignal(list)  # 省份 ID 空洞, [gap_id, ...]
+    province_double_clicked = pyqtSignal(int)   # Double-click the province (set VP)
+    province_right_clicked = pyqtSignal(int)    # Right click on the province (set capital)
+    province_right_clicked_at = pyqtSignal(int, int, int)  # pid, screen_x, screen_y (for right-click menu)
+    provinces_cleared = pyqtSignal()  # Automatically clear provinces when modifying continental mode
+    stroke_started = pyqtSignal()     # Brush operation starts
+    stroke_ended = pyqtSignal()       # End of brush operation
+    ridge_drawn = pyqtSignal(list)    # The mountain line drawing is completed, [(y,x), ...]
+    downgrade_lasso_drawn = pyqtSignal(list)  # Selection downgrade lasso completed, [(y,x), ...]
+    split_line_drawn = pyqtSignal(int, list)  # Cutting line completed, (pid, [(y,x), ...])
+    province_gaps_detected = pyqtSignal(list)  # Province ID empty, [gap_id, ...]
 
-    # 调整参考图模式
-    ref_adjust_exited = pyqtSignal()                    # ESC 退出（页面按钮同步取消勾选）
-    ref_adjust_scale_changed = pyqtSignal(str, float)   # 滚轮缩放 (target, scale)
+    # Adjust reference image mode
+    ref_adjust_exited = pyqtSignal()                    # ESC exit (page button synchronization is unchecked)
+    ref_adjust_scale_changed = pyqtSignal(str, float)   # Wheel zoom (target, scale)
 
-    # 已生成省份后画陆海 → 请求 MainWindow 弹确认框（直连信号, 同步返回）
+    # After generating provinces, draw land and sea → Request MainWindow to pop up the confirmation box (direct signal, synchronous return)
     land_paint_confirm_requested = pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
 
-        # 数据层 — 通过 MapData 集中管理
-        # 私有字段是 MapData 数组的别名（指向同一个 numpy 对象）
+        # Data layer—centrally managed through MapData
+        # Private fields are aliases for MapData arrays (pointing to the same numpy object)
         from domain.map_data import MapData
         self._map_data = MapData()
         self._tile_map = self._map_data.tile_map
@@ -79,104 +77,104 @@ class MapCanvas(InputMixin, OverlayMixin, NameLabelsMixin, RefImageMixin, QGraph
         self._height_map = self._map_data.height_map
         self._river_map = self._map_data.river_map
 
-        # 新大陆画笔 mask：记录画了哪些像素（只记录真正从海/湖变陆地的）
+        # New World Brush Mask: Record which pixels were painted (only those that actually changed from sea/lake to land)
         self.new_land_mask = np.zeros((MAP_HEIGHT, MAP_WIDTH), dtype=bool)
 
-        # 河流编辑状态
+        # River edit status
         self._current_river_type = RIVER_SOURCE
 
-        # 地形画笔模式: False=按省份(默认), True=逐像素画笔
+        # Terrain brush mode: False=per-province (default), True=pixel-by-pixel brush
         self._terrain_brush_mode = False
-        self._terrain_brush_size = 20  # 独立的地形画笔尺寸，与通用 _brush_size 分离
+        self._terrain_brush_size = 20  # Independent terrain brush size, separate from the common _brush_size
 
-        # 高度画笔: "off"(按省份) / "raise" / "lower" / "smooth"
+        # Height brush: "off" (by province) / "raise" / "lower" / "smooth"
         self._height_brush_mode = "off"
         self._height_brush_size = 30
-        self._height_brush_strength = 5  # 每刷一下 ±N，平滑时做混合强度
+        self._height_brush_strength = 5  # ±N per brush, do blend strength when smooth
 
-        # 显示缓冲区（BGRA）
+        # display buffer (BGRA)
         self._display_buffer = np.zeros((MAP_HEIGHT, MAP_WIDTH, 4), dtype=np.uint8)
-        self._province_border_buffer = None  # 延迟创建
+        self._province_border_buffer = None  # Delayed creation
 
-        # 显示模式渲染器注册表: mode → renderer 模块路径 (延迟加载并缓存)
+        # Display mode renderer registry: mode → renderer module path (lazy loading and caching)
         from views.canvas.render_registry import DEFAULT_RENDERERS
         self._renderer_paths: dict[str, str] = dict(DEFAULT_RENDERERS)
         self._renderer_cache: dict[str, object] = {}
 
-        # State / Country / Strategic Region / Railway 颜色缓冲区
+        # State / Country / Strategic Region / Railway color buffer
         self._state_color_rgb = None   # np.ndarray (H, W, 3) or None
         self._country_color_rgb = None  # np.ndarray (H, W, 3) or None
-        # 选中国家高亮: 该国 RGB (用于在 country renderer 里 mask 匹配)
+        # Selected country highlight: country RGB (used for mask matching in country renderer)
         self._highlight_country_rgb: tuple[int, int, int] | None = None
-        # 已分配国家的 land 像素 mask (H, W bool) — 让 country renderer 跳过未分配区域不画边
+        # Land pixel mask of allocated countries (H, W bool) — Makes the country renderer skip unallocated areas without drawing borders
         self._country_assigned_mask: "np.ndarray | None" = None
-        # country 边界 cache (避免每次重绘都全图算): (rgb_id, assigned_mask_id) → (white, red)
+        # country boundary cache (to avoid calculating the entire map every time it is redrawn): (rgb_id, assigned_mask_id) → (white, red)
         self._country_borders_cache: tuple | None = None
-        # 地形底图源: "height" (彩色高度图) 或 "terrain" (地形分类图)
+        # Terrain basemap source: "height" (color height map) or "terrain" (terrain classification map)
         self._terrain_underlay_source: str = "height"
         self._sr_color_rgb = None      # np.ndarray (H, W, 3) or None
         self._railway_color_rgb = None # np.ndarray (H, W, 3) or None
-        # 省份属性地形（gameplay terrain）颜色缓冲区
+        # Province attribute terrain (gameplay terrain) color buffer
         self._provincial_terrain_color_rgb = None  # np.ndarray (H, W, 3) or None
-        # 大陆颜色缓冲区
+        # continent color buffer
         self._continent_color_rgb = None  # np.ndarray (H, W, 3) or None
 
-        # 显示/编辑模式
+        # display/edit mode
         self._display_mode = "land"
 
-        # 框架工具（新规范）：当不为 None 时，鼠标事件转发给它
-        self._framework_tool = None     # core.tools.base.Tool 实例
+        # Framework tools (new spec): When not None, mouse events are forwarded to it
+        self._framework_tool = None     # core.tools.base.Tool instance
         self._framework_ctx = None       # ToolContext
 
-        # 当前状态
+        # Current status
         self._zoom = 1.0
         self._current_tool = "brush"
         self._current_tile_type = TILE_LAND
         self._current_terrain_index = 0
-        self._selected_province_id = 0  # 省份模式下选中的省份ID
+        self._selected_province_id = 0  # Province ID selected in province mode
         self._selected_province_ids: set[int] = set()
-        self._selected_province_tile = 0  # 选中省份的地块类型（边界编辑时只能影响同类型像素）
-        self._has_provinces = False     # 是否有省份数据（避免每笔都扫描整张图）
-        self._land_paint_confirmed = False  # 已生成省份后画陆海, 用户是否已确认过
+        self._selected_province_tile = 0  # The land parcel type of the selected province (only pixels of the same type can be affected during boundary editing)
+        self._has_provinces = False     # Whether there is province data (to avoid scanning the entire picture for each transaction)
+        self._land_paint_confirmed = False  # After provinces are generated, land and sea are drawn. Has the user confirmed it?
         self._current_height_value = 120
         self._brush_size = BRUSH_DEFAULT
         self._is_drawing = False
         self._is_panning = False
         self._pan_start = QPoint()
         self._space_pressed = False
-        self._last_draw_pos = None  # 上一次绘制位置，用于插值连线
+        self._last_draw_pos = None  # The last drawn position, used for interpolation connections
         self._show_ref_image = True
         self._show_provinces = True
 
-        # 框选模式
+        # Frame selection mode
         self._selection_mode = False
         self._selection_rect = None  # (x0, y0, x1, y1) scene coords
         self._selection_start = None
-        self._selection_callback = None  # 框选完成后的回调
+        self._selection_callback = None  # Callback after frame selection is completed
 
-        # 变换工具状态
-        self._transform_active = False    # 变换框是否激活
-        self._transform_selecting = False # 正在框选阶段
-        self._transform_box = None       # (x0, y0, x1, y1) 当前变换框
-        self._transform_snippet = None   # 剪切出的 tile_map 片段 (numpy)
-        self._transform_orig_box = None  # 原始框位置
-        self._transform_drag = None      # 当前拖拽类型: "move"/"tl"/"tr"/"bl"/"br"/"rotate"/None
+        # Change tool state
+        self._transform_active = False    # Is the transform box activated?
+        self._transform_selecting = False # In frame selection stage
+        self._transform_box = None       # (x0, y0, x1, y1) current transformation box
+        self._transform_snippet = None   # Cut out tile_map fragment (numpy)
+        self._transform_orig_box = None  # Original box position
+        self._transform_drag = None      # Current drag type: "move"/"tl"/"tr"/"bl"/"br"/"rotate"/None
         self._transform_drag_start = None
-        self._transform_angle = 0.0      # 旋转角度（度）
-        # 上一次实时 apply 写入的目标 box (x0, y0, x1, y1); 下次 apply 前先擦掉,
-        # 防止拖动经过的每个中间位置都留下"踪迹" (土地被复制 bug)
+        self._transform_angle = 0.0      # Rotation angle (degrees)
+        # The target box (x0, y0, x1, y1) written by the last real-time apply; erase it before the next apply.
+        # Prevent dragging from leaving a "trail" at every intermediate location (land being copied bug)
         self._transform_last_written_box: tuple[int, int, int, int] | None = None
 
-        # 脏矩形（需要刷新的区域）
-        self._dirty_rect = None  # (x0, y0, x1, y1) 或 None
+        # Dirty rectangle (area that needs to be refreshed)
+        self._dirty_rect = None  # (x0, y0, x1, y1) or None
 
-        # 延迟渲染定时器（合并连续绘制操作）
+        # Delayed rendering timer (merges continuous drawing operations)
         self._render_timer = QTimer()
         self._render_timer.setSingleShot(True)
         self._render_timer.setInterval(16)  # ~60fps
         self._render_timer.timeout.connect(self._flush_dirty)
 
-        # 场景和图层
+        # Scenes and layers
         self._scene = QGraphicsScene(self)
         self._scene.setSceneRect(0, 0, MAP_WIDTH, MAP_HEIGHT)
         self.setScene(self._scene)
@@ -184,25 +182,25 @@ class MapCanvas(InputMixin, OverlayMixin, NameLabelsMixin, RefImageMixin, QGraph
         self._map_pixmap_item = QGraphicsPixmapItem()
         self._scene.addItem(self._map_pixmap_item)
 
-        # 原版地图参考层 (底层)
+        # Original map reference layer (bottom layer)
         self._vanilla_ref_item = QGraphicsPixmapItem()
         self._vanilla_ref_item.setOpacity(0.3)
         self._vanilla_ref_item.setZValue(1)
         self._scene.addItem(self._vanilla_ref_item)
 
-        # 用户自定义参考图层 (上层)
+        # User-defined reference layer (upper layer)
         self._ref_pixmap_item = QGraphicsPixmapItem()
         self._ref_pixmap_item.setOpacity(0.4)
         self._ref_pixmap_item.setZValue(2)
         self._scene.addItem(self._ref_pixmap_item)
 
-        # 统一参考图层注册表 (ref_images.py 通用接口)
+        # Unified reference layer registry (ref_images.py common interface)
         self._ref_layers = {
             RefImageMixin.REF_VANILLA: RefLayer(self._vanilla_ref_item),
             RefImageMixin.REF_CUSTOM: RefLayer(self._ref_pixmap_item),
         }
 
-        # 调整参考图模式: None=关闭, "custom"/"vanilla"=正在调整哪张
+        # Adjust reference picture mode: None=off, "custom"/"vanilla"=which picture is being adjusted
         self._ref_adjust_target: str | None = None
 
         self._province_pixmap_item = QGraphicsPixmapItem()
@@ -210,7 +208,7 @@ class MapCanvas(InputMixin, OverlayMixin, NameLabelsMixin, RefImageMixin, QGraph
         self._province_pixmap_item.setZValue(2)
         self._scene.addItem(self._province_pixmap_item)
 
-        # 框选矩形（用于框选放大等功能）
+        # Frame selection rectangle (used for functions such as frame selection and magnification)
         self._selection_rect_item = QGraphicsRectItem()
         self._selection_rect_item.setPen(QPen(QColor(255, 255, 0), 2, Qt.DashLine))
         self._selection_rect_item.setBrush(QBrush(QColor(255, 255, 0, 30)))
@@ -218,7 +216,7 @@ class MapCanvas(InputMixin, OverlayMixin, NameLabelsMixin, RefImageMixin, QGraph
         self._selection_rect_item.setVisible(False)
         self._scene.addItem(self._selection_rect_item)
 
-        # 调整参考图模式的橙色虚线框（标出正在被拖拽的参考图）
+        # Adjust the orange dotted frame of the reference image mode (marking the reference image being dragged)
         self._ref_adjust_border = QGraphicsRectItem()
         self._ref_adjust_border.setPen(QPen(QColor(249, 115, 22), 2, Qt.DashLine))
         self._ref_adjust_border.setBrush(QBrush(Qt.NoBrush))
@@ -226,7 +224,7 @@ class MapCanvas(InputMixin, OverlayMixin, NameLabelsMixin, RefImageMixin, QGraph
         self._ref_adjust_border.setVisible(False)
         self._scene.addItem(self._ref_adjust_border)
 
-        # 切割预览线
+        # Cut preview line
         from PyQt5.QtWidgets import QGraphicsPathItem
         self._split_line_item = QGraphicsPathItem()
         self._split_line_item.setPen(QPen(QColor(255, 80, 80), 2, Qt.SolidLine))
@@ -234,7 +232,7 @@ class MapCanvas(InputMixin, OverlayMixin, NameLabelsMixin, RefImageMixin, QGraph
         self._split_line_item.setVisible(False)
         self._scene.addItem(self._split_line_item)
 
-        # 变换框（边框 + 4 个角 handle）
+        # Transform box (border + 4 corner handles)
         self._transform_border = QGraphicsRectItem()
         self._transform_border.setPen(QPen(QColor(0, 200, 255), 2))
         self._transform_border.setBrush(QBrush(Qt.NoBrush))
@@ -252,7 +250,7 @@ class MapCanvas(InputMixin, OverlayMixin, NameLabelsMixin, RefImageMixin, QGraph
             self._scene.addItem(h)
             self._transform_handles[hid] = h
 
-        # 画笔预览光标（半透明圆圈）
+        # Brush preview cursor (semi-transparent circle)
         self._brush_cursor = QGraphicsEllipseItem()
         self._brush_cursor.setPen(QPen(QColor(255, 255, 255, 180), 1))
         self._brush_cursor.setBrush(QColor(255, 255, 255, 40))
@@ -260,20 +258,20 @@ class MapCanvas(InputMixin, OverlayMixin, NameLabelsMixin, RefImageMixin, QGraph
         self._brush_cursor.setVisible(False)
         self._scene.addItem(self._brush_cursor)
 
-        # 密度叠加层
+        # density overlay
         self._density_overlay_item = QGraphicsPixmapItem()
         self._density_overlay_item.setZValue(5)
         self._density_overlay_item.setVisible(False)
         self._density_overlay_visible = False
         self._scene.addItem(self._density_overlay_item)
 
-        # State 边界叠加层（选州创建战略区域时显示）
+        # State boundary overlay (displayed when selecting a state to create a strategic area)
         self._state_border_overlay = QGraphicsPixmapItem()
         self._state_border_overlay.setZValue(6)
         self._state_border_overlay.setVisible(False)
         self._scene.addItem(self._state_border_overlay)
 
-        # 地形视图下的国家/州叠加层（半透明国家色 + 白色州边界）
+        # Country/state overlay in terrain view (translucent country color + white state borders)
         self._terrain_context_overlay = QGraphicsPixmapItem()
         self._terrain_context_overlay.setZValue(6)
         self._terrain_context_overlay.setVisible(False)
@@ -282,7 +280,7 @@ class MapCanvas(InputMixin, OverlayMixin, NameLabelsMixin, RefImageMixin, QGraph
         self._terrain_ctx_country_mgr = None
         self._terrain_ctx_state_mgr = None
 
-        # State / Country 模式下的地形底图叠加层（用 heightmap 彩色图做参考）
+        # Terrain basemap overlay in State / Country mode (use heightmap color map as reference)
         self._terrain_underlay_item = QGraphicsPixmapItem()
         self._terrain_underlay_item.setZValue(5)
         self._terrain_underlay_item.setVisible(False)
@@ -291,17 +289,17 @@ class MapCanvas(InputMixin, OverlayMixin, NameLabelsMixin, RefImageMixin, QGraph
         self._terrain_underlay_visible = False
         self._terrain_underlay_opacity = 0.4
 
-        # 套索路径反馈（黄色虚线）
+        # Lasso path feedback (yellow dashed line)
         self._lasso_path_item = QGraphicsPathItem()
         pen = QPen(QColor(255, 230, 0, 230), 2)
         pen.setStyle(Qt.PenStyle.DashLine)
-        pen.setCosmetic(True)  # 不随缩放变粗细
+        pen.setCosmetic(True)  # Does not change thickness with scaling
         self._lasso_path_item.setPen(pen)
         self._lasso_path_item.setZValue(11)
         self._lasso_path_item.setVisible(False)
         self._scene.addItem(self._lasso_path_item)
 
-        # 山脉画线路径反馈（红色实线，比套索粗）
+        # Mountain line drawing path feedback (red solid line, thicker than the lasso)
         self._ridge_path_item = QGraphicsPathItem()
         ridge_pen = QPen(QColor(230, 60, 60, 240), 3)
         ridge_pen.setStyle(Qt.PenStyle.SolidLine)
@@ -313,13 +311,13 @@ class MapCanvas(InputMixin, OverlayMixin, NameLabelsMixin, RefImageMixin, QGraph
         self._ridge_path_item.setVisible(False)
         self._scene.addItem(self._ridge_path_item)
 
-        # 套索 allowed 区域 overlay（半透明黄色填充）
+        # Lasso allowed area overlay (translucent yellow fill)
         self._lasso_overlay = QGraphicsPixmapItem()
         self._lasso_overlay.setZValue(9)
         self._lasso_overlay.setVisible(False)
         self._scene.addItem(self._lasso_overlay)
 
-        # 局部精修套索预览（蓝色虚线多边形）
+        # Local refinement lasso preview (blue dashed polygon)
         self._refine_lasso_item = QGraphicsPathItem()
         refine_pen = QPen(QColor(80, 150, 255, 240), 2)
         refine_pen.setStyle(Qt.PenStyle.DashLine)
@@ -329,17 +327,17 @@ class MapCanvas(InputMixin, OverlayMixin, NameLabelsMixin, RefImageMixin, QGraph
         self._refine_lasso_item.setVisible(False)
         self._scene.addItem(self._refine_lasso_item)
 
-        # VP 标记叠加层 (Feature 10)
+        # VP Marker Overlay (Feature 10)
         self._vp_overlay_item = QGraphicsPixmapItem()
         self._vp_overlay_item.setZValue(5)
         self._vp_overlay_item.setVisible(False)
         self._scene.addItem(self._vp_overlay_item)
         self._vp_data: dict[int, int] = {}  # {province_id: vp_value}
 
-        # 名字标签叠加层 (state/country 模式显示名字)
+        # Name tag overlay (showing names in state/country mode)
         self._init_name_labels()
 
-        # 视图设置
+        # View settings
         self.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, False)
         self.setDragMode(QGraphicsView.DragMode.NoDrag)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
@@ -349,10 +347,10 @@ class MapCanvas(InputMixin, OverlayMixin, NameLabelsMixin, RefImageMixin, QGraph
         self.setMouseTracking(True)
         self.setStyleSheet("background: #050a12; border: none;")
 
-        # 初始全量渲染
+        # Initial full rendering
         self._full_render()
 
-    # ========== 动态地图尺寸 ==========
+    # ========== Dynamic map size ==========
 
     @property
     def map_h(self) -> int:
@@ -362,16 +360,15 @@ class MapCanvas(InputMixin, OverlayMixin, NameLabelsMixin, RefImageMixin, QGraph
     def map_w(self) -> int:
         return self._display_buffer.shape[1]
 
-    # ========== 数据访问 ==========
+    # ========== Data Access ==========
 
     def set_map_data(self, map_data) -> None:
-        """替换底层 MapData 并重新绑定所有局部别名。
+        """Replaces the underlying MapData and rebinds all local aliases.
 
-        调用时机：MainWindow 初始化后 / 新建项目 / 加载项目，
-        让 canvas 和 project 共享同一个 MapData 实例，
-        这样 controller 通过 Command 修改 project.map_data 的数组时，
-        canvas 也能立即看到变化。
-        """
+        Timing of calling: after MainWindow initialization/new project/loading project,
+        Let canvas and project share the same MapData instance,
+        In this way, when the controller modifies the array of project.map_data through Command,
+        canvas can also see changes immediately."""
         self._map_data = map_data
         self._tile_map = map_data.tile_map
         self._province_map = map_data.province_map
@@ -382,8 +379,8 @@ class MapCanvas(InputMixin, OverlayMixin, NameLabelsMixin, RefImageMixin, QGraph
         self._selected_province_id = 0
         self._selected_province_ids.clear()
         self._selected_province_tile = 0
-        self._land_paint_confirmed = False  # 新数据 → 画陆海重新确认
-        # 清除所有缓存
+        self._land_paint_confirmed = False  # New data → Drawing land and sea reconfirmation
+        # clear all cache
         self._border_cache = None
         if hasattr(self, '_border_base_pixmap'):
             self._border_base_pixmap = None
@@ -393,26 +390,26 @@ class MapCanvas(InputMixin, OverlayMixin, NameLabelsMixin, RefImageMixin, QGraph
         self._railway_color_rgb = None
         self._provincial_terrain_color_rgb = None
         self._continent_color_rgb = None
-        self.clear_name_labels()  # 旧标签坐标随地图作废
+        self.clear_name_labels()  # The old label coordinates will be invalidated along with the map.
         h, w = map_data.tile_map.shape[0], map_data.tile_map.shape[1]
         self.new_land_mask = np.zeros((h, w), dtype=bool)
         self._display_buffer = np.zeros((h, w, 4), dtype=np.uint8)
         self._scene.setSceneRect(0, 0, w, h)
-        # map_data 换了，地形上下文 overlay 的 pixmap 尺寸不匹配，重建
+        # map_data has been changed, the pixmap size of the terrain context overlay does not match, rebuild
         if getattr(self, '_terrain_context_visible', False):
             self.refresh_terrain_context_overlay()
-        # 地形底图同理 — 跟 heightmap 走
+        # The same goes for terrain basemaps — follow heightmap
         if getattr(self, '_terrain_underlay_visible', False):
             self.refresh_terrain_underlay()
 
     @property
     def map_data(self):
-        """暴露 MapData 给外部使用高级查询方法（get_neighbors 等）。"""
+        """Expose MapData to external users using advanced query methods (get_neighbors, etc.)."""
         return self._map_data
 
     def set_framework_tool(self, tool_name: str | None, undo_mgr=None,
                             state_mgr=None, country_mgr=None) -> None:
-        """启用/禁用一个框架工具。tool_name=None 关闭。"""
+        """Enable/disable a framework tool. tool_name=None is off."""
         from domain.tools import get_tool, ToolContext
 
         if tool_name is None:
@@ -506,31 +503,29 @@ class MapCanvas(InputMixin, OverlayMixin, NameLabelsMixin, RefImageMixin, QGraph
         return set(self._selected_province_ids)
 
     def _set_layer(self, attr: str, data: np.ndarray, dtype) -> None:
-        """统一的图层替换：写入 MapData，同步本地别名。
+        """Unified layer replacement: writing to MapData, synchronizing local aliases.
 
-        如果形状相同，原地写入以保持引用稳定（controller/command 持有的引用不会失效）。
-        形状不同时（地图尺寸变化）才替换整个数组。
-        """
+        If the shape is the same, write it in place to keep the reference stable (the reference held by the controller/command will not be invalidated).
+        The entire array is only replaced when the shape is different (the map size changes)."""
         existing = getattr(self._map_data, attr, None)
         if existing is not None and existing.shape == data.shape:
             existing[:] = data.astype(dtype)
-            # 别名仍指向同一对象，无需更新
+            # The alias still points to the same object and does not need to be updated
         else:
             new_arr = data.astype(dtype)
             setattr(self._map_data, attr, new_arr)
             setattr(self, "_" + attr, new_arr)
-            # 地图尺寸变化时，同步 display_buffer 和 scene rect
+            # When the map size changes, synchronize display_buffer and scene rect
             h, w = new_arr.shape[:2]
             if (h, w) != (self._display_buffer.shape[0], self._display_buffer.shape[1]):
                 self._display_buffer = np.zeros((h, w, 4), dtype=np.uint8)
                 self._scene.setSceneRect(0, 0, w, h)
 
     def _rebind_aliases(self) -> None:
-        """重新绑定局部别名到 MapData 当前属性。
+        """Rebind the local alias to the current MapData property.
 
-        当 Command 或外部代码替换了 MapData 的某个属性（而非原地修改），
-        canvas 的 _tile_map 等局部别名会过期。调用此方法刷新。
-        """
+        When Command or external code replaces a property of MapData (rather than modifying it in place),
+        Local aliases such as canvas's _tile_map will expire. Call this method to refresh."""
         self._tile_map = self._map_data.tile_map
         self._province_map = self._map_data.province_map
         self._terrain_map = self._map_data.terrain_map
@@ -555,15 +550,15 @@ class MapCanvas(InputMixin, OverlayMixin, NameLabelsMixin, RefImageMixin, QGraph
     def province_map(self, data: np.ndarray) -> None:
         self._set_layer("province_map", data, np.int32)
         self._has_provinces = int(self._province_map.max()) > 0
-        self._land_paint_confirmed = False  # 省份重新生成 → 边界重新对齐, 下次画陆海重新确认
-        # 省份数据变了，清除边界缓存以便下次重建
+        self._land_paint_confirmed = False  # Provinces are regenerated → borders are realigned, and land and sea are re-confirmed next time.
+        # The province data has changed. Clear the boundary cache so that it can be rebuilt next time.
         self._border_cache = None
         if hasattr(self, '_border_base_pixmap'):
             self._border_base_pixmap = None
         if self._display_mode == "province":
             self._full_render()
         self._render_province_overlay()
-        # 地形视图的国家/州 overlay pixmap 尺寸和内容都要跟着省份图重建
+        # The country/state overlay pixmap size and content of the terrain view must be reconstructed according to the province map
         if getattr(self, '_terrain_context_visible', False):
             self.refresh_terrain_context_overlay()
         if getattr(self, '_terrain_underlay_visible', False):
@@ -619,12 +614,12 @@ class MapCanvas(InputMixin, OverlayMixin, NameLabelsMixin, RefImageMixin, QGraph
         if mode == self._display_mode:
             return
         self._display_mode = mode
-        # 预览是带纹理的合成图: 缩放显示必须平滑采样, 否则最近邻采样把
-        # 纹理细节打碎成噪点(看着发糊)。编辑模式保持像素硬边便于精确操作。
+        # The preview is a textured composite: the zoomed display must be sampled smoothly, otherwise nearest neighbor sampling will
+        # Texture details are broken into noise (looking blurry). Edit mode maintains pixel hard edges for precise manipulation.
         self.setRenderHint(
             QPainter.RenderHint.SmoothPixmapTransform, mode == "preview")
-        # 国家/州归属 overlay — 全局开关，仅在基础视图本身不按国家/州染色的模式下显示，
-        # 避免在 state/country/continent/strategic_region 模式下双层染色造成混乱。
+        # Country/state attribution overlay — a global switch that only displays in modes where the base view itself is not colored by country/state,
+        # Avoid confusion caused by double-coloring in state/country/continent/strategic_region mode.
         overlay = getattr(self, '_terrain_context_overlay', None)
         if overlay is not None:
             if getattr(self, '_terrain_context_visible', False) \
@@ -632,7 +627,7 @@ class MapCanvas(InputMixin, OverlayMixin, NameLabelsMixin, RefImageMixin, QGraph
                 self.refresh_terrain_context_overlay()
             else:
                 overlay.setVisible(False)
-        # 地形底图仅在 state/country 模式下显示
+        # Topographic basemaps are only displayed in state/country mode
         underlay = getattr(self, '_terrain_underlay_item', None)
         if underlay is not None:
             if getattr(self, '_terrain_underlay_visible', False) and mode in ("state", "country"):
@@ -640,13 +635,13 @@ class MapCanvas(InputMixin, OverlayMixin, NameLabelsMixin, RefImageMixin, QGraph
             else:
                 underlay.setVisible(False)
         self._full_render()
-        # 后勤模式不再需要 overlay（改用着色图）
+        # Logistics mode no longer requires overlay (uses shaded map instead)
         if mode != "logistics" and self._lasso_overlay.isVisible():
-            # 离开后勤模式：清掉后勤 overlay（但套索/批量选择的 overlay 会被别处管理）
-            # 只有在不是批量选择等状态时才清
-            pass  # 先不动，让 set_batch_selection_pids 等管理
+            # Exit logistics mode: clear logistics overlay (but the overlay of lasso/batch selection will be managed elsewhere)
+            # It is only cleared when it is not in the state of batch selection etc.
+            pass  # Don't move for now and let set_batch_selection_pids etc. manage it.
 
-    # ========== 工具设置 ==========
+    # ========== Tool Settings ==========
 
     def set_tool(self, tool: str) -> None:
         self._current_tool = tool
@@ -664,11 +659,11 @@ class MapCanvas(InputMixin, OverlayMixin, NameLabelsMixin, RefImageMixin, QGraph
         self._current_terrain_index = max(0, min(255, index))
 
     def set_terrain_brush_mode(self, brush_mode: bool) -> None:
-        """切换地形编辑模式: True=画笔逐像素, False=按省份(默认)"""
+        """Toggle terrain editing mode: True=brush-by-pixel, False=by-province (default)"""
         self._terrain_brush_mode = brush_mode
 
     def set_terrain_brush_size(self, size: int) -> None:
-        """地形画笔尺寸 (与通用画笔解耦)."""
+        """Terrain brush size (decoupled from universal brushes)."""
         self._terrain_brush_size = max(1, min(200, int(size)))
         self._refresh_brush_cursor()
 
@@ -676,7 +671,7 @@ class MapCanvas(InputMixin, OverlayMixin, NameLabelsMixin, RefImageMixin, QGraph
         self._current_height_value = max(0, min(255, value))
 
     def set_height_brush_mode(self, mode: str) -> None:
-        """高度画笔模式: 'off' / 'raise' / 'lower' / 'smooth'."""
+        """Height brush modes: 'off' / 'raise' / 'lower' / 'smooth'."""
         if mode not in ("off", "raise", "lower", "smooth"):
             mode = "off"
         self._height_brush_mode = mode
@@ -692,11 +687,10 @@ class MapCanvas(InputMixin, OverlayMixin, NameLabelsMixin, RefImageMixin, QGraph
         self._refresh_brush_cursor()
 
     def _confirm_land_paint(self) -> bool:
-        """已生成省份时, 画陆海前先让用户确认一次（边界会错位, 需重新生成省份）。
+        """When provinces have been generated, ask the user to confirm once before drawing land and sea (the boundaries will be misaligned, and provinces need to be regenerated).
 
-        通过直连信号让 MainWindow 弹模态框, 返回时 _land_paint_confirmed
-        已被写好。确认过一次后本会话不再问; 取消则本笔不画, 下次再问。
-        """
+        Let MainWindow pop up the modal box through direct connection signal, and return _land_paint_confirmed
+        has been written. After confirming once, you will not be asked again in this session; if you cancel, the drawing will not be done and you will be asked again next time."""
         if self._display_mode != "land" or self._land_paint_confirmed:
             return True
         if not self._has_provinces:
@@ -707,91 +701,88 @@ class MapCanvas(InputMixin, OverlayMixin, NameLabelsMixin, RefImageMixin, QGraph
     def set_height_brush_strength(self, strength: int) -> None:
         self._height_brush_strength = max(1, min(50, int(strength)))
 
-    # ========== State / Country 颜色设置 ==========
+    # ========== State / Country Color Settings ==========
 
     def set_state_colors(self, rgb: np.ndarray) -> None:
-        """存储 State 颜色 RGB 数组并触发渲染"""
+        """Store State color RGB array and trigger rendering"""
         self._state_color_rgb = rgb
         if self._display_mode == "state":
             self._full_render()
 
     def set_country_colors(self, rgb: np.ndarray, assigned_mask=None) -> None:
-        """存储 Country 颜色 RGB 数组 + 已分配国家像素 mask, 触发渲染.
+        """Stores Country color RGB array + assigned country pixel mask, triggers rendering.
 
-        assigned_mask: H×W bool, True = 该像素属于已分配国家的 land
-            (海洋/未分配 state 处为 False, country renderer 不在这些边界上画白边).
-        """
+        assigned_mask: H×W bool, True = The pixel belongs to the land of the assigned country
+            (False in ocean/unallocated state, country renderer does not draw white edges on these borders)."""
         self._country_color_rgb = rgb
         self._country_assigned_mask = assigned_mask
-        # rgb 变了 → country renderer 边界 cache 和 state renderer 国家边界 cache 都失效
+        # rgb changed → country renderer border cache and state renderer country border cache are invalid
         self._country_borders_cache = None
         self._state_country_borders_cache = None
-        # 预览政治视图叠的是国家色 → 一并失效
+        # The political view in the preview is superimposed with the national color → it will be disabled altogether.
         self._preview_political_cache = None
-        # state 模式也叠加国家边界 → 改国家归属时需要刷新
+        # The state mode also superimposes national borders → needs to be refreshed when changing country ownership
         if self._display_mode in ("country", "state"):
             self._full_render()
 
     def set_highlight_country(self, rgb: tuple[int, int, int] | None) -> None:
-        """设置选中国家的 RGB.
+        """Sets the RGB of the selected country.
 
-        country mode 下: 该国边界 2 像素红描边.
-        state mode 下: 该国全部像素叠加暖黄, 一眼看清同 owner 还有哪些州.
-        传 None 取消.
-        """
+        In country mode: The country's borders are outlined in 2 pixels red.
+        In state mode: all the pixels in the country are superimposed in warm yellow, and you can see at a glance which other states have the same owner.
+        Pass None to cancel."""
         self._highlight_country_rgb = rgb
-        # 高亮不影响国家边界 cache, 只需重绘
+        # Highlighting does not affect the country border cache, only redrawing
         if self._display_mode in ("country", "state"):
             self._full_render()
 
     def set_terrain_underlay_visible(self, visible: bool) -> None:
-        """开关 state/country 模式下的地形底图叠加层。"""
+        """Toggle terrain basemap overlay in state/country mode."""
         self._terrain_underlay_visible = bool(visible)
         self.refresh_terrain_underlay()
 
     def set_terrain_underlay_opacity(self, opacity: float) -> None:
-        """设置地形底图不透明度 (0.0 全透明 ~ 1.0 完全不透明)。"""
+        """Set the terrain basemap opacity (0.0 fully transparent ~ 1.0 fully opaque)."""
         self._terrain_underlay_opacity = max(0.0, min(1.0, float(opacity)))
         item = getattr(self, "_terrain_underlay_item", None)
         if item is not None:
             item.setOpacity(self._terrain_underlay_opacity)
 
     def set_terrain_underlay_source(self, source: str) -> None:
-        """切换地形底图源: 'height' (彩色高度图) 或 'terrain' (地形分类图)."""
+        """Toggle terrain basemap source: 'height' (color heightmap) or 'terrain' (terrain classification map)."""
         if source not in ("height", "terrain"):
             return
         self._terrain_underlay_source = source
         self.refresh_terrain_underlay()
 
     def set_sr_colors(self, rgb: np.ndarray) -> None:
-        """存储 Strategic Region 颜色 RGB 数组并触发渲染"""
+        """Store Strategic Region color RGB array and trigger rendering"""
         self._sr_color_rgb = rgb
         if self._display_mode == "strategic_region":
             self._full_render()
 
     def set_railway_colors(self, rgb: np.ndarray) -> None:
-        """存储铁路等级颜色 RGB 数组并触发渲染"""
+        """Store rail grade color RGB array and trigger rendering"""
         self._railway_color_rgb = rgb
         if self._display_mode == "logistics":
             self._full_render()
 
     def set_provincial_terrain_colors(self, rgb: np.ndarray) -> None:
-        """存储省份属性地形 RGB 数组并触发渲染"""
+        """Store province attribute terrain RGB array and trigger rendering"""
         self._provincial_terrain_color_rgb = rgb
         if self._display_mode == "province_terrain":
             self._full_render()
 
     def set_continent_colors(self, rgb: np.ndarray) -> None:
-        """存储大陆颜色 RGB 数组并触发渲染"""
+        """Store continent color RGB array and trigger rendering"""
         self._continent_color_rgb = rgb
         if self._display_mode == "continent":
             self._full_render()
 
     def set_batch_selection_pids(self, pids: list[int]) -> None:
-        """高亮显示批量选中的省份（用于创建 state/country 等场景）。
+        """Highlight provinces selected in batches (used for creating state/country and other scenarios).
 
-        pids 为空时清除高亮。使用半透明黄色 overlay。
-        """
+        Clear the highlight when pids is empty. Use a translucent yellow overlay."""
         from PyQt5.QtGui import QImage, QPixmap
         if not pids or self._province_map is None:
             self._lasso_overlay.setVisible(False)
@@ -799,19 +790,18 @@ class MapCanvas(InputMixin, OverlayMixin, NameLabelsMixin, RefImageMixin, QGraph
         mask = np.isin(self._province_map, list(pids))
         h, w = self._province_map.shape
         rgba = np.zeros((h, w, 4), dtype=np.uint8)
-        # 半透明亮黄 (BGRA 字节序: B=0, G=220, R=255, A=160)
+        # Translucent bright yellow (BGRA byte order: B=0, G=220, R=255, A=160)
         rgba[mask] = (0, 220, 255, 160)
         img = QImage(rgba.data, w, h, w * 4, QImage.Format.Format_ARGB32)
-        img._ref = rgba  # 防止内存被释放
+        img._ref = rgba  # Prevent memory from being freed
         self._lasso_overlay.setPixmap(QPixmap.fromImage(img))
         self._lasso_overlay.setVisible(True)
 
     def refresh_logistics_overlay(self) -> None:
-        """后勤模式下绘制补给节点和铁路 overlay（在 _lasso_overlay 上画）。
+        """Draw supply nodes and railway overlay in logistics mode (draw on _lasso_overlay).
 
-        补给节点：小绿圆，半径=3+level
-        铁路：彩色线（level 1=细灰 / level 5=粗红），线宽 = 1+level
-        """
+        Supply node: small green circle, radius=3+level
+        Railway: colored lines (level 1=fine gray / level 5=thick red), line width = 1+level"""
         from PyQt5.QtGui import QImage, QPixmap, QPainter, QColor, QPen
         if self._province_map is None:
             self._lasso_overlay.setVisible(False)
@@ -821,14 +811,14 @@ class MapCanvas(InputMixin, OverlayMixin, NameLabelsMixin, RefImageMixin, QGraph
         tm = self._tile_map
         h, w = pm.shape
 
-        # 拿到 managers（挂在 canvas 实例上）
+        # Get managers (hanging on the canvas instance)
         supply_mgr = getattr(self, '_supply_mgr', None)
         railway_mgr = getattr(self, '_railway_mgr', None)
         if supply_mgr is None and railway_mgr is None:
             self._lasso_overlay.setVisible(False)
             return
 
-        # 预计算省份质心（用于画节点/线条）
+        # Precompute province centroid (used for drawing nodes/lines)
         max_pid = int(pm.max())
         if max_pid <= 0:
             return
@@ -838,21 +828,21 @@ class MapCanvas(InputMixin, OverlayMixin, NameLabelsMixin, RefImageMixin, QGraph
         sum_y = np.bincount(flat, weights=ys_grid.ravel().astype(np.float64), minlength=max_pid + 1)
         sum_x = np.bincount(flat, weights=xs_grid.ravel().astype(np.float64), minlength=max_pid + 1)
 
-        # 用 QPainter 在 transparent QImage 上画
+        # Use QPainter to draw on transparent QImage
         img = QImage(w, h, QImage.Format.Format_ARGB32)
-        img.fill(0)  # 全透明
+        img.fill(0)  # Fully transparent
         painter = QPainter(img)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
 
-        # 铁路线（级别 1-5 颜色由灰到红，粗细从 2 到 6）
+        # Railroad lines (levels 1-5 gray to red, thickness 2 to 6)
         RAIL_COLORS = {
-            1: QColor(120, 120, 140, 200),  # 灰
-            2: QColor(100, 160, 100, 210),  # 深绿
-            3: QColor(230, 180, 60, 220),   # 金黄
-            4: QColor(230, 130, 60, 230),   # 橙
-            5: QColor(230, 60, 60, 240),    # 红（最高级）
+            1: QColor(120, 120, 140, 200),  # gray
+            2: QColor(100, 160, 100, 210),  # dark green
+            3: QColor(230, 180, 60, 220),   # golden
+            4: QColor(230, 130, 60, 230),   # Orange
+            5: QColor(230, 60, 60, 240),    # Red (highest grade)
         }
-        # 铁路线：只画陆地省份之间的线段，跳过海洋省份（避免跨海飞线）
+        # Railway lines: only draw line segments between land provinces and skip maritime provinces (to avoid flying lines across the sea)
         if railway_mgr is not None:
             from data.constants import TILE_LAND
             for entry in railway_mgr._entries:
@@ -864,31 +854,31 @@ class MapCanvas(InputMixin, OverlayMixin, NameLabelsMixin, RefImageMixin, QGraph
                 pts = []
                 for pid in entry.province_ids:
                     if 0 < pid <= max_pid and pid_count[pid] > 0:
-                        # 检查省份是否为陆地（跳过海洋/湖泊省份）
+                        # Check if province is land (skip ocean/lake provinces)
                         cy_idx = int(sum_y[pid] / pid_count[pid])
                         cx_idx = int(sum_x[pid] / pid_count[pid])
                         cy_idx = min(cy_idx, h - 1)
                         cx_idx = min(cx_idx, w - 1)
                         if tm is not None and int(tm[cy_idx, cx_idx]) != TILE_LAND:
-                            # 海洋省份 → 断开线段（后面重新开始）
+                            # Maritime Provinces → Disconnect line segment (restart later)
                             pts.append(None)
                             continue
                         pts.append((sum_x[pid] / pid_count[pid], sum_y[pid] / pid_count[pid]))
-                # 画线段，遇到 None 断开
+                # Draw a line segment and break when None is encountered
                 for i in range(len(pts) - 1):
                     if pts[i] is None or pts[i + 1] is None:
                         continue
                     x1, y1 = pts[i]
                     x2, y2 = pts[i + 1]
-                    # 过长线段跳过（跨海连接 > 200px）
+                    # Skipping too long line segments (cross-ocean connection > 200px)
                     if abs(x1 - x2) > 200 or abs(y1 - y2) > 200:
                         continue
                     painter.drawLine(int(x1), int(y1), int(x2), int(y2))
 
-        # 海峡/邻接 — 不在后勤 overlay 画（太多会乱），只在邻接对话框里管理
-        # 如果需要可在邻接对话框打开时单独渲染
+        # Straits/adjacencies — not drawn in the logistic overlay (too many would be cluttered), only managed in the adjacencies dialog
+        # Can be rendered separately while the adjacency dialog is open if desired
 
-        # 补给节点（菱形 + 十字标志，HOI4 风格）
+        # Supply nodes (diamond + cross sign, HOI4 style)
         if supply_mgr is not None:
             from PyQt5.QtCore import QPointF
             from PyQt5.QtGui import QPolygonF
@@ -896,7 +886,7 @@ class MapCanvas(InputMixin, OverlayMixin, NameLabelsMixin, RefImageMixin, QGraph
                 if 0 < pid <= max_pid and pid_count[pid] > 0:
                     cx = int(sum_x[pid] / pid_count[pid])
                     cy = int(sum_y[pid] / pid_count[pid])
-                    r = 4  # 菱形半径
+                    r = 4  # rhombus radius
                     diamond = QPolygonF([
                         QPointF(cx, cy - r),
                         QPointF(cx + r, cy),
@@ -906,7 +896,7 @@ class MapCanvas(InputMixin, OverlayMixin, NameLabelsMixin, RefImageMixin, QGraph
                     painter.setPen(QPen(QColor(0, 0, 0, 230), 1))
                     painter.setBrush(QColor(60, 200, 60, 240))
                     painter.drawPolygon(diamond)
-                    # 白色十字
+                    # white cross
                     painter.setPen(QPen(QColor(255, 255, 255, 255), 1))
                     painter.drawLine(cx - 2, cy, cx + 2, cy)
                     painter.drawLine(cx, cy - 2, cx, cy + 2)
@@ -915,10 +905,10 @@ class MapCanvas(InputMixin, OverlayMixin, NameLabelsMixin, RefImageMixin, QGraph
         self._lasso_overlay.setPixmap(QPixmap.fromImage(img))
         self._lasso_overlay.setVisible(True)
 
-    # ── 变换工具 ──
+    # ──Transform Tool──
 
     def _apply_transform(self) -> None:
-        """将变换结果（缩放+旋转）写入 tile_map。"""
+        """Write the transformation results (scale + rotation) to tile_map."""
         if self._transform_snippet is None or self._transform_box is None:
             return
 
@@ -931,56 +921,56 @@ class MapCanvas(InputMixin, OverlayMixin, NameLabelsMixin, RefImageMixin, QGraph
         if tw < 2 or th < 2:
             return
 
-        # 1. 缩放 snippet 到目标尺寸
+        # 1. Scale snippet to target size
         src_h, src_w = self._transform_snippet.shape
         zy = th / src_h
         zx = tw / src_w
         scaled = zoom(self._transform_snippet.astype(np.float32), (zy, zx), order=0)
         scaled = np.round(scaled).astype(np.uint8)
 
-        # 2. 旋转（如果有角度）
+        # 2. Rotation (if there is an angle)
         if abs(self._transform_angle) > 0.5:
-            # cval=TILE_SEA 填充旋转后的空白区域
+            # cval=TILE_SEA fills the empty space after rotation
             rotated = rotate(scaled.astype(np.float32), -self._transform_angle,
                              reshape=False, order=0, cval=float(TILE_SEA))
             scaled = np.round(rotated).astype(np.uint8)
 
-        # 3. 先清除旧变换区域，再写入
-        # 清除整个可能被影响的区域
+        # 3. Clear the old transformation area first, and then write
+        # Clear the entire potentially affected area
         ox0, oy0, ox1, oy1 = self._transform_orig_box
-        self._tile_map[oy0:oy1, ox0:ox1] = TILE_SEA  # 清原位
-        # 擦上一次实时 apply 写入的位置 — 修复"拖动留下复制痕迹"bug
+        self._tile_map[oy0:oy1, ox0:ox1] = TILE_SEA  # clear original position
+        # Erase the location where the last real-time apply was written - fix the "drag leaves copy traces" bug
         if self._transform_last_written_box is not None:
             lx0, ly0, lx1, ly1 = self._transform_last_written_box
             self._tile_map[ly0:ly1, lx0:lx1] = TILE_SEA
-        # 也清当前框位置（可能被上次预览污染）
+        # Also clear the current frame position (may be contaminated by the last preview)
         self._tile_map[y0:y1, x0:x1] = TILE_SEA
 
-        # 写入
+        # write
         sh, sw = scaled.shape
         ph = min(sh, y1 - y0)
         pw = min(sw, x1 - x0)
         self._tile_map[y0:y0 + ph, x0:x0 + pw] = scaled[:ph, :pw]
         self._transform_last_written_box = (x0, y0, x0 + pw, y0 + ph)
-        # _tile_map 和 _map_data.tile_map 是同一个数组，无需额外同步
+        # _tile_map and _map_data.tile_map are the same array, no additional synchronization is required
         self._full_render()
 
     def _cancel_transform(self) -> None:
-        """取消变换，恢复原始状态。"""
+        """Cancel the transformation and restore the original state."""
         if self._transform_snippet is not None and self._transform_orig_box is not None:
-            # 先擦上一次实时 apply 留在画布上的内容 — 否则 ESC 取消时仍有"复制"残留
+            # First erase the content left on the canvas by a real-time apply — otherwise there will still be "copy" residue when ESC cancels
             if self._transform_last_written_box is not None:
                 lx0, ly0, lx1, ly1 = self._transform_last_written_box
                 self._tile_map[ly0:ly1, lx0:lx1] = TILE_SEA
-            # 恢复原始片段到原始位置
+            # Restore original clip to original position
             ox0, oy0, ox1, oy1 = self._transform_orig_box
             self._tile_map[oy0:oy1, ox0:ox1] = self._transform_snippet
-            # _tile_map 和 _map_data.tile_map 是同一个数组，无需额外同步
+            # _tile_map and _map_data.tile_map are the same array, no additional synchronization is required
             self._full_render()
         self._end_transform()
 
     def _end_transform(self) -> None:
-        """清理变换状态。"""
+        """Clean up transform state."""
         self._transform_active = False
         self._transform_selecting = False
         self._transform_box = None
@@ -991,39 +981,38 @@ class MapCanvas(InputMixin, OverlayMixin, NameLabelsMixin, RefImageMixin, QGraph
         self._transform_last_written_box = None
         self._update_transform_visuals()
 
-    # ── 框选模式 ──
+    # ── Frame selection mode ──
 
     def start_selection_mode(self, callback) -> None:
-        """进入框选模式。用户拖拽出矩形后调用 callback(x0, y0, x1, y1)."""
+        """Enter box selection mode. Callback(x0, y0, x1, y1) is called after the user drags out the rectangle."""
         self._selection_mode = True
         self._selection_callback = callback
         self._selection_rect_item.setVisible(False)
         self.setCursor(Qt.CrossCursor)
 
     def _finish_selection(self) -> None:
-        """框选完成，调用回调。"""
+        """When the frame selection is completed, the callback is called."""
         self._selection_mode = False
         self._selection_rect_item.setVisible(False)
         self.setCursor(Qt.CursorShape.CrossCursor)
         if self._selection_rect and self._selection_callback:
             x0, y0, x1, y1 = self._selection_rect
-            if x1 > x0 + 5 and y1 > y0 + 5:  # 最小 5px
+            if x1 > x0 + 5 and y1 > y0 + 5:  # Minimum 5px
                 self._selection_callback(x0, y0, x1, y1)
         self._selection_rect = None
         self._selection_callback = None
 
-    # ========== 渲染（性能核心） ==========
+    # ========== Rendering (Performance Core) ==========
 
     def register_renderer(self, mode: str, module_path: str) -> None:
-        """注册/覆盖一个显示模式的渲染器模块 (运行时扩展点, 如预览模式)。
+        """Register/override a renderer module for display modes (runtime extension points, such as preview mode).
 
-        renderer 模块约定见 views/canvas/render_registry.py 模块说明。
-        """
+        For the renderer module convention, see views/canvas/render_registry.py module description."""
         self._renderer_paths[mode] = module_path
         self._renderer_cache.pop(mode, None)
 
     def _resolve_renderer(self, mode: str):
-        """按模式取渲染器模块。未注册的模式回退 land; 延迟 import 并缓存。"""
+        """Get the renderer module by mode. Unregistered modes fall back to land; defer import and cache."""
         if mode not in self._renderer_cache:
             import importlib
             path = self._renderer_paths.get(mode) or self._renderer_paths["land"]
@@ -1031,44 +1020,43 @@ class MapCanvas(InputMixin, OverlayMixin, NameLabelsMixin, RefImageMixin, QGraph
         return self._renderer_cache[mode]
 
     def _full_render(self) -> None:
-        """全量渲染整个地图到显示缓冲区（根据当前模式）"""
+        """Fully render the entire map into the display buffer (according to the current mode)"""
         self._resolve_renderer(self._display_mode).render(self)
         self._update_pixmap_from_buffer()
-        # VP 叠加层可见性切换（不重绘，用缓存）
+        # VP overlay visibility toggle (no redraw, use cache)
         self._update_vp_visibility()
-        # 名字标签显隐（state/country 模式）
+        # Show and hide name tags (state/country mode)
         self._update_name_labels_visibility()
-        # 密度叠加层：由 app_controller 管理显隐，这里只刷新内容
+        # Density overlay: The display is managed by app_controller. Only the content is refreshed here.
         if getattr(self, '_density_overlay_visible', False):
             self._render_density_overlay()
 
     def _partial_render(self, x0: int, y0: int, x1: int, y1: int) -> None:
-        """局部渲染指定矩形区域（根据当前模式）"""
+        """Partially render a specified rectangular area (according to the current mode)"""
         renderer = self._resolve_renderer(self._display_mode)
         partial = getattr(renderer, "partial_render", None)
         if partial is None:
-            # 该渲染器不支持局部渲染 (整图合成类, 如预览) → 回退全量
+            # This renderer does not support partial rendering (whole image synthesis class, such as preview) → fallback to full rendering
             self._full_render()
             return
         partial(self, x0, y0, x1, y1)
         self._update_pixmap_from_buffer()
 
-    # ---------- 通用渲染辅助 ----------
+    # ---------- General rendering assistance ----------
 
     def _update_pixmap_from_buffer(self) -> None:
-        """将显示缓冲区写入 QPixmap"""
+        """Write display buffer to QPixmap"""
         img = QImage(self._display_buffer.data, self.map_w, self.map_h,
                      self.map_w * 4, QImage.Format.Format_RGB32)
-        img._ref = self._display_buffer  # 防止 GC
+        img._ref = self._display_buffer  # Prevent GC
         self._map_pixmap_item.setPixmap(QPixmap.fromImage(img))
 
     def _cleanup_after_province_edit(self) -> None:
-        """边界编辑结束后的安全清理：
-        1. 修复可能产生的 X-crossings
-        2. 修复可能产生的不连通碎片（边界编辑可能把对方省份切成两半）
-        3. 压实 ID（防止某省份被推到 0 像素消失后留下 gap）
-        4. 维护选中省份 ID 在压实后仍指向正确省份
-        """
+        """Security cleanup after boundary editing:
+        1. Fix possible X-crossings
+        2. Repair possible disconnected fragments (border editing may cut the other province in half)
+        3. Compact ID (to prevent a province from being pushed to 0 pixels and leaving a gap after disappearing)
+        4. Maintain the selected province ID to still point to the correct province after compaction"""
         from domain.validators.province import fix_x_crossings
         from domain.generators.province import _fix_non_contiguous_fast, compact_province_ids
 
@@ -1079,18 +1067,18 @@ class MapCanvas(InputMixin, OverlayMixin, NameLabelsMixin, RefImageMixin, QGraph
             if fix_x_crossings(self._province_map) == 0:
                 break
 
-        # 2. 不连通碎片
+        # 2. Disconnected fragments
         _fix_non_contiguous_fast(self._province_map)
 
-        # 3. 压实前先记录 selected 是否还存在
+        # 3. Before compaction, record whether selected still exists
         sel_existed = bool((self._province_map == old_sel).any()) if old_sel > 0 else False
 
-        # 4. 压实 ID（用映射表追踪 selected 的新 ID）
+        # 4. Compact ID (use mapping table to track selected new ID)
         if old_sel > 0 and sel_existed:
             unique_before = np.unique(self._province_map)
             compact_province_ids(self._province_map)
             unique_after = np.unique(self._province_map)
-            # 找出 old_sel 在压实后的新 ID
+            # Find the new ID of old_sel after compaction
             old_list = unique_before.tolist()
             new_list = unique_after.tolist()
             if old_sel in old_list:
@@ -1099,7 +1087,7 @@ class MapCanvas(InputMixin, OverlayMixin, NameLabelsMixin, RefImageMixin, QGraph
         else:
             compact_province_ids(self._province_map)
             if not sel_existed:
-                # 选中省份被推没了
+                # The selected province was pushed away
                 self._selected_province_id = 0
         self._selected_province_ids = (
             {self._selected_province_id}
@@ -1108,8 +1096,8 @@ class MapCanvas(InputMixin, OverlayMixin, NameLabelsMixin, RefImageMixin, QGraph
         )
 
     def center_on_pixel(self, x: int, y: int, zoom: float | None = None) -> None:
-        """让画布中心对准地图坐标 (x, y)，可选放大到 zoom 倍。
-        用于验证对话框跳转到问题位置。"""
+        """Center the canvas at map coordinates (x, y), optionally zooming in to zoom times.
+        Used to verify that the dialog box jumps to the location of the problem."""
         if not (0 <= x < self.map_w and 0 <= y < self.map_h):
             return
         if zoom is not None:
@@ -1118,7 +1106,7 @@ class MapCanvas(InputMixin, OverlayMixin, NameLabelsMixin, RefImageMixin, QGraph
         self.centerOn(float(x), float(y))
 
     def center_on_province(self, pid: int) -> None:
-        """跳转到指定省份的中心，并选中它"""
+        """Jump to the center of the specified province and select it"""
         if pid <= 0 or pid > self._province_map.max():
             return
         ys, xs = np.where(self._province_map == pid)
@@ -1133,7 +1121,7 @@ class MapCanvas(InputMixin, OverlayMixin, NameLabelsMixin, RefImageMixin, QGraph
         self.center_on_pixel(cx, cy, zoom=2.0)
 
     def split_province(self, pid: int) -> bool:
-        """切割省份：沿中线把一个省份分成两半，新半用新ID"""
+        """Cut province: Divide a province into two halves along the center line, and use a new ID for the new half."""
         if pid <= 0:
             return False
         mask = self._province_map == pid
@@ -1141,17 +1129,17 @@ class MapCanvas(InputMixin, OverlayMixin, NameLabelsMixin, RefImageMixin, QGraph
         if len(ys) < 2:
             return False
 
-        # 沿较长轴的中线切割
+        # Cut along the midline of the longer axis
         y_range = ys.max() - ys.min()
         x_range = xs.max() - xs.min()
         new_id = int(self._province_map.max()) + 1
 
         if x_range >= y_range:
-            # 水平方向更宽，沿 x 中线切
+            # Wider horizontally, cut along the x centerline
             mid_x = (xs.min() + xs.max()) // 2
             right_half = mask & (np.arange(self.map_w)[np.newaxis, :] > mid_x)
         else:
-            # 垂直方向更高，沿 y 中线切
+            # Higher vertically, tangent along the y midline
             mid_y = (ys.min() + ys.max()) // 2
             right_half = mask & (np.arange(self.map_h)[:, np.newaxis] > mid_y)
 
@@ -1171,10 +1159,10 @@ class MapCanvas(InputMixin, OverlayMixin, NameLabelsMixin, RefImageMixin, QGraph
         self._full_render()
         self._render_province_overlay()
 
-    # ========== 脏矩形系统 ==========
+    # ========== Dirty Rectangle System ==========
 
     def _mark_dirty(self, x0: int, y0: int, x1: int, y1: int) -> None:
-        """标记脏区域，合并多次绘制"""
+        """Mark dirty areas and merge multiple draws"""
         if self._dirty_rect is None:
             self._dirty_rect = (x0, y0, x1, y1)
         else:
@@ -1184,24 +1172,24 @@ class MapCanvas(InputMixin, OverlayMixin, NameLabelsMixin, RefImageMixin, QGraph
             self._render_timer.start()
 
     def _flush_dirty(self) -> None:
-        """刷新脏区域"""
+        """Refresh dirty areas"""
         if self._dirty_rect is None:
             return
         x0, y0, x1, y1 = self._dirty_rect
         self._dirty_rect = None
         self._partial_render(x0, y0, x1, y1)
 
-    # ========== 绘制操作 ==========
+    # ========== Drawing operations ==========
 
     def _stamp_brush(self, cx: int, cy: int) -> None:
-        """在单个位置盖一个圆形笔刷印章（根据当前模式）"""
+        """Stamp a circular brush seal in a single location (according to the current mode)"""
         import numpy as np
 
-        # 省份模式：固定 1 像素，不依赖刷子大小（边界编辑要精确）
+        # Province mode: fixed 1 pixel, does not depend on brush size (border editing needs to be precise)
         if self._display_mode == "province":
             r = 0
         elif self._display_mode == "river" and self._current_tool != "eraser":
-            # 河流画笔强制 1px（HOI4 河流必须 1 像素宽），尺寸滑杆只作用于橡皮
+            # River brush is forced to 1px (HOI4 rivers must be 1 pixel wide), the size slider only works on the eraser
             r = 0
         else:
             r = self._brush_size // 2
@@ -1212,21 +1200,21 @@ class MapCanvas(InputMixin, OverlayMixin, NameLabelsMixin, RefImageMixin, QGraph
         if x0 >= x1 or y0 >= y1:
             return
 
-        # 构建圆形 mask（r >= 2 时用圆，小笔刷不需要）
+        # Construct a circular mask (use circle when r >= 2, not needed for small brushes)
         if r >= 2:
             yy, xx = np.ogrid[y0:y1, x0:x1]
             circle = (yy - cy) ** 2 + (xx - cx) ** 2 <= r * r
         else:
-            circle = None  # 小笔刷直接全覆盖
+            circle = None  # Small brushes directly cover the whole area
 
         mode = self._display_mode
 
         if mode == "land":
-            # 密度画笔模式（密度遮罩开启时）
+            # Density brush mode (when density mask is on)
             if getattr(self, '_density_overlay_visible', False):
                 dm = getattr(self._map_data, 'density_map', None) if self._map_data else None
                 if dm is not None:
-                    # 用密度专属画笔大小
+                    # Dedicate brush size with density
                     dr = getattr(self, '_density_brush_size', 30) // 2
                     dy0, dy1 = max(0, cy - dr), min(self.map_h, cy + dr + 1)
                     dx0, dx1 = max(0, cx - dr), min(self.map_w, cx + dr + 1)
@@ -1245,9 +1233,9 @@ class MapCanvas(InputMixin, OverlayMixin, NameLabelsMixin, RefImageMixin, QGraph
                         dm[dy0:dy1, dx0:dx1][d_circle] = dv
                 return
 
-            # 已有省份时不再自动清除 — 用户可能只是想扩张陆地
-            # 新画的陆地区域 province_map 保持 0（未分配），
-            # 后续用"增量生成省份"给新区域补省份
+            # Provinces are no longer automatically cleared when they already exist - the user may just want to expand the land
+            # The newly drawn land area province_map remains 0 (unallocated),
+            # Later, use "incremental province generation" to add provinces to the new area.
 
             if self._current_tool == "eraser":
                 if circle is not None:
@@ -1257,7 +1245,7 @@ class MapCanvas(InputMixin, OverlayMixin, NameLabelsMixin, RefImageMixin, QGraph
             elif self._current_tool in ("brush", "new_land"):
                 tile_val = TILE_LAND if self._current_tool == "new_land" else self._current_tile_type
                 if self._current_tool == "new_land":
-                    # 记录真正从非陆地变成陆地的像素（旧陆地不记）
+                    # Record the pixels that actually changed from non-land to land (old land is not recorded)
                     sub = self._tile_map[y0:y1, x0:x1]
                     if circle is not None:
                         changed = circle & (sub != TILE_LAND)
@@ -1276,7 +1264,7 @@ class MapCanvas(InputMixin, OverlayMixin, NameLabelsMixin, RefImageMixin, QGraph
         elif mode == "terrain":
             if not self._terrain_brush_mode:
                 return
-            # 用独立的地形画笔尺寸，忽略通用 brush_size
+            # Use independent terrain brush size, ignore general brush_size
             tr = self._terrain_brush_size // 2
             if tr < 1:
                 tr = 1
@@ -1289,7 +1277,7 @@ class MapCanvas(InputMixin, OverlayMixin, NameLabelsMixin, RefImageMixin, QGraph
             yy_t, xx_t = np.ogrid[ty0:ty1, tx0:tx1]
             dist_sq_t = (yy_t - cy) ** 2 + (xx_t - cx) ** 2
             t_circle = dist_sq_t <= tr * tr
-            # 海/湖保护：视觉地形不改海和湖
+            # Sea/Lake Protection: Visual topography does not change sea and lake
             sub_tile = self._tile_map[ty0:ty1, tx0:tx1]
             t_circle = t_circle & (sub_tile == TILE_LAND)
             if not np.any(t_circle):
@@ -1305,7 +1293,7 @@ class MapCanvas(InputMixin, OverlayMixin, NameLabelsMixin, RefImageMixin, QGraph
         elif mode == "height":
             if self._height_brush_mode == "off":
                 return
-            # 用独立的高度画笔尺寸，忽略通用 brush_size
+            # Use independent height brush size, ignore general brush_size
             hr = self._height_brush_size // 2
             if hr < 1:
                 hr = 1
@@ -1319,12 +1307,12 @@ class MapCanvas(InputMixin, OverlayMixin, NameLabelsMixin, RefImageMixin, QGraph
             dist_sq = (yy_h - cy) ** 2 + (xx_h - cx) ** 2
             r_sq = hr * hr
             disk = dist_sq <= r_sq
-            # 只改陆地像素（海和湖都不动）
+            # Only land pixels are changed (sea and lake are not changed)
             sub_tile = self._tile_map[hy0:hy1, hx0:hx1]
             disk = disk & (sub_tile == TILE_LAND)
             if not np.any(disk):
                 return
-            # 距离衰减（0..1, 中心最强, 边缘最弱）
+            # Distance attenuation (0..1, strongest at the center, weakest at the edges)
             dist_norm = np.sqrt(dist_sq.astype(np.float32)) / max(hr, 1)
             falloff = np.clip(1.0 - dist_norm, 0.0, 1.0)
             sub_h = self._height_map[hy0:hy1, hx0:hx1].astype(np.int16)
@@ -1333,7 +1321,7 @@ class MapCanvas(InputMixin, OverlayMixin, NameLabelsMixin, RefImageMixin, QGraph
                 delta = (falloff * strength).astype(np.int16)
                 new_h = np.clip(sub_h + delta, 0, 255).astype(np.uint8)
                 self._height_map[hy0:hy1, hx0:hx1][disk] = new_h[disk]
-                # 被抬起来的陆地如果还低于海平面，拉到海平面+1
+                # If the lifted land is still below sea level, it will be pulled to sea level +1
                 from data.constants import SEA_LEVEL
                 low_mask = disk & (self._height_map[hy0:hy1, hx0:hx1] <= SEA_LEVEL)
                 if np.any(low_mask):
@@ -1342,16 +1330,16 @@ class MapCanvas(InputMixin, OverlayMixin, NameLabelsMixin, RefImageMixin, QGraph
                 delta = (falloff * strength).astype(np.int16)
                 new_h = np.clip(sub_h - delta, 0, 255).astype(np.uint8)
                 self._height_map[hy0:hy1, hx0:hx1][disk] = new_h[disk]
-                # 不让陆地下沉到海平面以下（保持陆地身份）
+                # Prevent land from sinking below sea level (maintain land identity)
                 from data.constants import SEA_LEVEL
                 below = disk & (self._height_map[hy0:hy1, hx0:hx1] <= SEA_LEVEL)
                 if np.any(below):
                     self._height_map[hy0:hy1, hx0:hx1][below] = SEA_LEVEL + 1
             elif self._height_brush_mode == "smooth":
-                # 盒式模糊（只在 disk 内取均值）：用 disk 像素平均拉近
+                # Box blur (average within disk only): Zoom in evenly with disk pixels
                 area_vals = sub_h[disk]
                 avg = int(area_vals.mean())
-                blend = falloff * (strength / 10.0)  # 10 强度 = 完全拉到均值
+                blend = falloff * (strength / 10.0)  # 10 Strength = Fully Pulled to Mean
                 blend = np.clip(blend, 0.0, 1.0)
                 new_h = (sub_h * (1.0 - blend) + avg * blend).astype(np.int16)
                 new_h = np.clip(new_h, 0, 255).astype(np.uint8)
@@ -1386,25 +1374,24 @@ class MapCanvas(InputMixin, OverlayMixin, NameLabelsMixin, RefImageMixin, QGraph
         self._mark_dirty(x0, y0, x1, y1)
 
     def _paint_at(self, scene_x: int, scene_y: int) -> None:
-        """在指定位置绘制，并与上一个位置做插值避免断线。
+        """Draw at the specified position and interpolate with the previous position to avoid line breakage.
 
-        河流模式用**阶梯式正交路径**（先水平后垂直），符合 HOI4 规则
-        （pixels do not connect diagonally — Paradox wiki《Map modding》）。
-        其它模式用 Bresenham 斜线（更平滑）。
-        """
+        River mode uses **stepped orthogonal paths** (horizontal first, then vertical), compliant with HOI4 rules
+        (pixels do not connect diagonally — Paradox wiki "Map modding").
+        Other modes use Bresenham slopes (smoother)."""
         if self._last_draw_pos is not None:
             lx, ly = self._last_draw_pos
             dx = abs(scene_x - lx)
             dy = abs(scene_y - ly)
             steps = max(dx, dy)
             if self._display_mode == "river":
-                # 河流：永远走阶梯（哪怕只是 1 像素的对角移动也要走正交）
-                # 慢速拖鼠标每次只报 1px，dx=dy=1 时 steps=1，
-                # 走直接 stamp 会产生一串对角像素 → 不合法
+                # Rivers: Always go stairs (even if it’s just a 1 pixel diagonal move, go orthogonal)
+                # Dragging the mouse slowly will only report 1px each time. When dx=dy=1, steps=1.
+                # Direct stamping will produce a series of diagonal pixels → illegal
                 if dx > 0 or dy > 0:
                     self._stamp_orthogonal(lx, ly, scene_x, scene_y)
             elif steps > 1:
-                # 其它模式：Bresenham 斜线插值（平滑）
+                # Other modes: Bresenham slope interpolation (smoothing)
                 for i in range(1, steps + 1):
                     t = i / steps
                     ix = int(lx + (scene_x - lx) * t)
@@ -1418,17 +1405,16 @@ class MapCanvas(InputMixin, OverlayMixin, NameLabelsMixin, RefImageMixin, QGraph
         self._last_draw_pos = (scene_x, scene_y)
 
     def _stamp_orthogonal(self, x0: int, y0: int, x1: int, y1: int) -> None:
-        """正交阶梯画线：先沿 x 方向走一格一格，再沿 y 方向。
-        保证相邻两像素必然上下左右相贴，不产生对角连接。
-        用于河流模式 — HOI4 规定河流只能正交连接。
-        """
-        # 水平段
+        """Orthogonal ladder line drawing: first go one square in the x direction, and then in the y direction.
+        It is guaranteed that two adjacent pixels must be in contact with each other up, down, left, and right, without any diagonal connection.
+        For use in river mode - HOI4 specifies that rivers can only be connected orthogonally."""
+        # horizontal section
         x = x0
         step_x = 1 if x1 > x0 else -1 if x1 < x0 else 0
         while x != x1:
             x += step_x
             self._stamp_brush(x, y0)
-        # 垂直段
+        # vertical section
         y = y0
         step_y = 1 if y1 > y0 else -1 if y1 < y0 else 0
         while y != y1:
@@ -1442,9 +1428,9 @@ class MapCanvas(InputMixin, OverlayMixin, NameLabelsMixin, RefImageMixin, QGraph
         mode = self._display_mode
 
         if mode in ("province", "state", "country", "river"):
-            return  # 这些模式不支持填充
+            return  # These modes do not support padding
 
-        # 确定填充目标数组和填充值
+        # Determine the fill target array and fill value
         if mode == "land":
             data = self._tile_map
             fill_val = self._current_tile_type
@@ -1487,27 +1473,27 @@ class MapCanvas(InputMixin, OverlayMixin, NameLabelsMixin, RefImageMixin, QGraph
                 if cy < self.map_h - 1 and not visited[cy + 1, nx] and data[cy + 1, nx] == target:
                     stack.append((nx, cy + 1))
 
-        # 填充后全量渲染（因为区域不确定）
+        # Render in full after filling (because the area is uncertain)
         self._full_render()
 
-    # ========== 事件辅助 ==========
+    # ========== Event Auxiliary ==========
 
     def _scene_pos(self, event: QMouseEvent) -> tuple[int, int]:
         pos = self.mapToScene(event.pos())
         return int(pos.x()), int(pos.y())
 
     def _scene_pos_clamped(self, event: QMouseEvent) -> tuple[int, int]:
-        """返回限制在地图边界内的场景坐标"""
+        """Returns scene coordinates restricted to map boundaries"""
         sx, sy = self._scene_pos(event)
         return max(0, min(self.map_w - 1, sx)), max(0, min(self.map_h - 1, sy))
 
     def _is_in_bounds(self, sx: int, sy: int) -> bool:
-        """检查坐标是否在地图边界内"""
+        """Check if coordinates are within map boundaries"""
         return 0 <= sx < self.map_w and 0 <= sy < self.map_h
 
     def cleanup_mode_state(self) -> None:
-        """清理所有临时模式状态。模式切换时调用，防止状态残留导致异常。"""
-        # 变换工具状态
+        """Clean up all temporary mode state. Called when switching modes to prevent exceptions caused by state residue."""
+        # Change tool state
         if self._transform_active:
             self._end_transform()
         self._transform_selecting = False
@@ -1519,27 +1505,27 @@ class MapCanvas(InputMixin, OverlayMixin, NameLabelsMixin, RefImageMixin, QGraph
         self._transform_angle = 0.0
         self._transform_last_written_box = None
 
-        # 框选状态
+        # Frame selection state
         self._selection_mode = False
         self._selection_rect = None
         self._selection_start = None
         self._selection_rect_item.setVisible(False)
 
-        # 绘制状态
+        # drawing status
         self._is_drawing = False
         self._last_draw_pos = None
 
-        # 框架工具
+        # Framework tools
         self._framework_tool = None
 
-        # 省份选中
+        # Province selected
         self._selected_province_id = 0
         self._selected_province_ids.clear()
 
-        # lasso / overlay 清理
+        # lasso / overlay cleaning
         self._clear_lasso_visual()
 
-        # 光标重置
+        # cursor reset
         self.setCursor(Qt.CursorShape.CrossCursor)
 
     def fit_in_view(self) -> None:

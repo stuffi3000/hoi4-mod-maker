@@ -1,15 +1,13 @@
-"""
-Strategic Region 管理器 — 战略区域数据.
+"""Strategic Region Manager — strategic region data.
 
-参考: 参考/Strategic region modding .txt
+Reference: Reference/Strategic region modding .txt
 
-每个 region:
-- id: 连续整数 (跳号崩)
-- name: 本地化 key
-- province_ids: 所属省份 (每个省份只能属一个 region)
-- weather_preset: 'polar'/'cold'/'temperate'/'tropical'/'desert' — 自动填天气
-- naval_terrain: 仅海洋 region, 下拉选
-"""
+Each region:
+- id: continuous integer (number jump collapse)
+- name: localization key
+- province_ids: province (each province can only belong to one region)
+- weather_preset: 'polar'/'cold'/'temperate'/'tropical'/'desert' — automatically fill in the weather
+- naval_terrain: only ocean region, drop-down selection"""
 
 from __future__ import annotations
 
@@ -22,20 +20,19 @@ from scipy.ndimage import label as _ndimage_label
 
 WeatherPreset = Literal["polar", "cold", "temperate", "tropical", "desert"]
 
-# 天气预设 → 12 个 period（每月一个），与 vanilla 格式一致
-# between 格式: {START_DAY.MONTH END_DAY.MONTH}，period 不能跨月
-# 月末日: Jan/Mar/May/Jul/Aug/Oct/Dec=30, Feb=27, Apr/Jun/Sep/Nov=29
-# 写错月末日会导致 HOI4 报 "overlapping temperature intervals"
+# Weather presets → 12 periods (one per month), consistent with vanilla format
+# between format: {START_DAY.MONTH END_DAY.MONTH}, period cannot span months
+# Last day of the month: Jan/Mar/May/Jul/Aug/Oct/Dec=30, Feb=27, Apr/Jun/Sep/Nov=29
+# Writing the wrong end of the month will cause HOI4 to report "overlapping temperature intervals"
 
-# 月份末日表（每月合法的最大 day 值，day 从 0 起算）
+# End of month table (maximum legal day value per month, day starts from 0)
 _MONTH_LAST_DAY = [30, 27, 30, 29, 30, 29, 30, 30, 29, 30, 29, 30]
 
-# 每种气候的 12 个月参数（冬冷夏暖）— 季节性强度按预设调整
-# 索引 0=Jan ... 11=Dec
+# 12-month parameters for each climate (cold in winter, warm in summer) - seasonal intensity adjusted by preset
+# Index 0=Jan ... 11=Dec
 def _make_seasonal(winter: dict, spring: dict, summer: dict, autumn: dict) -> list[dict]:
-    """给定 4 季参数，展开成 12 个月 period 列表。
-    冬=Dec/Jan/Feb, 春=Mar/Apr/May, 夏=Jun/Jul/Aug, 秋=Sep/Oct/Nov。
-    """
+    """Given 4 quarter parameters, expand into a list of 12 month periods.
+    Winter=Dec/Jan/Feb, Spring=Mar/Apr/May, Summer=Jun/Jul/Aug, Autumn=Sep/Oct/Nov."""
     season_by_month = [winter, winter, spring, spring, spring, summer,
                        summer, summer, autumn, autumn, autumn, winter]
     periods = []
@@ -101,31 +98,22 @@ WEATHER_PRESETS: dict[str, list[dict]] = {
 }
 
 PRESET_LABELS = {
-    "polar": "极地", "cold": "寒带", "temperate": "温带",
-    "tropical": "热带", "desert": "沙漠",
-}
-PRESET_LABELS_EN = {
     "polar": "Polar", "cold": "Cold", "temperate": "Temperate",
     "tropical": "Tropical", "desert": "Desert",
 }
 
 
 def weather_preset_display_name(preset: str) -> str:
-    """Return a localized label for a strategic-region weather preset."""
-    from ui.i18n import tr_pair
-    return tr_pair(
-        PRESET_LABELS.get(preset, preset),
-        PRESET_LABELS_EN.get(preset, preset),
-    )
+    """Return the English label for a strategic-region weather preset."""
+    return PRESET_LABELS.get(preset, preset)
 
 
 def _split_connected(province_map: np.ndarray, pids: set[int]) -> list[list[int]]:
-    """把一组省份按**像素 4-邻接**拆成若干连通分量。
+    """Split a group of provinces into several connected components based on **pixel 4-adjacency**.
 
-    HOI4 要求战略区域内所有省份地理相连。这里用 scipy 的 label 函数算像素级
-    连通分量，然后把属于同一分量的省份归为一组。
-    （像素邻接 = HOI4 的省份邻接，两者等价。）
-    """
+    HOI4 requires that all provinces within a strategic area are geographically connected. Here we use scipy’s label function to calculate the pixel level
+    Connect the components, and then group provinces belonging to the same component.
+    (Pixel adjacency = HOI4 province adjacency, both are equivalent.)"""
     if not pids:
         return []
     sub_mask = np.isin(province_map, list(pids))
@@ -137,7 +125,7 @@ def _split_connected(province_map: np.ndarray, pids: set[int]) -> list[list[int]
     flat_pm = province_map.ravel()[sub_pixels]
     flat_lb = labeled.ravel()[sub_pixels]
 
-    # 每个省份取第一个像素的 component_id（同一省份所有像素在同一连通分量）
+    # Get the component_id of the first pixel in each province (all pixels in the same province are in the same connected component)
     pid_to_comp: dict[int, int] = {}
     for i in range(len(flat_pm)):
         pid = int(flat_pm[i])
@@ -152,25 +140,25 @@ def _split_connected(province_map: np.ndarray, pids: set[int]) -> list[list[int]
     return [sorted(g) for g in groups.values() if g]
 
 
-# 旧名保留一个别名，避免外部调用炸掉
+# Keep an alias for the old name to avoid external calls from blowing up.
 _split_connected_sea = _split_connected
 
 
 @dataclass
 class StrategicRegion:
     id: int
-    name: str = ""                 # 用户输入的主显示名（任何语言，可含中文）
-    name_en: str = ""              # 可选英文名（本地化英文 yml 用；空则默认 "Region {id}"）
+    name: str = ""                 # Primary display name entered by the user; may contain non-ASCII text.
+    name_en: str = ""              # Optional English name (for localized English yml; if empty, the default is "Region {id}")
     province_ids: list[int] = field(default_factory=list)
     weather_preset: str = "temperate"
-    naval_terrain: str = ""  # vanilla 合法值: "" / water_deep_ocean / water_shallow_sea / water_fjords
+    naval_terrain: str = ""  # vanilla legal values: "" / water_deep_ocean / water_shallow_sea / water_fjords
 
-    # 注意: 不要再在 __post_init__ 里把 name 填成 STRATEGICREGION_{id}
-    # name 是显示名（可中文），key 在导出时独立生成（strategic_regions writer）
+    # Note: Do not fill in name as STRATEGICREGION_{id} in __post_init__
+    # name is the display name; the export key is generated independently by the strategic-regions writer.
 
 
 class StrategicRegionManager:
-    """管理所有战略区域. ID 必须连续从 1 开始."""
+    """Manage all strategic areas. IDs must start from 1 consecutively."""
 
     def __init__(self) -> None:
         self._regions: dict[int, StrategicRegion] = {}
@@ -187,7 +175,7 @@ class StrategicRegionManager:
         return self._regions.get(rid)
 
     def create_region(self, name: str = "") -> StrategicRegion:
-        """新建空 region, 返回它."""
+        """Create a new empty region and return it."""
         r = StrategicRegion(id=self._next_id, name=name)
         self._regions[self._next_id] = r
         self._next_id += 1
@@ -200,7 +188,7 @@ class StrategicRegionManager:
         return False
 
     def assign_province(self, pid: int, rid: int) -> None:
-        """把省份分配给 region. 自动从旧 region 移除."""
+        """Assign provinces to regions. Automatically remove from old regions."""
         for r in self._regions.values():
             if pid in r.province_ids:
                 r.province_ids.remove(pid)
@@ -208,7 +196,7 @@ class StrategicRegionManager:
             self._regions[rid].province_ids.append(pid)
 
     def get_region_of_province(self, pid: int) -> int:
-        """查省份属于哪个 region. 0 = 未分配."""
+        """Check which region the province belongs to. 0 = not assigned."""
         for r in self._regions.values():
             if pid in r.province_ids:
                 return r.id
@@ -218,20 +206,19 @@ class StrategicRegionManager:
         self,
         province_map: np.ndarray,
         tile_map: np.ndarray,
-        state_mgr=None,        # 保留参数兼容旧调用方, 但不再使用
+        state_mgr=None,        # Parameters retained for compatibility with older callers, but no longer used
         grid_cols: int = 6,
         grid_rows: int = 4,
     ) -> None:
-        """自动生成战略区域 (覆盖现有数据).
+        """Automatic generation of strategic areas (overwriting existing data).
 
-        策略 — 纯网格 + 海陆分开 + 连通拆分 (vanilla 风格的大块 region).
-        旧版本按 state 一对一生成 region (590+ 次连通分量计算) 在大地图上极慢
-        且产生过多碎 region; 新算法只跑 grid_cols*grid_rows*2 次连通分量,
-        生成 vanilla 风格的大块 region (典型 30-100 个).
+        Strategy — pure mesh + land and sea separation + connected split (vanilla style large regions).
+        The old version generates regions one-to-one by state (590+ connected component calculations), which is extremely slow on large maps.
+        And there are too many broken regions; the new algorithm only runs grid_cols*grid_rows*2 times for connected components,
+        Generate vanilla-style large regions (typically 30-100).
 
-        **铁律**: 每个 region 内省份必须地理 4-邻接连通, 且海陆不能混 — 否则
-        HOI4 加载时引擎死循环 / 除零崩溃.
-        """
+        **Iron Rule**: Provinces in each region must be geographically 4-adjacent and connected, and land and sea cannot be mixed — otherwise
+        Engine infinite loop/divide-by-zero crash when loading HOI4."""
         from data.constants import TILE_LAND
 
         self._regions = {}
@@ -241,7 +228,7 @@ class StrategicRegionManager:
         if province_count == 0:
             return
 
-        # 用实际 province_map 尺寸 (项目可能不是原版分辨率)
+        # Use actual province_map dimensions (project may not be in original resolution)
         MAP_HEIGHT, MAP_WIDTH = province_map.shape[0], province_map.shape[1]
 
         flat_pm = province_map.ravel()
@@ -251,12 +238,12 @@ class StrategicRegionManager:
         sum_y = np.bincount(flat_pm, weights=ys.ravel().astype(np.float64), minlength=n)
         sum_x = np.bincount(flat_pm, weights=xs.ravel().astype(np.float64), minlength=n)
 
-        # 多数决判断陆地省份
+        # Majority rule determines land provinces
         land_flat = (tile_map == TILE_LAND).ravel()
         land_count = np.bincount(flat_pm, weights=land_flat, minlength=n)
         is_land_per_pid = land_count * 2 > pid_count
 
-        # 按质心把 province 分到 grid_rows×grid_cols 个网格
+        # Divide province into grid_rows×grid_cols grids according to centroid
         cell_h = MAP_HEIGHT / max(1, grid_rows)
         cell_w = MAP_WIDTH / max(1, grid_cols)
         buckets: dict[int, list[int]] = {}
@@ -270,7 +257,7 @@ class StrategicRegionManager:
             key = row * grid_cols + col
             buckets.setdefault(key, []).append(pid)
 
-        # 每格分海陆, 各自按连通性拆成若干 region
+        # Each grid is divided into sea and land, and each is divided into several regions according to connectivity.
         for provs in buckets.values():
             sea_provs = [p for p in provs if not is_land_per_pid[p]]
             land_provs = [p for p in provs if is_land_per_pid[p]]
@@ -283,15 +270,15 @@ class StrategicRegionManager:
                 r.province_ids = list(group)
                 r.naval_terrain = ""
 
-        # 自动分配 weather preset (按质心纬度)
+        # Automatically assign weather preset (by centroid latitude)
         for r in self._regions.values():
             if not r.province_ids:
                 continue
             total_y = sum(float(sum_y[p]) / max(pid_count[p], 1) for p in r.province_ids)
             avg_y = total_y / len(r.province_ids)
-            # 纬度映射: y=0 北极, y=MAP_HEIGHT 南极, 中间赤道
-            lat_fraction = avg_y / MAP_HEIGHT  # 0=北极, 0.5=赤道, 1=南极
-            dist_from_equator = abs(lat_fraction - 0.5) * 2  # 0=赤道, 1=极地
+            # Latitude mapping: y=0 North Pole, y=MAP_HEIGHT South Pole, middle equator
+            lat_fraction = avg_y / MAP_HEIGHT  # 0=North Pole, 0.5=Equator, 1=South Pole
+            dist_from_equator = abs(lat_fraction - 0.5) * 2  # 0=equator, 1=polar
             if dist_from_equator > 0.8:
                 r.weather_preset = "polar"
             elif dist_from_equator > 0.6:
@@ -299,27 +286,26 @@ class StrategicRegionManager:
             elif dist_from_equator > 0.3:
                 r.weather_preset = "temperate"
             else:
-                # 赤道附近: 检查是否沙漠 (如果大部分省份是沙漠地形)
+                # Near the equator: Check if it is a desert (if most of the province is desert terrain)
                 r.weather_preset = "tropical"
 
     def auto_assign_weather_by_latitude(
         self, province_map: np.ndarray,
     ) -> int:
-        """按纬度自动分配天气预设, 返回修改的 region 数量.
+        """Automatically assign weather presets by latitude, returning the number of modified regions.
 
-        HOI4 地图: 图像 y=0 是最北(极地), y=MAP_HEIGHT 是最南(极地),
-        中间是赤道. 用距赤道的归一化距离分带:
-          0-0.15 (赤道附近): tropical
+        HOI4 map: image y=0 is the northernmost (polar), y=MAP_HEIGHT is the southernmost (polar),
+        In the middle is the equator. Bands are divided by normalized distance from the equator:
+          0-0.15 (near the equator): tropical
           0.15-0.35: desert
           0.35-0.60: temperate
           0.60-0.80: cold
-          0.80-1.0 (极地): polar
-        """
+          0.80-1.0 (polar): polar"""
         map_height = province_map.shape[0]
         if map_height == 0 or not self._regions:
             return 0
 
-        # 向量化质心计算
+        # Vectorized centroid calculation
         flat = province_map.ravel()
         n = int(province_map.max()) + 1
         pid_count = np.bincount(flat, minlength=n)
@@ -330,7 +316,7 @@ class StrategicRegionManager:
         for r in self._regions.values():
             if not r.province_ids:
                 continue
-            # region 质心 y（只用有像素的省份）
+            # region centroid y (only provinces with pixels are used)
             total_y = 0.0
             valid = 0
             for p in r.province_ids:
@@ -340,9 +326,9 @@ class StrategicRegionManager:
             if valid == 0:
                 continue
             avg_y = total_y / valid
-            # 归一化到 [0,1]: 0=北极, 0.5=赤道, 1=南极
+            # Normalized to [0,1]: 0=North Pole, 0.5=Equator, 1=South Pole
             lat_frac = avg_y / map_height
-            dist = abs(lat_frac - 0.5) * 2  # 0=赤道, 1=极地
+            dist = abs(lat_frac - 0.5) * 2  # 0=equator, 1=polar
 
             if dist > 0.80:
                 preset = "polar"
@@ -362,32 +348,31 @@ class StrategicRegionManager:
     def build_sr_color_map(
         self, province_map: np.ndarray, tile_map: np.ndarray | None = None,
     ) -> np.ndarray:
-        """生成战略区域着色图 (H, W, 3) — 每个 region 一种颜色.
+        """Generate strategic region coloring map (H, W, 3) — one color per region.
 
-        如果提供 tile_map, 海洋省份用蓝色系、陆地省份用暖色系,
-        避免相邻的海洋/陆地区域颜色接近而无法区分.
-        """
+        If tile_map is provided, ocean provinces use blue and land provinces use warm colors.
+        Avoid adjacent ocean/land areas that are so close in color that they are indistinguishable."""
         from data.constants import TILE_SEA, TILE_LAKE
 
         max_pid = int(province_map.max())
-        lut = np.full((max_pid + 1, 3), 50, dtype=np.uint8)  # 未分配=深灰
+        lut = np.full((max_pid + 1, 3), 50, dtype=np.uint8)  # Unallocated = dark gray
 
-        # 向量化判断每个省份是否为海洋/湖泊
+        # Vectorization determines whether each province is an ocean/lake
         is_sea = set()
         if tile_map is not None:
             flat_pm = province_map.ravel()
             flat_tm = tile_map.ravel()
-            # 统计每个 pid 的海洋像素数和总像素数
+            # Count the number of ocean pixels and total number of pixels for each pid
             sea_mask = np.isin(flat_tm, [TILE_SEA, TILE_LAKE])
             total_count = np.bincount(flat_pm, minlength=max_pid + 1)
             sea_count = np.bincount(flat_pm, weights=sea_mask.astype(np.float64), minlength=max_pid + 1)
-            # 海洋像素 > 50% 的省份视为海洋
+            # Ocean pixels > 50% of provinces considered ocean
             for pid in range(1, max_pid + 1):
                 if total_count[pid] > 0 and sea_count[pid] > total_count[pid] * 0.5:
                     is_sea.add(pid)
 
         for rid, region in self._regions.items():
-            # 判断该 region 是海洋还是陆地（按多数省份）
+            # Determine whether the region is ocean or land (based on the majority of provinces)
             if is_sea and region.province_ids:
                 sea_count = sum(1 for p in region.province_ids if p in is_sea)
                 region_is_sea = sea_count > len(region.province_ids) // 2
@@ -396,12 +381,12 @@ class StrategicRegionManager:
 
             rng = np.random.RandomState(rid * 7 + 13)
             if region_is_sea:
-                # 蓝色系: R=40-100, G=60-140, B=150-230
+                # Blue: R=40-100, G=60-140, B=150-230
                 r = rng.randint(40, 100)
                 g = rng.randint(60, 140)
                 b = rng.randint(150, 230)
             else:
-                # 暖色系: R=120-230, G=80-200, B=40-120
+                # Warm colors: R=120-230, G=80-200, B=40-120
                 r = rng.randint(120, 230)
                 g = rng.randint(80, 200)
                 b = rng.randint(40, 120)
@@ -418,7 +403,7 @@ class StrategicRegionManager:
         self._regions = {}
         self._next_id = 1
 
-    # ─────────── 序列化 ───────────
+    # ─────────── Serialization ───────────
 
     def to_dict(self) -> dict:
         return {
@@ -438,7 +423,7 @@ class StrategicRegionManager:
     def from_dict(self, data: dict) -> None:
         self._regions = {}
         self._next_id = int(data.get("next_id", 1))
-        # 老项目兼容: 把短名/非法名迁移到 vanilla 完整名
+        # Old project compatibility: migrate short/illegal names to vanilla full names
         _NAVAL_MIGRATE = {
             "ocean": "water_deep_ocean",
             "deep_ocean": "water_deep_ocean",

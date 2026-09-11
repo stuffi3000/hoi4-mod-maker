@@ -1,8 +1,7 @@
-"""CommandHistory — 增量撤销/重做栈。
+"""CommandHistory — Incremental undo/redo stack.
 
-替代旧的 UndoManager（快照式）和 CommandBus。
-每个 Command 只记录改了什么（delta），不存整张地图。
-"""
+Replaces the old UndoManager (snapshot) and CommandBus.
+Each Command only records what has been changed (delta) and does not save the entire map."""
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
@@ -14,7 +13,7 @@ if TYPE_CHECKING:
 
 
 class CommandHistory:
-    """命令历史栈，支持撤销/重做。"""
+    """Command history stack, supports undo/redo."""
 
     def __init__(self, event_bus: "EventBus | None" = None, max_size: int = 200) -> None:
         self._undo_stack: list[Command] = []
@@ -23,7 +22,7 @@ class CommandHistory:
         self._event_bus = event_bus
 
     def execute(self, cmd: Command) -> None:
-        """执行命令并压入撤销栈。"""
+        """Execute the command and push it onto the undo stack."""
         cmd.execute()
 
         # Try to merge with last command (for continuous brush strokes)
@@ -47,7 +46,7 @@ class CommandHistory:
         self._notify()
 
     def undo(self) -> bool:
-        """撤销最后一个命令。返回是否成功。"""
+        """Undo the last command. Return whether successful."""
         if not self._undo_stack:
             return False
         cmd = self._undo_stack.pop()
@@ -57,7 +56,7 @@ class CommandHistory:
         return True
 
     def redo(self) -> bool:
-        """重做。返回是否成功。"""
+        """redo. Return whether successful."""
         if not self._redo_stack:
             return False
         cmd = self._redo_stack.pop()
@@ -75,13 +74,13 @@ class CommandHistory:
         return len(self._redo_stack) > 0
 
     def clear(self) -> None:
-        """清空所有历史。"""
+        """Clear all history."""
         self._undo_stack.clear()
         self._redo_stack.clear()
         self._notify()
 
     def _notify(self) -> None:
-        """通知 UI 撤销/重做状态变化。"""
+        """Notify the UI of undo/redo status changes."""
         if self._event_bus:
             self._event_bus.emit(
                 "undo_state_changed",

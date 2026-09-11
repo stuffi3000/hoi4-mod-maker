@@ -1,8 +1,7 @@
-"""地形展示 MOD 生成器 — 展示全部 25 种 graphical terrain 变体
+"""Terrain Display MOD Generator — Displays all 25 graphical terrain variants
 
-每种 graphical terrain 至少分配给一个省份，让玩家在游戏内能看到所有地形贴图。
-输出目录: D:/Documents/Paradox Interactive/Hearts of Iron IV/mod/WorldTest/
-"""
+Each graphical terrain is assigned to at least one province, allowing players to see all terrain maps in the game.
+Output directory: D:/Documents/Paradox Interactive/Hearts of Iron IV/mod/WorldTest/"""
 import os
 import shutil
 import sys
@@ -23,7 +22,7 @@ from domain.generators.province import generate_provinces
 MOD_DIR = "D:/Documents/Paradox Interactive/Hearts of Iron IV/mod/WorldTest"
 MOD_NAME = "WorldTest"
 
-# ─── 1. 清理旧 MOD ─────────────────────────────────────
+# ─── 1. Clean up old MODs ───────────────────────────────────
 if os.path.exists(MOD_DIR):
     shutil.rmtree(MOD_DIR)
 os.makedirs(MOD_DIR, exist_ok=True)
@@ -31,35 +30,35 @@ outer = os.path.join(os.path.dirname(MOD_DIR), f"{MOD_NAME}.mod")
 if os.path.exists(outer):
     os.remove(outer)
 
-# ─── 2. 地形分类 ────────────────────────────────────────
-# 分出可画陆地地形 (排除 ocean=15, lakes=14)
+# ─── 2. Terrain classification ──────────────────────────────────────
+# Separate drawable land terrain (exclude ocean=15, lakes=14)
 LAND_TERRAINS = [gt for gt in GRAPHICAL_TERRAINS if gt.type not in ("ocean", "lakes")]
 OCEAN_IDX = 15
 LAKE_IDX = 14
 
-print(f"地图尺寸: {MAP_WIDTH}x{MAP_HEIGHT}")
-print(f"陆地地形变体: {len(LAND_TERRAINS)} 种")
+print(f"Map size: {MAP_WIDTH}x{MAP_HEIGHT}")
+print(f"Land terrain variants: {len(LAND_TERRAINS)}")
 for gt in LAND_TERRAINS:
-    print(f"  palette={gt.palette_index:2d}  type={gt.type:10s}  id={gt.id}  ({gt.name_cn})")
+    print(f"  palette={gt.palette_index:2d}  type={gt.type:10s}  id={gt.id}  ({gt.name_en})")
 
-# ─── 3. 构建 tile_map — 横向铺满（无缝循环）──────────────
+# ─── 3. Construct tile_map — horizontal spreading (seamless loop) ──────────────
 H, W = MAP_HEIGHT, MAP_WIDTH  # 1024 × 2048
 tile_map = np.full((H, W), TILE_SEA, dtype=np.uint8)
 
-# 横向铺满，上下留窄海洋带（HOI4 需要顶底有海）
-# 上下留海洋带（HOI4 需要顶底有海洋省份），左右也留海洋做横向循环
-# 跟 vanilla 一样：上下不留海洋，左右留 40px 海洋做横向循环
+# Spread horizontally, leaving a narrow ocean strip above and below (HOI4 requires sea at the top and bottom)
+# Leave ocean zones up and down (HOI4 requires ocean provinces at the top and bottom), and leave oceans on the left and right for horizontal circulation.
+# Same as vanilla: no ocean left on top and bottom, 40px ocean left and right for horizontal looping
 LAND_TOP = 0
 LAND_BOT = H
 LAND_LEFT = 40
 LAND_RIGHT = W - 40
 tile_map[LAND_TOP:LAND_BOT, LAND_LEFT:LAND_RIGHT] = TILE_LAND
 
-print(f"\n大陆范围: y=[{LAND_TOP},{LAND_BOT}), x=[{LAND_LEFT},{LAND_RIGHT})")
+print(f"\nLandmass bounds: y=[{LAND_TOP},{LAND_BOT}), x=[{LAND_LEFT},{LAND_RIGHT})")
 land_pixels = int(np.sum(tile_map == TILE_LAND))
-print(f"陆地像素: {land_pixels:,}")
+print(f"Land pixels: {land_pixels:,}")
 
-# ─── 4. 构建 terrain_map — 垂直条带，每种地形一条 ────────
+# ─── 4. Construct terrain_map — vertical strips, one for each terrain ────────
 terrain_map = np.full((H, W), OCEAN_IDX, dtype=np.uint8)
 
 num_land = len(LAND_TERRAINS)  # 23
@@ -71,11 +70,11 @@ for i, gt in enumerate(LAND_TERRAINS):
     x_end = LAND_RIGHT if i == num_land - 1 else LAND_LEFT + (i + 1) * strip_w
     mask = tile_map[LAND_TOP:LAND_BOT, x_start:x_end] == TILE_LAND
     terrain_map[LAND_TOP:LAND_BOT, x_start:x_end][mask] = gt.palette_index
-    print(f"  条带 {i:2d}: x=[{x_start},{x_end})  palette={gt.palette_index:2d}  {gt.name_cn}")
+    print(f"  Strip {i:2d}: x=[{x_start},{x_end})  palette={gt.palette_index:2d}  {gt.name_en}")
 
-# ─── 5. 构建 height_map（依据地形类型）──────────────────
+# ─── 5. Construct height_map (according to terrain type)──────────────────
 height_map = np.full((H, W), OCEAN_HEIGHT, dtype=np.uint8)
-# 按 type 分配基础高度
+# Assign base height by type
 TYPE_HEIGHT = {
     "plains":   120,
     "forest":   130,
@@ -90,28 +89,28 @@ for gt in LAND_TERRAINS:
     base_h = TYPE_HEIGHT.get(gt.type, LAND_BASE_HEIGHT)
     height_map[terrain_map == gt.palette_index] = base_h
 
-# 平滑高度过渡
+# Smooth height transition
 from scipy.ndimage import gaussian_filter
 height_map = gaussian_filter(height_map.astype(np.float32), sigma=6)
 height_map = np.clip(height_map, 0, 255).astype(np.uint8)
 
-# HOI4 要求顶底行高度 ≤ 海平面（vanilla 顶底行 ~89），否则加载崩溃
+# HOI4 requires the height of the top and bottom rows ≤ sea level (vanilla top and bottom rows ~89), otherwise the loading will crash
 height_map[0, :] = np.minimum(height_map[0, :], SEA_LEVEL)
 height_map[-1, :] = np.minimum(height_map[-1, :], SEA_LEVEL)
 
-# ─── 6. 生成省份 (Voronoi) ───────────────────────────────
+# ─── 6. Generating provinces (Voronoi) ──────────────────────────────
 province_map, pcount = generate_provinces(tile_map, target_count=500)
-print(f"\n省份数量: {pcount}")
+print(f"\nProvinces: {pcount}")
 
-# ─── 7. 自动分 State ─────────────────────────────────────
+# ─── 7. Automatically divide State ───────────────────────────────────
 state_mgr = StateManager()
 state_mgr.auto_split(province_map, tile_map, per_state=4)
-print(f"State 数量: {len(state_mgr.states)}")
+print(f"States: {len(state_mgr.states)}")
 
-# ─── 8. 创建国家 ─────────────────────────────────────────
+# ─── 8. Create a country ───────────────────────────────────────
 country_mgr = CountryManager()
 
-# 3 个国家，按 x 坐标三等分
+# 3 countries, divided into three equal parts by x coordinate
 countries_cfg = [
     ("AAA", "Westland",  (60, 130, 220), "democratic"),
     ("BBB", "Centerion", (200, 40, 50),  "neutrality"),
@@ -122,7 +121,7 @@ for tag, name, color, party in countries_cfg:
     c.ruling_party = party
     c.popularities = {"democratic": 25, "fascism": 25, "communism": 25, "neutrality": 25}
     c.popularities[party] = 55
-    # 重新归一化到 100
+    # Renormalize to 100
     total = sum(c.popularities.values())
     for k in c.popularities:
         if k != party:
@@ -131,7 +130,7 @@ for tag, name, color, party in countries_cfg:
 
 
 def state_centroid(state):
-    """计算 state 的近似中心 (cy, cx)"""
+    """Compute the approximate center (cy, cx) of state"""
     if not state.provinces:
         return (0, 0)
     pts = []
@@ -144,7 +143,7 @@ def state_centroid(state):
     return (sum(p[0] for p in pts) / len(pts), sum(p[1] for p in pts) / len(pts))
 
 
-# 按 x 坐标分三段
+# Divide into three segments according to x coordinate
 x_third = W / 3
 for sid, state in state_mgr.states.items():
     cy, cx = state_centroid(state)
@@ -157,7 +156,7 @@ for sid, state in state_mgr.states.items():
     country_mgr.assign_state(sid, tag)
     state.owner_tag = tag
 
-# 设首都
+# Set up capital
 for tag, c in country_mgr.countries.items():
     state_ids = country_mgr.get_states_of_country(tag)
     if state_ids:
@@ -165,13 +164,13 @@ for tag, c in country_mgr.countries.items():
         if first_state and first_state.provinces:
             c.capital = first_state.provinces[0]
 
-# 打印国家分布
-print("\n=== 国家与领土 ===")
+# Print country distribution
+print("\n=== Countries and territory ===")
 for tag, c in country_mgr.countries.items():
     sids = country_mgr.get_states_of_country(tag)
     print(f"  {tag} {c.name:12s} → {len(sids):3d} states  party={c.ruling_party}")
 
-# ─── 9. 导出 MOD ─────────────────────────────────────────
+# ─── 9. Export MOD ────────────────────────────────────────
 export_full_mod(
     tile_map=tile_map,
     province_map=province_map,
@@ -184,12 +183,12 @@ export_full_mod(
     height_map=height_map,
 )
 
-print(f"\n[OK] WorldTest MOD 已导出: {MOD_DIR}")
+print(f"\n[OK] Exported WorldTest MOD: {MOD_DIR}")
 file_count = sum(len(files) for _, _, files in os.walk(MOD_DIR))
-print(f"     总文件数: {file_count}")
+print(f"     Files: {file_count}")
 
-# 验证每种地形都至少有省份使用
-print("\n=== 地形覆盖检查 ===")
+# Verify that each terrain is used by at least one province
+print("\n=== Terrain coverage check ===")
 all_palette_indices = set()
 for gt in GRAPHICAL_TERRAINS:
     all_palette_indices.add(gt.palette_index)
@@ -197,16 +196,16 @@ for gt in GRAPHICAL_TERRAINS:
 used_indices = set(np.unique(terrain_map))
 missing = all_palette_indices - used_indices
 if missing:
-    print(f"  警告: 以下调色板索引未在地图中使用: {sorted(missing)}")
+    print(f"  Warning: these palette indices are unused: {sorted(missing)}")
 else:
-    print(f"  全部 {len(all_palette_indices)} 种地形均已覆盖 (含 ocean/lakes)")
+    print(f"  All {len(all_palette_indices)} terrain entries are covered (including ocean/lakes)")
 
-# 检查陆地地形
+# Check land terrain
 land_mask = tile_map == TILE_LAND
 land_terrain_indices = set(np.unique(terrain_map[land_mask]))
 land_expected = {gt.palette_index for gt in LAND_TERRAINS}
 land_missing = land_expected - land_terrain_indices
 if land_missing:
-    print(f"  警告: 以下陆地地形未在陆地上使用: {sorted(land_missing)}")
+    print(f"  Warning: these land terrain entries are unused: {sorted(land_missing)}")
 else:
-    print(f"  全部 {len(land_expected)} 种陆地地形均已覆盖")
+    print(f"  All {len(land_expected)} land terrain entries are covered")

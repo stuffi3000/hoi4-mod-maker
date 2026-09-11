@@ -1,25 +1,23 @@
-"""
-暗色主题样式表 — 参照 HTML 设计稿的视觉风格.
+"""Dark theme style sheet — referencing the visual style of HTML design drafts.
 
-- DARK_STYLESHEET: 全局 QApplication 级 QSS
-- _BG / _INPUT_BG 等: 色板常量, feature 模块共享
-- _SECTION_STYLE / _PRIMARY_BTN_STYLE 等: 局部控件样式
-- _color_icon(): 生成色块图标辅助
-"""
+- DARK_STYLESHEET: Global QApplication level QSS
+- _BG / _INPUT_BG, etc.: color palette constants, feature module sharing
+- _SECTION_STYLE / _PRIMARY_BTN_STYLE etc.: local control styles
+- _color_icon(): Generate color block icon auxiliary"""
 
 from PyQt5.QtGui import QColor, QPixmap, QIcon
 
 
-# ── 色板 (v3 可读性优化: 提高对比度 + 字号) ──────────────
-_BG = "#17181c"          # 深紫灰主背景
-_INPUT_BG = "#1f2126"     # 面板/输入框背景（原 #1f2126 略提亮）
-_BORDER = "#2c2f36"       # 边框（原 #2c2f36 太暗，提亮便于识别）
-_TEXT = "#e8eaed"         # 主文字（原 #e8eaed，冷白 → 更亮）
-_DIM = "#9aa0ab"          # 次要文字/标签（原 #9aa0ab 对比度 3.5:1 不足，现 4.9:1 达标）
-_ACCENT = "#4f8cff"       # 紫蓝强调（原 #4f8cff 提亮更醒目）
-_ACCENT_HOVER = "#6ba1ff" # hover 亮色
-_SUCCESS = "#22c55e"      # 成功/导出按钮
-_GROUP_HEADER = "#6ba1ff" # 分组标题色
+# ── Color palette (v3 readability optimization: increase contrast + font size) ──────────────
+_BG = "#17181c"          # Dark purple gray main background
+_INPUT_BG = "#1f2126"     # Panel/input box background (original #1f2126 slightly brightened)
+_BORDER = "#2c2f36"       # Border (original #2c2f36 is too dark, brighten for easier identification)
+_TEXT = "#e8eaed"         # Main text (original #e8eaed, cool white → brighter)
+_DIM = "#9aa0ab"          # Secondary text/tags (original #9aa0ab contrast ratio 3.5:1 was insufficient, now 4.9:1 meets the standard)
+_ACCENT = "#4f8cff"       # Purple and blue emphasis (original #4f8cff brightened and more eye-catching)
+_ACCENT_HOVER = "#6ba1ff" # hover bright color
+_SUCCESS = "#22c55e"      # Success/Export button
+_GROUP_HEADER = "#6ba1ff" # Group title color
 
 
 _SECTION_STYLE = f"""
@@ -83,7 +81,7 @@ _TOOL_BTN_STYLE = f"""
     }}
 """
 
-# 地块选择按钮 (icon + label, padding 大, :checked 用半透明 accent + 描边不抢 icon 色)
+# Land selection button (icon + label, padding is large, :checked uses translucent accent + stroke to not steal the icon color)
 _TILE_BTN_STYLE = f"""
     QPushButton {{
         background: {_INPUT_BG};
@@ -222,7 +220,7 @@ _LIST_STYLE = f"""
 
 
 def make_section(title: str):
-    """创建统一样式的 QGroupBox 分组容器。所有 page 共用。"""
+    """Create a unified style QGroupBox grouping container. Common to all pages."""
     from PyQt5.QtWidgets import QGroupBox, QVBoxLayout
     box = QGroupBox(title)
     box.setLayout(QVBoxLayout())
@@ -232,7 +230,7 @@ def make_section(title: str):
     return box
 
 
-# ── 卡片式分组 (2026-07 UI 试点, 逐步替代 make_section) ──
+# ── Card grouping (2026-07 UI pilot, gradually replacing make_section) ──
 
 _CARD_STYLE = f"""
     QFrame#card {{
@@ -253,12 +251,11 @@ _CARD_STEP_STYLE = (
 
 
 def make_card(title: str, step: str = ""):
-    """扁平卡片分组: 标题在卡片内部首行, 可带步骤徽标。
+    """Flat card grouping: The title is on the first line inside the card, and can include step logos.
 
-    与 make_section (QGroupBox 浮动标题) 的区别: 标题行在卡片内,
-    可携带 ①②③ 步骤徽标 — 供"按用户做事顺序排布"的页面使用。
-    用法与 make_section 相同: card.layout().addWidget/addLayout 追加内容。
-    """
+    The difference with make_section (QGroupBox floating title): the title row is within the card,
+    Portable ①②③ Step logo - for use on pages "arranged in the order in which users do things".
+    The usage is the same as make_section: card.layout().addWidget/addLayout appends content."""
     from PyQt5.QtWidgets import QFrame, QVBoxLayout, QHBoxLayout, QLabel
     card = QFrame()
     card.setObjectName("card")
@@ -281,7 +278,7 @@ def make_card(title: str, step: str = ""):
 
 
 def make_hint(text: str):
-    """低噪声提示行: 统一 11px 暗色小字, 自动换行。"""
+    """Low-noise prompt line: unified 11px small dark text, automatic line wrapping."""
     from PyQt5.QtWidgets import QLabel
     lbl = QLabel(text)
     lbl.setStyleSheet(f"color: {_DIM}; font-size: 11px; padding: 2px;")
@@ -290,25 +287,25 @@ def make_hint(text: str):
 
 
 def _color_icon(r: int, g: int, b: int, size: int = 12) -> QIcon:
-    """生成一个纯色方块图标 (列表 / 按钮装饰用)."""
+    """Generates a solid square icon (for list/button decoration)."""
     px = QPixmap(size, size)
     px.fill(QColor(r, g, b))
     return QIcon(px)
 
 
 DARK_STYLESHEET = """
-/* 全局 — v2 中性深灰 + 紫蓝 */
+/* Global — v2 neutral dark gray with purple-blue accents */
 QMainWindow, QWidget {
     background-color: #17181c;
     color: #e8eaed;
-    /* Segoe UI 在前: 西里尔/拉丁字母用 Segoe UI (正常 metrics),
-       中文 fallback 到 YaHei. YaHei 在前会让西里尔字母按 CJK 全角宽度渲染,
-       出现"字母间距异常大 + 文字截断"的 bug. */
-    font-family: "Segoe UI", "Microsoft YaHei", "Noto Sans SC", sans-serif;
+    /* Put Segoe UI first so Latin and Cyrillic use normal metrics.
+       Other scripts use the system fallback; placing a CJK font first can
+       render Latin letters at full-width metrics, causing spacing and clipping bugs. */
+    font-family: "Segoe UI", Arial, sans-serif;
     font-size: 15px;
 }
 
-/* 菜单栏 */
+/* Menu bar */
 QMenuBar {
     background-color: #18182a;
     border-bottom: 1px solid #2c2f36;
@@ -343,7 +340,7 @@ QMenu::separator {
     margin: 4px 8px;
 }
 
-/* 状态栏 */
+/* Status bar */
 QStatusBar {
     background-color: #18182a;
     border-top: 1px solid #2c2f36;
@@ -354,7 +351,7 @@ QStatusBar::item {
     border: none;
 }
 
-/* 工具面板 */
+/* Tool panels */
 QGroupBox {
     background-color: #1f2126;
     border: 1px solid #2c2f36;
@@ -373,7 +370,7 @@ QGroupBox::title {
     font-weight: bold;
 }
 
-/* 按钮 */
+/* Buttons */
 QPushButton {
     background-color: #17181c;
     border: 1px solid #2c2f36;
@@ -414,7 +411,7 @@ QPushButton#btnSuccess:hover {
     background: #16a34a;
 }
 
-/* 单选按钮 */
+/* Radio buttons */
 QRadioButton {
     spacing: 6px;
     padding: 3px;
@@ -432,7 +429,7 @@ QRadioButton::indicator:checked {
     border-color: #4f8cff;
 }
 
-/* 滑块 */
+/* Sliders */
 QSlider::groove:horizontal {
     height: 4px;
     background: #2c2f36;
@@ -449,7 +446,7 @@ QSlider::handle:horizontal:hover {
     background: #8c8cff;
 }
 
-/* 数值输入 */
+/* Numeric inputs */
 QSpinBox, QDoubleSpinBox {
     background: #17181c;
     border: 1px solid #2c2f36;
@@ -465,7 +462,7 @@ QDoubleSpinBox::up-button, QDoubleSpinBox::down-button {
     width: 16px;
 }
 
-/* 标签 */
+/* Labels */
 QLabel {
     color: #e8eaed;
     font-size: 15px;
@@ -475,7 +472,7 @@ QLabel#labelDim {
     font-size: 15px;
 }
 
-/* 滚动条 */
+/* Scroll bars */
 QScrollBar:vertical {
     width: 6px;
     background: #17181c;
@@ -507,7 +504,7 @@ QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
     width: 0;
 }
 
-/* 对话框 */
+/* Dialogs */
 QDialog {
     background-color: #1f2126;
 }
@@ -529,7 +526,7 @@ QInputDialog QPushButton:hover {
     background: #4a4a7a;
 }
 
-/* 工具提示 */
+/* Tooltips */
 QToolTip {
     background: #1f2126;
     border: 1px solid #4f8cff;

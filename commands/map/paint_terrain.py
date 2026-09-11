@@ -1,10 +1,8 @@
-"""
-PaintTerrainCommand — 画笔绘制地形 + 可选高度自动联动。
+"""PaintTerrainCommand — Brushes for painting terrain + optional height automatic linkage.
 
-支持两种模式:
-1. 画笔模式: 直接修改 terrain_map 像素
-2. 省份模式: 同时更新 provincial_terrain 字典
-"""
+Two modes are supported:
+1. Brush mode: directly modify terrain_map pixels
+2. Provincial mode: update the provincial_terrain dictionary at the same time"""
 
 from __future__ import annotations
 
@@ -13,9 +11,9 @@ from domain.map_data import MapData
 
 
 class PaintTerrainCommand(Command):
-    """画笔绘制 terrain_map 像素，可联动 height_map。"""
+    """The brush draws terrain_map pixels and can be linked to height_map."""
 
-    label = "画地形"
+    label = "Paint terrain"
 
     def __init__(
         self,
@@ -24,26 +22,24 @@ class PaintTerrainCommand(Command):
         height_changes: dict[tuple[int, int], int] | None = None,
         provincial_terrain_changes: dict[int, str] | None = None,
     ) -> None:
-        """
-        参数:
-            map_data: 地图数据对象
+        """Parameters:
+            map_data: map data object
             terrain_changes: {(y, x): new_terrain_index}
-            height_changes: {(y, x): new_height_value} 高度联动（可选）
-            provincial_terrain_changes: {province_id: new_terrain_type} 省份级地形（可选）
-        """
+            height_changes: {(y, x): new_height_value} Height linkage (optional)
+            provincial_terrain_changes: {province_id: new_terrain_type} Provincial terrain (optional)"""
         self._map_data = map_data
         self._terrain_changes = dict(terrain_changes)
         self._height_changes = dict(height_changes) if height_changes else {}
         self._prov_terrain_changes = (
             dict(provincial_terrain_changes) if provincial_terrain_changes else {}
         )
-        # 旧值存储
+        # old value storage
         self._old_terrain: dict[tuple[int, int], int] = {}
         self._old_height: dict[tuple[int, int], int] = {}
         self._old_prov_terrain: dict[int, str | None] = {}
 
     def execute(self) -> None:
-        """保存旧值，写入新地形/高度。"""
+        """Save old values and write new terrain/altitude."""
         terrain_map = self._map_data.terrain_map
         height_map = self._map_data.height_map
 
@@ -61,7 +57,7 @@ class PaintTerrainCommand(Command):
             prov_terrain[pid] = new_type
 
     def undo(self) -> None:
-        """恢复旧地形/高度。"""
+        """Restore old terrain/elevation."""
         terrain_map = self._map_data.terrain_map
         height_map = self._map_data.height_map
 

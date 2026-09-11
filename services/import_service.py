@@ -1,13 +1,11 @@
-"""
-导入MOD地图 — 从 HOI4 mod/vanilla 目录读取地图图层。
+"""Import MOD Map — Reads map layers from the HOI4 mod/vanilla directory.
 
-读取 map/ 子目录下的:
-- provinces.bmp (24-bit) → province_map + color→ID 映射
+Read from the map/ subdirectory:
+- provinces.bmp (24-bit) → province_map + color→ID mapping
 - definition.csv → tile_map (land/sea/lake) + provincial_terrain
 - terrain.bmp (8-bit indexed) → terrain_map
 - heightmap.bmp (8-bit grayscale) → height_map
-- rivers.bmp (8-bit indexed) → river_map
-"""
+- rivers.bmp (8-bit indexed) → river_map"""
 
 from __future__ import annotations
 
@@ -20,10 +18,8 @@ import numpy as np
 from PIL import Image
 
 from data.constants import TILE_LAND, TILE_SEA, TILE_LAKE
-from ui.i18n import tr_pair
 
-
-# definition.csv 类型名 → 内部常量
+# definition.csv type name → internal constant
 _TYPE_MAP = {
     "land": TILE_LAND,
     "sea": TILE_SEA,
@@ -32,30 +28,25 @@ _TYPE_MAP = {
 
 
 def validate_mod_directory(mod_dir: str) -> list[str]:
-    """检查目录结构，返回缺失文件列表。
+    """Check the directory structure and return a list of missing files.
 
-    如果 MOD 没有 map/provinces.bmp，尝试从 vanilla 目录补。
-    很多 MOD 不含地图文件（只改 history/common），这种情况用 vanilla 的地图。
-    """
+    If the MOD does not have map/provinces.bmp, try to fill it from the vanilla directory.
+    Many MODs do not contain map files (only history/common is changed), in this case use vanilla maps."""
     from data.constants import DEFAULT_HOI4_PATH
     provinces_path = os.path.join(mod_dir, "map", "provinces.bmp")
     if not os.path.isfile(provinces_path):
-        # 尝试 vanilla fallback
+        # Try vanilla fallback
         vanilla_provinces = os.path.join(DEFAULT_HOI4_PATH, "map", "provinces.bmp")
         if os.path.isfile(vanilla_provinces):
-            return [tr_pair(
-                f"map/provinces.bmp 不在此 MOD 中（该 MOD 使用 vanilla 地图）。\n如需导入地图，请直接导入 vanilla 目录:\n{DEFAULT_HOI4_PATH}",
-                f"map/provinces.bmp is not included in this mod (it uses the vanilla map).\nTo import the map, select the vanilla directory directly:\n{DEFAULT_HOI4_PATH}",
-            )]
-        return [tr_pair("map/provinces.bmp（该 MOD 和 vanilla 都找不到地图文件）", "map/provinces.bmp was not found in either the mod or the vanilla game")]
+            return [f"map/provinces.bmp is not included in this mod (it uses the vanilla map).\nTo import the map, select the vanilla directory directly:\n{DEFAULT_HOI4_PATH}"]
+        return ["map/provinces.bmp was not found in either the mod or the vanilla game"]
     return []
 
 
 def _parse_definition_csv(csv_path: str) -> dict[tuple[int, int, int], dict[str, Any]]:
-    """解析 definition.csv，返回 {(R,G,B): {id, type, terrain}} 映射。
+    """Parse definition.csv and return {(R,G,B): {id, type, terrain}} mapping.
 
-    格式: ID;R;G;B;type;coastal;terrain;continent
-    """
+    Format: ID;R;G;B;type;coastal;terrain;continent"""
     color_info: dict[tuple[int, int, int], dict[str, Any]] = {}
     with open(csv_path, "r", encoding="utf-8-sig") as f:
         reader = csv.reader(f, delimiter=";")
@@ -80,16 +71,15 @@ def _parse_definition_csv(csv_path: str) -> dict[tuple[int, int, int], dict[str,
 
 
 def _read_provinces_bmp(bmp_path: str) -> tuple[np.ndarray, dict[tuple[int, int, int], int]]:
-    """读取 provinces.bmp，返回 (rgb_array[H,W,3], color→auto_id 映射)。
+    """Read provinces.bmp and return (rgb_array[H,W,3], color→auto_id mapping).
 
-    PIL 会自动处理 BMP 的 bottom-up 行序。
-    """
+    PIL automatically handles the bottom-up line ordering of BMPs."""
     img = Image.open(bmp_path).convert("RGB")
     rgb = np.array(img, dtype=np.uint8)
-    # 扫描唯一颜色，跳过 (0,0,0)
+    # Scan for unique colors, skipping (0,0,0)
     h, w = rgb.shape[:2]
     flat = rgb.reshape(-1, 3)
-    # 用结构化数组做 unique
+    # Use structured array to make unique
     flat_view = flat.view(np.dtype([("r", np.uint8), ("g", np.uint8), ("b", np.uint8)]))
     unique_colors = np.unique(flat_view)
 
@@ -109,18 +99,17 @@ def _build_province_map(
     rgb: np.ndarray,
     color_to_id: dict[tuple[int, int, int], int],
 ) -> np.ndarray:
-    """从 RGB 数组和颜色映射构建 province_map (int32)。
+    """Build province_map (int32) from RGB array and color map.
 
-    用 24-bit 直接查找表（16M 条目 = 64MB）实现 O(N) 映射，
-    替代之前的 np.unique + inverse（O(N log N)，1150 万像素要 20 秒）。
-    """
+    Implement O(N) mapping using a 24-bit direct lookup table (16M entries = 64MB),
+    Replaces the previous np.unique + inverse (O(N log N), 20 seconds for 11.5 million pixels)."""
     h, w = rgb.shape[:2]
 
     # RGB → 24-bit int
     flat = rgb.reshape(-1, 3).astype(np.int32)
     keys = (flat[:, 0] << 16) | (flat[:, 1] << 8) | flat[:, 2]
 
-    # 直接查找表: 24-bit key → province ID
+    # Direct lookup table: 24-bit key → province ID
     lut = np.zeros(1 << 24, dtype=np.int32)
     for (r, g, b), pid in color_to_id.items():
         lut[(r << 16) | (g << 8) | b] = pid
@@ -134,17 +123,16 @@ def _build_tile_map(
     color_to_id: dict[tuple[int, int, int], int],
     definition_info: dict[tuple[int, int, int], dict[str, Any]] | None,
 ) -> tuple[np.ndarray, dict[int, str]]:
-    """构建 tile_map (land/sea/lake) 和 provincial_terrain 字典。
+    """Build tile_map (land/sea/lake) and provincial_terrain dictionaries.
 
-    用 LUT 直接映射 province_id → tile_type，O(像素) 不逐省份扫描。
-    """
+    Use LUT to directly map province_id → tile_type, O(pixels) without scanning province by province."""
     h, w = province_map.shape
     provincial_terrain: dict[int, str] = {}
 
     if definition_info is None:
         return np.full((h, w), TILE_LAND, dtype=np.uint8), provincial_terrain
 
-    # 构建 province_id → tile_type 查找表
+    # Build province_id → tile_type lookup table
     max_pid = int(province_map.max())
     type_lut = np.full(max_pid + 1, TILE_LAND, dtype=np.uint8)
     for color, info in definition_info.items():
@@ -156,28 +144,28 @@ def _build_tile_map(
         if info.get("terrain"):
             provincial_terrain[pid] = info["terrain"]
 
-    # 直接 LUT 映射 — O(像素), 不逐省份
+    # Direct LUT mapping — O(pixels), no province-by-province
     tile_map = type_lut[province_map]
     return tile_map, provincial_terrain
 
 
 def _read_indexed_bmp(bmp_path: str) -> np.ndarray:
-    """读取 8-bit 索引 BMP，返回调色板索引数组 (uint8)。"""
+    """Reads an 8-bit indexed BMP, returning an array of palette indices (uint8)."""
     img = Image.open(bmp_path)
     if img.mode == "P":
-        # 直接获取调色板索引
+        # Get palette index directly
         data = np.array(img, dtype=np.uint8)
     elif img.mode == "L":
-        # 灰度图直接用
+        # Use grayscale images directly
         data = np.array(img, dtype=np.uint8)
     else:
-        # 转灰度作为 fallback
+        # Convert to grayscale as fallback
         data = np.array(img.convert("L"), dtype=np.uint8)
     return data
 
 
 def _extract_block_value(text: str, key: str) -> str:
-    """从 Clausewitz 脚本里提取 key={...} 或 key=value。"""
+    """Extract key={...} or key=value from Clausewitz script."""
     import re
     # key = { ... }
     m = re.search(rf'{key}\s*=\s*\{{([^}}]*)\}}', text, re.DOTALL)
@@ -191,7 +179,7 @@ def _extract_block_value(text: str, key: str) -> str:
 
 
 def _parse_state_file(path: str) -> dict | None:
-    """解析 history/states/*.txt，返回 {id, name, provinces, owner, manpower, category}。"""
+    """Parse history/states/*.txt and return {id, name, provinces, owner, manpower, category}."""
     with open(path, "r", encoding="utf-8-sig", errors="ignore") as f:
         text = f.read()
 
@@ -209,7 +197,7 @@ def _parse_state_file(path: str) -> dict | None:
     manpower = int(manpower_str) if manpower_str.isdigit() else 100000
     category = _extract_block_value(text, "state_category") or "town"
 
-    # 省份列表
+    # Province list
     provinces_str = _extract_block_value(text, "provinces")
     province_ids = []
     for token in provinces_str.split():
@@ -221,7 +209,7 @@ def _parse_state_file(path: str) -> dict | None:
     if not province_ids:
         return None
 
-    # 解析 victory_points = { pid value } （可能多个）
+    # Parse victory_points = { pid value } (possibly multiple)
     import re
     victory_points: dict[int, int] = {}
     for m in re.finditer(r'victory_points\s*=\s*\{\s*(\d+)\s+(\d+)\s*\}', text):
@@ -241,7 +229,7 @@ def _parse_state_file(path: str) -> dict | None:
 
 
 def _parse_strategic_region_file(path: str) -> dict | None:
-    """解析 map/strategicregions/*.txt，返回 {id, name, provinces, weather_preset, naval_terrain}。"""
+    """Parse map/strategicregions/*.txt and return {id, name, provinces, weather_preset, naval_terrain}."""
     with open(path, "r", encoding="utf-8-sig", errors="ignore") as f:
         text = f.read()
 
@@ -262,7 +250,7 @@ def _parse_strategic_region_file(path: str) -> dict | None:
         except ValueError:
             pass
 
-    # 读取 naval_terrain（vanilla 合法值: water_deep_ocean/water_shallow_sea/water_fjords）
+    # Read naval_terrain (vanilla legal values: water_deep_ocean/water_shallow_sea/water_fjords)
     naval_terrain = ""
     import re
     nt_match = re.search(r'naval_terrain\s*=\s*(\S+)', text)
@@ -270,7 +258,7 @@ def _parse_strategic_region_file(path: str) -> dict | None:
         raw = nt_match.group(1).strip().strip('"')
         if raw in ("water_deep_ocean", "water_shallow_sea", "water_fjords"):
             naval_terrain = raw
-        # 兼容老 MOD 残留的短名
+        # Compatible with short names left over from old MODs
         elif raw in ("deep_ocean", "ocean"):
             naval_terrain = "water_deep_ocean"
         elif raw == "shallow_sea":
@@ -278,7 +266,7 @@ def _parse_strategic_region_file(path: str) -> dict | None:
         elif raw == "fjords":
             naval_terrain = "water_fjords"
 
-    # 从 weather 的 temperature 推断天气 preset
+    # Infer weather preset from temperature of weather
     weather_preset = _guess_weather_preset(text)
 
     return {
@@ -291,17 +279,17 @@ def _parse_strategic_region_file(path: str) -> dict | None:
 
 
 def _guess_weather_preset(text: str) -> str:
-    """从 weather block 的 temperature 值推断最接近的天气预设。"""
+    """Infer the closest weather preset from the weather block's temperature value."""
     import re
     temps = re.findall(r'temperature\s*=\s*\{\s*([-\d.]+)\s+([-\d.]+)\s*\}', text)
     if not temps:
         return "temperate"
 
-    # 取所有月份的平均高温
+    # Take the average high temperature of all months
     avg_high = sum(float(t[1]) for t in temps) / len(temps)
     avg_low = sum(float(t[0]) for t in temps) / len(temps)
 
-    # 检查沙尘暴（沙漠特征）
+    # Check out sandstorms (desert features)
     sandstorms = re.findall(r'sandstorm\s*=\s*([\d.]+)', text)
     has_sandstorm = any(float(s) > 0.1 for s in sandstorms)
 
@@ -317,12 +305,12 @@ def _guess_weather_preset(text: str) -> str:
 
 
 def import_mod_map(mod_dir: str) -> dict[str, Any]:
-    """从 HOI4 mod/vanilla 目录导入地图图层。
+    """Import map layers from the HOI4 mod/vanilla directory.
 
-    参数:
-        mod_dir: 包含 map/ 子目录的根目录
+    Parameters:
+        mod_dir: root directory containing the map/ subdirectory
 
-    返回:
+    Return:
         {
             "width": int,
             "height": int,
@@ -336,15 +324,14 @@ def import_mod_map(mod_dir: str) -> dict[str, Any]:
             "warnings": list[str],
         }
 
-    异常:
-        FileNotFoundError: provinces.bmp 不存在
-        ValueError: BMP 格式错误
-    """
+    Exception:
+        FileNotFoundError: provinces.bmp does not exist
+        ValueError: BMP format error"""
     mod_dir = os.path.normpath(mod_dir)
     map_dir = os.path.join(mod_dir, "map")
     provinces_path = os.path.join(map_dir, "provinces.bmp")
 
-    # 大小写不敏感查找（用户文件可能是 Provinces.bmp / PROVINCES.BMP）
+    # Case-insensitive lookup (user file might be Provinces.bmp/PROVINCES.BMP)
     if not os.path.isfile(provinces_path) and os.path.isdir(map_dir):
         for f in os.listdir(map_dir):
             if f.lower() == "provinces.bmp":
@@ -352,16 +339,16 @@ def import_mod_map(mod_dir: str) -> dict[str, Any]:
                 break
 
     if not os.path.isfile(provinces_path):
-        raise FileNotFoundError(tr_pair(f"provinces.bmp 不存在: {provinces_path}", f"provinces.bmp does not exist: {provinces_path}"))
+        raise FileNotFoundError(f"provinces.bmp does not exist: {provinces_path}")
 
     warnings: list[str] = []
 
-    # 1. 读取 provinces.bmp（只读 RGB，不扫唯一颜色——那个 O(N log N) 太慢）
+    # 1. Read provinces.bmp (only read RGB, do not scan unique colors - that O(N log N) is too slow)
     img = Image.open(provinces_path).convert("RGB")
     rgb = np.array(img, dtype=np.uint8)
     h, w = rgb.shape[:2]
 
-    # 2. 读取 definition.csv (可选) — 有 csv 直接用它的 color→ID，跳过像素扫描
+    # 2. Read definition.csv (optional) - if there is a csv, use its color→ID directly, skipping pixel scanning
     definition_path = os.path.join(map_dir, "definition.csv")
     definition_info: dict[tuple[int, int, int], dict[str, Any]] | None = None
     if os.path.isfile(definition_path):
@@ -370,74 +357,65 @@ def import_mod_map(mod_dir: str) -> dict[str, Any]:
             c: info["id"] for c, info in definition_info.items()
         }
     else:
-        # 没有 definition.csv → 退回扫描唯一颜色自动分配 ID（慢路径）
+        # no definition.csv → fallback scanning unique colors auto-assign ID (slow path)
         _, color_to_id = _read_provinces_bmp(provinces_path)
-        warnings.append(tr_pair("未找到 definition.csv，省份类型全部设为陆地", "definition.csv was not found; all province types were set to land"))
+        warnings.append("definition.csv was not found; all province types were set to land")
 
-    # 3. 构建 province_map
+    # 3. Build province_map
     province_map = _build_province_map(rgb, color_to_id)
     province_count = int(province_map.max())
 
-    # 4. 构建 tile_map + provincial_terrain
+    # 4. Build tile_map + provincial_terrain
     tile_map, provincial_terrain = _build_tile_map(
         province_map, color_to_id, definition_info
     )
 
-    # 5. 读取 terrain.bmp (可选)
+    # 5. Read terrain.bmp (optional)
     terrain_path = os.path.join(map_dir, "terrain.bmp")
     if os.path.isfile(terrain_path):
         terrain_map = _read_indexed_bmp(terrain_path)
         if terrain_map.shape != (h, w):
             warnings.append(
-                tr_pair(
-                    f"terrain.bmp 尺寸 {terrain_map.shape[1]}x{terrain_map.shape[0]} 与 provinces.bmp {w}x{h} 不匹配，已缩放",
-                    f"terrain.bmp size {terrain_map.shape[1]}x{terrain_map.shape[0]} did not match provinces.bmp {w}x{h} and was resized",
-                )
+                f"terrain.bmp size {terrain_map.shape[1]}x{terrain_map.shape[0]} did not match provinces.bmp {w}x{h} and was resized"
             )
             img = Image.fromarray(terrain_map)
             img = img.resize((w, h), Image.Resampling.NEAREST)
             terrain_map = np.array(img, dtype=np.uint8)
     else:
         terrain_map = np.zeros((h, w), dtype=np.uint8)
-        warnings.append(tr_pair("未找到 terrain.bmp，地形图层设为空", "terrain.bmp was not found; the terrain layer was left empty"))
+        warnings.append("terrain.bmp was not found; the terrain layer was left empty")
 
-    # 6. 读取 heightmap.bmp (可选)
+    # 6. Read heightmap.bmp (optional)
     heightmap_path = os.path.join(map_dir, "heightmap.bmp")
     if os.path.isfile(heightmap_path):
         height_map = _read_indexed_bmp(heightmap_path)
         if height_map.shape != (h, w):
             warnings.append(
-                tr_pair(
-                    f"heightmap.bmp 尺寸 {height_map.shape[1]}x{height_map.shape[0]} 与 provinces.bmp {w}x{h} 不匹配，已缩放",
-                    f"heightmap.bmp size {height_map.shape[1]}x{height_map.shape[0]} did not match provinces.bmp {w}x{h} and was resized",
-                )
+                f"heightmap.bmp size {height_map.shape[1]}x{height_map.shape[0]} did not match provinces.bmp {w}x{h} and was resized"
             )
             img = Image.fromarray(height_map)
             img = img.resize((w, h), Image.Resampling.NEAREST)
             height_map = np.array(img, dtype=np.uint8)
     else:
         height_map = np.full((h, w), 40, dtype=np.uint8)
-        warnings.append(tr_pair("未找到 heightmap.bmp，高度图层设为默认值", "heightmap.bmp was not found; the height layer was set to its default value"))
+        warnings.append("heightmap.bmp was not found; the height layer was set to its default value")
 
-    # 7. 读取 rivers.bmp (可选)
+    # 7. Read rivers.bmp (optional)
     rivers_path = os.path.join(map_dir, "rivers.bmp")
     if os.path.isfile(rivers_path):
         river_map = _read_indexed_bmp(rivers_path)
         if river_map.shape != (h, w):
             warnings.append(
-                tr_pair(
-                    f"rivers.bmp 尺寸 {river_map.shape[1]}x{river_map.shape[0]} 与 provinces.bmp {w}x{h} 不匹配，已缩放",
-                    f"rivers.bmp size {river_map.shape[1]}x{river_map.shape[0]} did not match provinces.bmp {w}x{h} and was resized",
-                )
+                f"rivers.bmp size {river_map.shape[1]}x{river_map.shape[0]} did not match provinces.bmp {w}x{h} and was resized"
             )
             img = Image.fromarray(river_map)
             img = img.resize((w, h), Image.Resampling.NEAREST)
             river_map = np.array(img, dtype=np.uint8)
     else:
         river_map = np.full((h, w), 255, dtype=np.uint8)
-        warnings.append(tr_pair("未找到 rivers.bmp，河流图层设为空", "rivers.bmp was not found; the river layer was left empty"))
+        warnings.append("rivers.bmp was not found; the river layer was left empty")
 
-    # 8. 读取 states (可选)
+    # 8. Read states (optional)
     states_dir = os.path.join(mod_dir, "history", "states")
     states_data: list[dict] = []
     if os.path.isdir(states_dir):
@@ -451,16 +429,16 @@ def import_mod_map(mod_dir: str) -> dict[str, Any]:
             except Exception:
                 pass
         if states_data:
-            warnings.append(tr_pair(f"读取了 {len(states_data)} 个 State 文件", f"Read {len(states_data)} state files"))
+            warnings.append(f"Read {len(states_data)} state files")
     else:
-        warnings.append(tr_pair("未找到 history/states/ 目录", "history/states/ directory was not found"))
+        warnings.append("history/states/ directory was not found")
 
-    # 9a. 扫描美术资产（colormap / world_normal 等 HOI4 会读但工具不生成的文件）
+    # 9a. Scan art assets (colormap / world_normal and other files that HOI4 can read but the tool does not generate)
     assets = _collect_art_assets(mod_dir)
     if assets:
-        warnings.append(tr_pair(f"保留了 {len(assets)} 个原始美术资产（导出时不会覆盖）", f"Preserved {len(assets)} original art assets (they will not be overwritten during export)"))
+        warnings.append(f"Preserved {len(assets)} original art assets (they will not be overwritten during export)")
 
-    # 9. 读取 strategic regions (可选)
+    # 9. Read strategic regions (optional)
     sr_dir = os.path.join(mod_dir, "map", "strategicregions")
     sr_data: list[dict] = []
     if os.path.isdir(sr_dir):
@@ -474,18 +452,18 @@ def import_mod_map(mod_dir: str) -> dict[str, Any]:
             except Exception:
                 pass
         if sr_data:
-            warnings.append(tr_pair(f"读取了 {len(sr_data)} 个战略区域文件", f"Read {len(sr_data)} strategic-region files"))
+            warnings.append(f"Read {len(sr_data)} strategic-region files")
     else:
-        warnings.append(tr_pair("未找到 map/strategicregions/ 目录", "map/strategicregions/ directory was not found"))
+        warnings.append("map/strategicregions/ directory was not found")
 
-    # 9c. 读取本地化 → 替换 state 名字（STATE_1 → "Corsica"）
+    # 9c. Read localization → replace state name (STATE_1 → "Corsica")
     loc_map = _scan_localisation(mod_dir)
     if loc_map:
         for sd in states_data:
             key = sd.get("name", "")
             if key in loc_map:
                 sd["name"] = loc_map[key]
-            # VP 城市名
+            # VP city name
             vp_names: dict[int, str] = {}
             for vp_pid in sd.get("victory_points", {}):
                 vp_key = f"VICTORY_POINTS_{vp_pid}"
@@ -493,49 +471,49 @@ def import_mod_map(mod_dir: str) -> dict[str, Any]:
                     vp_names[vp_pid] = loc_map[vp_key]
             if vp_names:
                 sd["vp_names"] = vp_names
-        # 战略区域名
+        # strategic area name
         for rd in sr_data:
             key = rd.get("name", "")
             if key in loc_map:
                 rd["name"] = loc_map[key]
-        warnings.append(tr_pair(f"读取了 {len(loc_map)} 条本地化文本", f"Read {len(loc_map)} localization entries"))
+        warnings.append(f"Read {len(loc_map)} localization entries")
 
-    # 10. 读取 railways (可选)
+    # 10. Read railways (optional)
     railways_data: list[dict] = []
     railways_path = os.path.join(map_dir, "railways.txt")
     if os.path.isfile(railways_path):
         railways_data = _parse_railways(railways_path)
         if railways_data:
-            warnings.append(tr_pair(f"读取了 {len(railways_data)} 条铁路", f"Read {len(railways_data)} railways"))
+            warnings.append(f"Read {len(railways_data)} railways")
 
-    # 11. 读取 supply_nodes (可选)
+    # 11. Read supply_nodes (optional)
     supply_data: list[dict] = []
     supply_path = os.path.join(map_dir, "supply_nodes.txt")
     if os.path.isfile(supply_path):
         supply_data = _parse_supply_nodes(supply_path)
         if supply_data:
-            warnings.append(tr_pair(f"读取了 {len(supply_data)} 个补给节点", f"Read {len(supply_data)} supply hubs"))
+            warnings.append(f"Read {len(supply_data)} supply hubs")
 
-    # 12. 读取 adjacencies (可选)
+    # 12. Read adjacencies (optional)
     adjacencies_data: list[dict] = []
     adj_path = os.path.join(map_dir, "adjacencies.csv")
     if os.path.isfile(adj_path):
         adjacencies_data = _parse_adjacencies(adj_path)
         if adjacencies_data:
-            warnings.append(tr_pair(f"读取了 {len(adjacencies_data)} 条邻接关系", f"Read {len(adjacencies_data)} adjacencies"))
+            warnings.append(f"Read {len(adjacencies_data)} adjacencies")
 
-    # 13. 读取国家颜色 (可选)
+    # 13. Read country colors (optional)
     country_colors: dict[str, tuple[int, int, int]] = {}
     colors_path = os.path.join(mod_dir, "common", "countries", "colors.txt")
     if os.path.isfile(colors_path):
         country_colors = _parse_country_colors(colors_path)
         if country_colors:
-            warnings.append(tr_pair(f"读取了 {len(country_colors)} 个国家颜色", f"Read colors for {len(country_colors)} countries"))
+            warnings.append(f"Read colors for {len(country_colors)} countries")
 
-    # 14. 读取国家历史 (首都/政体, 可选)
+    # 14. Read country history (capital/government, optional)
     country_history = _parse_country_history_dir(mod_dir)
     if country_history:
-        warnings.append(tr_pair(f"读取了 {len(country_history)} 个国家历史文件", f"Read {len(country_history)} country-history files"))
+        warnings.append(f"Read {len(country_history)} country-history files")
 
     return {
         "width": w,
@@ -555,17 +533,17 @@ def import_mod_map(mod_dir: str) -> dict[str, Any]:
         "assets": assets,
         "country_colors": country_colors,
         "country_history": country_history,
-        # TAG → 本地化国名等 (states/战略区名已就地替换, 国家名在填充时查)
+        # TAG → Localized country names, etc. (states/strategic area names have been replaced locally, country names are checked when filling in)
         "localisation": loc_map,
         "warnings": warnings,
     }
 
 
-# ── 国家颜色解析 ──────────────────────────────────────────────
+# ── National Color Analysis ───────────────────────────────────────────
 
 
 def _parse_country_colors(path: str) -> dict[str, tuple[int, int, int]]:
-    """解析 common/countries/colors.txt → {TAG: (R, G, B)}。"""
+    """Parse common/countries/colors.txt → {TAG: (R, G, B)}."""
     import re
     colors: dict[str, tuple[int, int, int]] = {}
     with open(path, "r", encoding="utf-8-sig", errors="ignore") as f:
@@ -580,15 +558,14 @@ def _parse_country_colors(path: str) -> dict[str, tuple[int, int, int]]:
     return colors
 
 
-# ── 本地化扫描 ──────────────────────────────────────────────
+# ── Localized scanning ────────────────────────────────────────────
 
 
 def _scan_localisation(mod_dir: str) -> dict[str, str]:
-    """扫描 MOD 的 localisation/ 下所有 .yml 文件，提取 KEY: "value" 映射。
+    """Scan all .yml files under MOD's localization/ and extract KEY: "value" mapping.
 
-    优先读 english/ 子目录（最完整），再读根目录。
-    返回 {KEY: value} 字典，用于替换 state name 等。
-    """
+    Read the english/ subdirectory first (the most complete), then the root directory.
+    Returns a dictionary of {KEY: value}, used to replace state name, etc."""
     import re
     result: dict[str, str] = {}
     loc_dir = os.path.join(mod_dir, "localisation")
@@ -605,16 +582,16 @@ def _scan_localisation(mod_dir: str) -> dict[str, str]:
                 try:
                     with open(os.path.join(root, fn), "r", encoding="utf-8-sig", errors="ignore") as f:
                         for line in f:
-                            # 格式: " KEY:0 \"value\"" 或 " KEY: \"value\""
+                            # Format: " KEY:0 \"value\"" or " KEY: \"value\""
                             m = re.match(r'\s+(\S+?):\d*\s+"([^"]*)"', line)
                             if m:
                                 result[m.group(1)] = m.group(2)
                 except OSError:
                     pass
 
-    # 优先英文
+    # English preferred
     _scan_dir(os.path.join(loc_dir, "english"))
-    # 再扫根目录（有些 MOD 直接放 localisation/ 下）
+    # Scan the root directory again (some MODs are placed directly under localization/)
     for fn in os.listdir(loc_dir):
         full = os.path.join(loc_dir, fn)
         if os.path.isfile(full) and fn.endswith(".yml"):
@@ -631,11 +608,11 @@ def _scan_localisation(mod_dir: str) -> dict[str, str]:
     return result
 
 
-# ── 后勤文件解析 ──────────────────────────────────────────────
+# ── Logistics document analysis ───────────────────────────────────────────
 
 
 def _parse_railways(path: str) -> list[dict]:
-    """解析 map/railways.txt。每行: level count pid1 pid2 pid3 ..."""
+    """Parse map/railways.txt. Each line: level count pid1 pid2 pid3 ..."""
     result = []
     with open(path, "r", encoding="utf-8-sig", errors="ignore") as f:
         for line in f:
@@ -643,7 +620,7 @@ def _parse_railways(path: str) -> list[dict]:
             if not line or line.startswith("#"):
                 continue
             tokens = line.split()
-            if len(tokens) < 4:  # level + count + 至少2个省份
+            if len(tokens) < 4:  # level + count + at least 2 provinces
                 continue
             try:
                 level = int(tokens[0])
@@ -657,7 +634,7 @@ def _parse_railways(path: str) -> list[dict]:
 
 
 def _parse_supply_nodes(path: str) -> list[dict]:
-    """解析 map/supply_nodes.txt。每行: level province_id"""
+    """Parse map/supply_nodes.txt. Each row: level province_id"""
     result = []
     with open(path, "r", encoding="utf-8-sig", errors="ignore") as f:
         for line in f:
@@ -677,7 +654,7 @@ def _parse_supply_nodes(path: str) -> list[dict]:
 
 
 def _parse_adjacencies(path: str) -> list[dict]:
-    """解析 map/adjacencies.csv。格式: From;To;Type;Through;start_x;start_y;stop_x;stop_y;rule;Comment"""
+    """Parse map/adjacencies.csv. Format: From;To;Type;Through;start_x;start_y;stop_x;stop_y;rule;Comment"""
     result = []
     with open(path, "r", encoding="utf-8-sig", errors="ignore") as f:
         for line in f:
@@ -691,7 +668,7 @@ def _parse_adjacencies(path: str) -> list[dict]:
                 from_id = int(parts[0])
                 to_id = int(parts[1])
                 if from_id < 0 or to_id < 0:
-                    continue  # 哨兵行 -1;-1;...
+                    continue  # Sentinel Row -1;-1;...
                 adj_type = parts[2].strip() or "sea"
                 through = int(parts[3]) if len(parts) > 3 and parts[3].strip().lstrip('-').isdigit() else -1
                 start_x = int(parts[4]) if len(parts) > 4 and parts[4].strip().lstrip('-').isdigit() else -1
@@ -712,11 +689,11 @@ def _parse_adjacencies(path: str) -> list[dict]:
     return result
 
 
-# ── 美术资产扫描 ──────────────────────────────────────────────
-# "结构性文件" = 工具会从数据重新生成的文件（不保留原字节）
-# 其它文件 = 美术资产（保留原字节，除非用户编辑触发 dirty）
+# ── Art asset scan ───────────────────────────────────────────
+# "Structured file" = file that the tool will regenerate from the data (original bytes are not retained)
+# Other files = art assets (retain original bytes, unless user editing triggers dirty)
 
-# 这些 map/ 下文件工具会从 MapData / managers 重新生成 → 不收进 assets
+# These map/ file tools will be regenerated from MapData / managers → do not include assets
 _STRUCTURAL_MAP_FILES = {
     "provinces.bmp",
     "heightmap.bmp",
@@ -745,13 +722,12 @@ _STRUCTURAL_MAP_FILES = {
 
 
 def _collect_art_assets(mod_dir: str) -> dict[str, bytes]:
-    """扫描 MOD 的 map/ 和 map/terrain/ 下所有非结构性文件，返回 {rel_path: bytes}。
+    """Scan all non-structural files under map/ and map/terrain/ of MOD and return {rel_path: bytes}.
 
-    结构性文件（provinces/heightmap/terrain 等）由工具从数据重新生成，不收集。
-    美术资产（colormap_*.dds、world_normal.bmp 等）原样保留。
+    Structural files (provinces/heightmap/terrain, etc.) are regenerated from the data by the tool and are not collected.
+    Art assets (colormap_*.dds, world_normal.bmp, etc.) are left intact.
 
-    返回值的 key 形如 "map/terrain/colormap_rgb_cityemissivemask_a.dds"（斜杠分隔）。
-    """
+    The key of the return value is in the form of "map/terrain/colormap_rgb_cityemissivemask_a.dds" (slash separated)."""
     assets: dict[str, bytes] = {}
     map_dir = os.path.join(mod_dir, "map")
     if not os.path.isdir(map_dir):
@@ -764,17 +740,17 @@ def _collect_art_assets(mod_dir: str) -> dict[str, bytes]:
         except OSError:
             pass
 
-    # 扫 map/ 根目录
+    # Scan the map/ root directory
     for fn in os.listdir(map_dir):
         full = os.path.join(map_dir, fn)
         if not os.path.isfile(full):
             continue
         if fn in _STRUCTURAL_MAP_FILES:
             continue
-        # 收非结构性文件（world_normal.bmp 等）
+        # Collect unstructured files (world_normal.bmp, etc.)
         _add_file(full, f"map/{fn}")
 
-    # 扫 map/terrain/ 下所有 .dds / .bmp（全都是美术，vanilla 生成，无结构性文件）
+    # Scan all .dds / .bmp under map/terrain/ (all art, vanilla generated, no structured files)
     terrain_dir = os.path.join(map_dir, "terrain")
     if os.path.isdir(terrain_dir):
         for fn in os.listdir(terrain_dir):
@@ -786,20 +762,19 @@ def _collect_art_assets(mod_dir: str) -> dict[str, bytes]:
     return assets
 
 
-# ── 国家历史 ────────────────────────────────────────────────
+# ──National History───────────────────────────────────────────
 
 _CAPITAL_RE = re.compile(r"^\s*capital\s*=\s*(\d+)", re.M)
 _RULING_PARTY_RE = re.compile(r"ruling_party\s*=\s*(\w+)")
 
 
 def _parse_country_history_dir(mod_dir: str) -> dict[str, dict]:
-    """解析 history/countries/*.txt → {TAG: {capital_state, ruling_party}}。
+    """Parse history/countries/*.txt → {TAG: {capital_state, ruling_party}}.
 
-    文件名约定 "TAG - Name.txt"。只提取最常用的两个字段:
-    - capital: 注意 HOI4 这里是 State ID, 不是省份 ID,
-      填充进 CountryData 前必须换算 (见 _populate_imported_data)
-    - set_politics 块里的 ruling_party
-    """
+    The file name convention is "TAG - Name.txt". Extract only the two most commonly used fields:
+    - capital: Note that HOI4 here is the State ID, not the province ID.
+      Must be converted before filling into CountryData (see _populate_imported_data)
+    - ruling_party in set_politics block"""
     out: dict[str, dict] = {}
     hist_dir = os.path.join(mod_dir, "history", "countries")
     if not os.path.isdir(hist_dir):

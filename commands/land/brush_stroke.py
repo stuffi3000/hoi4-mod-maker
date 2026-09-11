@@ -1,25 +1,18 @@
-"""
-BrushStrokeCommand — 画笔一次 stroke 的快照式撤销。
+"""Undoable compressed snapshots for brush-based map edits."""
 
-包装 UndoManager 的 zlib 压缩快照为 Command 接口，
-让画笔操作也能通过 CommandHistory 统一管理。
-"""
 from __future__ import annotations
 
 import zlib
+
 import numpy as np
 
 from commands.base import Command
 
 
 class BrushStrokeCommand(Command):
-    """画笔一次 stroke 的可撤销命令。
+    """Restore named NumPy arrays from compressed before-and-after snapshots."""
 
-    存储操作前后的数组快照（zlib 压缩），
-    只存有变化的图层。
-    """
-
-    label = "画笔绘制"
+    label = "Brush stroke"
 
     def __init__(
         self,
@@ -27,24 +20,19 @@ class BrushStrokeCommand(Command):
         before_snapshots: dict[str, tuple[bytes, tuple]],
         after_snapshots: dict[str, tuple[bytes, tuple]],
     ) -> None:
-        """
-        参数:
-            description: 操作描述
-            before_snapshots: 操作前快照 {name: (compressed_data, (shape, dtype))}
-            after_snapshots: 操作后快照 {name: (compressed_data, (shape, dtype))}
-        """
+        """Store snapshots and initialize the registry of live target arrays."""
         self.label = description
         self._before = before_snapshots
         self._after = after_snapshots
-        # 目标数组引用（execute 时设置）
+        # Targets are attached later because the command is created before the canvas update.
         self._target_arrays: dict[str, np.ndarray] = {}
 
     def set_target_arrays(self, arrays: dict[str, np.ndarray]) -> None:
-        """设置撤销/重做时要操作的目标数组引用。"""
+        """Attach the live arrays that future execute and undo calls should update."""
         self._target_arrays = arrays
 
     def execute(self) -> None:
-        """恢复到操作后的状态（用于 redo）。"""
+        """Restore the after snapshot into every attached target array."""
         for name, (compressed, (shape, dtype)) in self._after.items():
             if name in self._target_arrays:
                 data = zlib.decompress(compressed)
@@ -52,7 +40,7 @@ class BrushStrokeCommand(Command):
                 self._target_arrays[name][:] = restored
 
     def undo(self) -> None:
-        """恢复到操作前的状态。"""
+        """Restore the before snapshot into every attached target array."""
         for name, (compressed, (shape, dtype)) in self._before.items():
             if name in self._target_arrays:
                 data = zlib.decompress(compressed)
@@ -61,7 +49,7 @@ class BrushStrokeCommand(Command):
 
     @staticmethod
     def snapshot_arrays(arrays: dict[str, np.ndarray]) -> dict[str, tuple[bytes, tuple]]:
-        """对数组进行 zlib 压缩快照。"""
+        """Compress a copy of each named array for a command snapshot."""
         result = {}
         for name, arr in arrays.items():
             compressed = zlib.compress(arr.tobytes(), level=1)
@@ -73,7 +61,7 @@ class BrushStrokeCommand(Command):
         before: dict[str, tuple[bytes, tuple]],
         after_arrays: dict[str, np.ndarray],
     ) -> bool:
-        """检查操作前后是否有实际变化。"""
+        """Return whether any current array differs from its saved before snapshot."""
         for name, (compressed, (shape, dtype)) in before.items():
             if name in after_arrays:
                 old_data = zlib.decompress(compressed)

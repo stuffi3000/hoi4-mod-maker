@@ -1,8 +1,4 @@
-"""
-export — en 翻译
-
-本文件由 tools/migrate_i18n.py 生成。后续手动维护。
-"""
+"""English strings for export progress, validation, and completion."""
 
 STRINGS: dict[str, str] = {
     "export_auto_assign_states": "Assigned {count} unowned states to {tag}",

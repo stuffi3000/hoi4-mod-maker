@@ -1,6 +1,4 @@
-"""
-自动气候色调测试 — 纬度气候带 / 海拔修正 / 水体中性。
-"""
+"""Automatic climate tone test - Latitudinal climate zone/elevation correction/water neutral."""
 
 import numpy as np
 
@@ -20,33 +18,32 @@ def test_output_shape_and_determinism():
     b = generate_climate_tint(tile_map, height_map, seed=7)
     assert a.shape == (180, 64, 3)
     assert a.dtype == np.uint8
-    assert np.array_equal(a, b)          # 同种子可复现
+    assert np.array_equal(a, b)          # The same seed can be reproduced
 
 
 def test_equator_green_subtropics_yellow():
-    """赤道带偏绿, 副热带干燥带相对更黄 (R-G 差值更大)。
+    """The equatorial zone is greener, and the subtropical dry zone is relatively yellower (the R-G difference is larger).
 
-    气候带边界有噪声蜿蜒, 所以比较带状区域的均值而不是单行。
-    """
+    Climate zone boundaries have noisy meanderings, so compare means over strips rather than single rows."""
     tile_map, height_map = _world()
     tint = generate_climate_tint(tile_map, height_map).astype(np.int32)
-    eq_band = tint[85:96]                 # 赤道附近
-    sub_band = tint[148:166]              # |纬度| ≈ 29°~38°
+    eq_band = tint[85:96]                 # near the equator
+    sub_band = tint[148:166]              # |Latitude| ≈ 29°~38°
     eq_yellowness = float((eq_band[:, :, 0] - eq_band[:, :, 1]).mean())
     sub_yellowness = float((sub_band[:, :, 0] - sub_band[:, :, 1]).mean())
-    assert eq_yellowness < 0              # 赤道绿 (G>R)
+    assert eq_yellowness < 0              # Equatorial green (G>R)
     assert sub_yellowness > eq_yellowness + 10
 
 
 def test_poles_brighter_than_tropics():
-    """极地雪白比赤道亮。"""
+    """The polar snow is brighter than the equator."""
     tile_map, height_map = _world()
     tint = generate_climate_tint(tile_map, height_map)
     assert int(tint[0].mean()) > int(tint[90].mean())
 
 
 def test_high_mountains_turn_snowy():
-    """超过雪线的高山接近雪白, 明显亮于同纬度平地。"""
+    """The mountains above the snow line are nearly snow-white, which is obviously brighter than the flat land at the same latitude."""
     tile_map, height_map = _world()
     height_map[100, 10] = SEA_LEVEL + 130
     tint = generate_climate_tint(tile_map, height_map)
@@ -54,7 +51,7 @@ def test_high_mountains_turn_snowy():
 
 
 def test_water_is_neutral():
-    """水体像素输出中性 128 (会被水色覆盖, 但不能乱)。"""
+    """Water pixel output is neutral 128 (will be covered by water color, but not messy)."""
     tile_map, height_map = _world()
     tile_map[:, :8] = TILE_SEA
     tint = generate_climate_tint(tile_map, height_map)

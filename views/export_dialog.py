@@ -1,10 +1,8 @@
-"""
-导出预检对话框 — 显示项目完成度，支持自动补全后导出。
+"""Export preflight dialog box—displays project completion and supports auto-completion and export.
 
-点"导出MOD"时弹出此对话框，列出所有必需项的状态：
-  ✓ 已完成  /  ✗ 缺失（可自动补全）  /  ⚠ 有问题
-用户可选择"自动补全并导出"或"取消"。
-"""
+This dialog box pops up when you click "Export MOD", listing the status of all required items:
+  ✓ Completed / ✗ Missing (can be automatically completed) / ⚠ There is a problem
+Users can choose "Autocomplete and export" or "Cancel"."""
 from __future__ import annotations
 
 import os
@@ -23,15 +21,15 @@ from services.readiness_service import check_project_readiness
 from ui.i18n import tr
 
 
-# ── 检查项数据 ──────────────────────────────────────
-# CheckItem / check_project_readiness 已迁至 services/readiness_service.py:
-# 完成度是业务规则, 导出预检和制作进度面板必须共用同一套标准
+# ── Inspection item data ────────────────────────────────────
+# CheckItem / check_project_readiness has been moved to services/readiness_service.py:
+# Completion is a business rule, and the export preflight and production progress panels must share the same set of standards.
 
 
-# ── 自动补全逻辑 ──────────────────────────────────────
+# ── Auto-completion logic ─────────────────────────────────────
 
 def auto_complete_project(project, canvas) -> list[str]:
-    """自动补全缺失数据，返回补全操作日志。"""
+    """Automatically complete missing data and return the completion operation log."""
     log: list[str] = []
     pm = canvas.province_map
     tm = canvas.tile_map
@@ -39,19 +37,19 @@ def auto_complete_project(project, canvas) -> list[str]:
     if province_count == 0:
         return [tr("export_auto_no_provinces")]
 
-    # 1. 自动生成 State
+    # 1. Automatically generate State
     state_mgr = project.state_mgr
     if not state_mgr.states:
         state_mgr.auto_split(pm, tm, per_state=15)
         log.append(tr("export_auto_gen_states").format(count=len(state_mgr.states)))
 
-    # 2. 自动创建国家
+    # 2. Automatically create countries
     country_mgr = project.country_mgr
     if not country_mgr.countries:
         country_mgr.create_country("AAA", name="Default Nation", color=(100, 100, 200))
         log.append(tr("export_auto_create_country"))
 
-    # 3. 分配无主 State 给第一个国家
+    # 3. Assign the unowned State to the first country
     first_tag = next(iter(country_mgr.countries))
     unowned = []
     for sid in state_mgr.states:
@@ -66,7 +64,7 @@ def auto_complete_project(project, canvas) -> list[str]:
         log.append(tr("export_auto_assign_states").format(
             count=len(unowned), tag=first_tag))
 
-    # 4. 设首都
+    # 4. Set up a capital city
     for tag, country in country_mgr.countries.items():
         if country.capital <= 0:
             owned_states = country_mgr.get_states_of_country(tag)
@@ -77,13 +75,13 @@ def auto_complete_project(project, canvas) -> list[str]:
                     log.append(tr("export_auto_set_capital").format(
                         tag=tag, pid=country.capital))
 
-    # 5. 自动生成战略区域
+    # 5. Automatically generate strategic areas
     sr_mgr = project.strategic_region_mgr
     if sr_mgr.count() == 0:
         sr_mgr.auto_generate(pm, tm, state_mgr=state_mgr)
         log.append(tr("export_auto_gen_sr").format(count=sr_mgr.count()))
 
-    # 6. 大陆（至少有一个默认的）
+    # 6. Mainland (at least one default)
     cont_mgr = project.continent_mgr
     if cont_mgr.count() == 0:
         cont_mgr.add_continent("default_continent")
@@ -92,13 +90,13 @@ def auto_complete_project(project, canvas) -> list[str]:
     return log
 
 
-# ── 后台导出线程 ──────────────────────────────────────
+# ── Background export thread ──────────────────────────────────────
 
 class ExportWorker(QThread):
-    """后台执行导出，避免界面冻结。"""
-    progress = pyqtSignal(str)       # 进度文本
-    finished = pyqtSignal(object)    # 成功时发 ExportReport
-    failed = pyqtSignal(str)         # 失败时发错误信息
+    """Execute export in the background to avoid interface freezing."""
+    progress = pyqtSignal(str)       # progress text
+    finished = pyqtSignal(object)    # Send ExportReport on success
+    failed = pyqtSignal(str)         # Send error message on failure
 
     def __init__(
         self, output_dir: str, canvas, project,
@@ -136,10 +134,10 @@ class ExportWorker(QThread):
             self.failed.emit(f"{e}\n\n{traceback.format_exc()}")
 
 
-# ── 对话框 ──────────────────────────────────────────
+# ──Dialog ────────────────────────────────────────
 
 class ExportDialog(QDialog):
-    """导出预检对话框 — 检查 → 自动补全 → 选目录 → 导出。"""
+    """Export preflight dialog - Check → Autocomplete → Select Directory → Export."""
 
     def __init__(self, project, canvas, parent=None) -> None:
         super().__init__(parent)
@@ -153,27 +151,27 @@ class ExportDialog(QDialog):
         self._build_ui()
         self._run_check()
 
-    # ── UI 构建 ──
+    # ── UI construction ──
 
     def _build_ui(self) -> None:
         layout = QVBoxLayout(self)
         layout.setSpacing(10)
 
-        # 标题
+        # Title
         title = QLabel(tr("export_pre_check_title"))
         title.setStyleSheet("font-size: 16px; font-weight: bold;")
         layout.addWidget(title)
 
-        # 检查结果区域
+        # Check results area
         self._check_group = QGroupBox(tr("export_project_readiness"))
         self._check_layout = QVBoxLayout(self._check_group)
         layout.addWidget(self._check_group)
 
-        # 导出范围选择
+        # Export range selection
         scope_group = QGroupBox(tr("export_scope"))
         scope_layout = QVBoxLayout(scope_group)
 
-        # 预设按钮行: 全选 / 只地图 / 清空
+        # Default button row: Select All / Map Only / Clear
         preset_row = QHBoxLayout()
         for preset_key, label_key in (
             ("all", "export_scope_btn_select_all"),
@@ -211,7 +209,7 @@ class ExportDialog(QDialog):
             self._scope_checks[key] = cb
         layout.addWidget(scope_group)
 
-        # 日志区域（初始隐藏）
+        # Log area (initially hidden)
         self._log_box = QGroupBox(tr("export_log"))
         log_layout = QVBoxLayout(self._log_box)
         self._log_text = QTextEdit()
@@ -221,7 +219,7 @@ class ExportDialog(QDialog):
         self._log_box.setVisible(False)
         layout.addWidget(self._log_box)
 
-        # 进度条（初始隐藏）
+        # Progress bar (initially hidden)
         self._progress_bar = QProgressBar()
         self._progress_bar.setRange(0, 0)  # indeterminate
         self._progress_bar.setVisible(False)
@@ -231,7 +229,7 @@ class ExportDialog(QDialog):
         self._progress_label.setVisible(False)
         layout.addWidget(self._progress_label)
 
-        # 按钮行
+        # button row
         btn_layout = QHBoxLayout()
         btn_layout.addStretch()
 
@@ -264,11 +262,11 @@ class ExportDialog(QDialog):
 
         layout.addLayout(btn_layout)
 
-    # ── 检查 ──
+    # ── Check ──
 
     def _run_check(self) -> None:
-        """执行检查并显示结果。"""
-        # 清空旧结果
+        """Performs the check and displays the results."""
+        # Clear old results
         while self._check_layout.count():
             child = self._check_layout.takeAt(0)
             if child.widget():
@@ -282,7 +280,7 @@ class ExportDialog(QDialog):
         for item in self._items:
             row = QHBoxLayout()
 
-            # 状态图标
+            # status icon
             if item.status == "ok":
                 icon = "✓"
                 color = "#22c55e"
@@ -301,7 +299,7 @@ class ExportDialog(QDialog):
             icon_label.setFixedWidth(24)
             row.addWidget(icon_label)
 
-            # 名称 + 详情
+            # name + details
             text = f"<b>{item.name}</b> — {item.detail}"
             if item.can_auto and item.status != "ok":
                 text += f' <span style="color: #4f8cff;">[{tr("export_can_auto")}]</span>'
@@ -314,27 +312,27 @@ class ExportDialog(QDialog):
             container.setLayout(row)
             self._check_layout.addWidget(container)
 
-        # 有不可自动修复的阻断性错误 → 禁用导出
+        # There are blocking errors that cannot be automatically repaired → Disable export
         if has_blocking:
             self._btn_auto.setEnabled(False)
             self._btn_export_direct.setEnabled(False)
 
-        # 没有缺失项 → 隐藏"自动补全"按钮
+        # No missing items → Hide "AutoComplete" button
         if not has_missing:
             self._btn_auto.setText(tr("export_btn_export"))
             self._btn_export_direct.setVisible(False)
 
-    # ── 预设 ──
+    # ── Default ──
 
-    # "只地图" 预设勾选的 scope key — 只生成 map/ 目录下的纯地图文件
+    # "Map only" scope key is checked by default - only generate pure map files in the map/ directory
     # (BMP + definition.csv + buildings + adjacencies + strategicregions + supply_nodes/railways)
-    # 不写 states/countries/localisation/gfx/replace_path/descriptor —
-    # 适合已有 MOD 框架, 只需要地图素材的用户
-    # compact_ids 也保留: 只地图导出同样需要 definition.csv 编号连续
+    # Do not write states/countries/localisation/gfx/replace_path/descriptor —
+    # Suitable for users who already have a MOD framework and only need map materials
+    # compact_ids are also retained: only map export also requires definition.csv numbers to be consecutive
     _MAP_ONLY_KEYS = frozenset({"map", "strategic_regions", "supply", "compact_ids"})
 
     def _apply_scope_preset(self, preset: str) -> None:
-        """一键设置 scope 勾选状态. preset = "all" | "map_only" | "none"."""
+        """Set scope check status with one click. preset = "all" | "map_only" | "none"."""
         for key, cb in self._scope_checks.items():
             if preset == "all":
                 cb.setChecked(True)
@@ -343,26 +341,26 @@ class ExportDialog(QDialog):
             elif preset == "map_only":
                 cb.setChecked(key in self._MAP_ONLY_KEYS)
 
-    # ── 导出动作 ──
+    # ── Export action ──
 
     def _on_auto_export(self) -> None:
-        """自动补全后导出。"""
-        # 先执行自动补全
+        """Export after auto-completion."""
+        # Perform autocomplete first
         log = auto_complete_project(self.project, self.canvas)
         if log:
             self._log_box.setVisible(True)
             self._log_text.setPlainText("\n".join(
                 f"[{tr('export_log_prefix')}] {l}" for l in log))
 
-        # 刷新检查
+        # refresh check
         self._run_check()
 
-        # 选目录并导出
+        # Select directory and export
         self._do_export()
 
     def _on_direct_export(self) -> None:
-        """不补全直接导出。"""
-        # 警告
+        """Export directly without completion."""
+        # warning
         missing = [i for i in self._items if i.status == "missing"]
         if missing:
             names = tr("export_separator").join(i.name for i in missing)
@@ -377,8 +375,8 @@ class ExportDialog(QDialog):
         self._do_export()
 
     def _do_export(self) -> None:
-        """选择目录 → 启动后台导出。"""
-        # 压实被关掉且编号有空洞 → 导出的 MOD 属性会错位, 必须用户确认
+        """Select Directory → Start background export."""
+        # Compaction is turned off and there are holes in the numbering → The exported MOD attributes will be misaligned and must be confirmed by the user
         if not self._scope_checks["compact_ids"].isChecked():
             ids = np.unique(self.canvas.province_map)
             nonzero = ids[ids > 0]
@@ -398,7 +396,7 @@ class ExportDialog(QDialog):
         if not output_dir:
             return
 
-        # 禁用按钮，显示进度
+        # Disable button, show progress
         self._btn_auto.setEnabled(False)
         self._btn_export_direct.setEnabled(False)
         self._btn_cancel.setEnabled(False)
@@ -422,11 +420,11 @@ class ExportDialog(QDialog):
         self._progress_bar.setVisible(False)
         self._progress_label.setVisible(False)
 
-        # 运行 MOD 验证
+        # Run MOD verification
         from export.verify_mod import ModVerifier
         verify_errors, verify_warnings = ModVerifier.verify_quiet(self._output_dir)
 
-        # 构建结果文本
+        # Build result text
         lines = [tr("export_result_success").format(path=self._output_dir)]
         if report.stats:
             lines.append(tr("export_result_stats_header"))
@@ -447,7 +445,7 @@ class ExportDialog(QDialog):
             for w in report.warnings:
                 lines.append(f"  [{tr('export_result_warning_tag')}] {w}")
 
-        # 追加验证结果
+        # Add verification results
         if not verify_errors and not verify_warnings:
             lines.append(tr("export_verify_header"))
             lines.append(tr("export_verify_all_pass"))
@@ -463,13 +461,13 @@ class ExportDialog(QDialog):
                 for w in verify_warnings:
                     lines.append(f"  ⚠ {w}")
 
-        # 显示详细结果对话框
+        # Show detailed results dialog
         self._show_export_result(lines, verify_errors)
 
     def _show_export_result(
         self, lines: list[str], verify_errors: list[str]
     ) -> None:
-        """用可滚动对话框显示导出结果和验证报告。"""
+        """Display export results and validation reports with scrollable dialog boxes."""
         dlg = QDialog(self)
         dlg.setWindowTitle(
             tr("export_result_title_errors") if verify_errors
@@ -480,7 +478,7 @@ class ExportDialog(QDialog):
 
         layout = QVBoxLayout(dlg)
 
-        # 标题标签
+        # title tag
         if verify_errors:
             header = QLabel(tr("export_done_has_errors"))
             header.setStyleSheet(
@@ -493,13 +491,13 @@ class ExportDialog(QDialog):
             )
         layout.addWidget(header)
 
-        # 可滚动文本区域
+        # Scrollable text area
         text_edit = QTextEdit()
         text_edit.setReadOnly(True)
         text_edit.setPlainText("\n".join(lines))
         layout.addWidget(text_edit)
 
-        # 关闭按钮
+        # close button
         btn_close = QPushButton(tr("export_result_close"))
         btn_close.setStyleSheet(
             "QPushButton { padding: 8px 20px; border-radius: 4px;"

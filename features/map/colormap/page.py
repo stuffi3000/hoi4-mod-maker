@@ -1,7 +1,6 @@
-"""总览贴图颜色 page — 独立 QWidget, 不依赖 ToolPanel.
+"""Overview texture color page — independent QWidget, does not depend on ToolPanel.
 
-3 个色块选择器 (陆/海/湖) + 重置按钮.
-"""
+3 color block selectors (land/sea/lake) + reset button."""
 
 from PyQt5.QtCore import pyqtSignal
 from PyQt5.QtWidgets import (
@@ -18,9 +17,9 @@ from ui.styles import (
 
 
 class ColormapPage(QWidget):
-    """总览贴图颜色页面."""
+    """Overview map colors page."""
 
-    # 输出信号
+    # Output signal
     colormap_color_changed = pyqtSignal(str, int, int, int)
     colormap_reset_requested = pyqtSignal()
 
@@ -43,7 +42,7 @@ class ColormapPage(QWidget):
         tip.setStyleSheet(_DIM_LABEL_STYLE)
         lay.addWidget(tip)
 
-        # ── 颜色设置 ──
+        # ── Color settings ──
         color_box = _make_section(tr("colormap_section_colors"))
         cl = color_box.layout()
 
@@ -77,7 +76,7 @@ class ColormapPage(QWidget):
         root.addWidget(scroll)
 
     def _pick_color(self, swatch: QPushButton, attr_name: str) -> None:
-        """弹颜色选择器, 选完发信号."""
+        """Play the color selector and send a signal after selecting."""
         qc = QColorDialog.getColor(QColor(128, 128, 128), self, tr("colormap_pick_color_title", attr_name))
         if qc.isValid():
             self.colormap_color_changed.emit(attr_name, qc.red(), qc.green(), qc.blue())

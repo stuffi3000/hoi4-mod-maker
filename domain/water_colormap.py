@@ -1,29 +1,27 @@
-"""海面着色 — 按距陆地距离做浅→深渐变, 导出与预览共用同一公式.
+"""Sea surface coloring — a shallow to dark gradient based on the distance from the land, and the export and preview share the same formula.
 
-效果: 近岸青绿, 80 像素内渐变到深蓝远海; 陆地/湖泊像素填深海色
-     (与导出的 colormap_water 完全一致, 预览所见即游戏海面色源).
-适用: export/writers/map/colormap_dds (打包成 BGRA DDS),
-     domain/preview/compositor (预览海面直接取 RGB).
-调用: water_color_rgb(tile_map) → (H, W, 3) float32 RGB [0,255]
-"""
+Effect: Nearshore greenish, gradient to deep blue distant sea within 80 pixels; land/lake pixels are filled with deep sea color
+     (Exactly consistent with the exported colormap_water, what you see in the preview is the game sea surface color source).
+Applicable: export/writers/map/colormap_dds (packaged into BGRA DDS),
+     domain/preview/compositor (preview the sea surface and take RGB directly).
+Call: water_color_rgb(tile_map) → (H, W, 3) float32 RGB [0,255]"""
 import numpy as np
 
 from data.constants import TILE_SEA
 
-# 浅海(近岸)青绿 → 深海深蓝
+# Shallow sea (nearshore) green → deep sea dark blue
 SHALLOW_RGB = np.array([130.0, 200.0, 180.0], dtype=np.float32)
 DEEP_RGB = np.array([30.0, 70.0, 110.0], dtype=np.float32)
-# 距陆地这么多像素达到纯深海色
+# So many pixels from land to achieve pure deep sea color
 DEEP_DISTANCE = 80.0
 
 
 def water_color_rgb(tile_map: np.ndarray) -> np.ndarray:
-    """tile_map (H, W) uint8 → 海面颜色 (H, W, 3) float32.
+    """tile_map (H, W) uint8 → sea surface color (H, W, 3) float32.
 
-    海洋像素按距陆地距离渐变; 非海像素(陆地/湖泊)填深海色 —
-    引擎不用陆地处的水色, 填一致避免 mip 边缘伪影。
-    需要 scipy; 不可用时由调用方自行降级。
-    """
+    Ocean pixels gradient according to distance from land; non-ocean pixels (land/lakes) are filled with dark sea color —
+    The engine does not use the water color of the land, and fills it uniformly to avoid mip edge artifacts.
+    Requires scipy; downgraded by the caller when unavailable."""
     from scipy.ndimage import distance_transform_edt
 
     sea = (tile_map == TILE_SEA) | (tile_map == 0)

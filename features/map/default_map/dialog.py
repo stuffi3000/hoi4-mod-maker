@@ -1,11 +1,9 @@
-"""
-地图配置 (default.map) 对话框.
+"""Map configuration (default.map) dialog.
 
-可编辑字段:
-- 树木调色板索引 (trees.bmp 哪些 palette ID 算树)
-- 河流最大宽度等级
-- (省份数自动)
-"""
+Editable fields:
+- Tree palette index (trees.bmp which palette ID counts as tree)
+- Maximum river width class
+- (Automatic number of provinces)"""
 
 from __future__ import annotations
 
@@ -20,7 +18,7 @@ from ui.i18n import tr
 
 
 class DefaultMapDialog(QDialog):
-    """地图配置编辑器."""
+    """Map configuration editor."""
 
     def __init__(
         self,
@@ -50,11 +48,11 @@ class DefaultMapDialog(QDialog):
         form = QFormLayout()
         form.setSpacing(8)
 
-        # 省份数 (只读)
+        # Number of provinces (read only)
         prov_lbl = QLabel(tr("dm_dlg_prov_count_fmt", self._province_count))
         form.addRow(tr("dm_dlg_prov_count_label"), prov_lbl)
 
-        # 河流最大等级
+        # river maximum level
         self._river_max = QSpinBox()
         self._river_max.setRange(1, 10)
         self._river_max.setValue(self._settings.river_max_level)
@@ -62,7 +60,7 @@ class DefaultMapDialog(QDialog):
 
         root.addLayout(form)
 
-        # 树木调色板索引 (列表 + 增删)
+        # Tree palette index (list + add/delete)
         tree_lbl = QLabel(f"<b>{tr('dm_dlg_tree_label')}</b> {tr('dm_dlg_tree_desc')}")
         tree_lbl.setStyleSheet("color: #ccc;")
         root.addWidget(tree_lbl)
@@ -86,7 +84,7 @@ class DefaultMapDialog(QDialog):
 
         root.addStretch(1)
 
-        # 底部按钮
+        # bottom button
         btn_row = QHBoxLayout()
         btn_row.addStretch(1)
         ok_btn = QPushButton(tr("dm_dlg_save"))

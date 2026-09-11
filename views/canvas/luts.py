@@ -1,7 +1,5 @@
-"""
-颜色查找表 (LUT) — 地块/地形/河流/省份的 BGRA 颜色映射
-从 canvas_widget.py 拆分而来，供 renderer 和 widget 共用
-"""
+"""Color Lookup Table (LUT) — BGRA color mapping for tiles/terrains/rivers/provinces
+Split from canvas_widget.py and shared by renderer and widget"""
 import numpy as np
 
 from data.constants import TILE_UNDEFINED, TILE_LAND, TILE_SEA, TILE_LAKE
@@ -11,7 +9,7 @@ from domain.managers.river import (
     RIVER_ERASE, VALID_RIVER_VALUES,
 )
 
-# 地块类型对应的 BGRA 值（QImage Format_RGB32）
+# BGRA value corresponding to the parcel type (QImage Format_RGB32)
 _TILE_BGRA = {
     TILE_UNDEFINED: (30, 20, 20, 255),
     TILE_LAND:      (101, 172, 139, 255),
@@ -19,58 +17,58 @@ _TILE_BGRA = {
     TILE_LAKE:      (210, 160, 100, 255),
 }
 
-# 构建 terrain 索引 → BGRA 颜色查找表 (覆盖全部 graphical terrain)
-# 每个变体用独立的高饱和色，确保 canvas 上一眼能分辨
+# Build terrain index → BGRA color lookup table (covers all graphical terrain)
+# Each variant uses an independent, highly saturated color to ensure that it is distinguishable at a glance on the canvas.
 _TERRAIN_COLOR_LUT = np.zeros((256, 4), dtype=np.uint8)
 _TERRAIN_DISPLAY_COLORS: dict[int, tuple[int, int, int]] = {
-    # plains 组: 绿色系
-    0:  (120, 180, 60),   # 平原
-    5:  (100, 160, 40),   # 平原(变体)
-    19: (180, 200, 220),  # 雪原 (偏白蓝)
-    # forest 组: 深绿
-    1:  (30, 130, 30),    # 森林
-    4:  (50, 150, 70),    # 森林(变体)
-    # hills 组: 黄橙
-    2:  (210, 180, 80),   # 沙漠丘陵
-    17: (230, 200, 60),   # 丘陵
-    # mountain 组: 灰棕分明
-    6:  (140, 130, 120),  # 山地
-    10: (160, 140, 100),  # 山地(变体)
-    11: (180, 150, 100),  # 沙漠山地
-    16: (200, 210, 230),  # 雪山 (偏白蓝)
-    18: (190, 170, 110),  # 沙色山地
-    20: (130, 150, 100),  # 草地山地
-    27: (80, 120, 70),    # 丛林山地
-    31: (110, 90, 60),    # 沙漠山顶 (深褐)
-    # desert 组: 黄沙系
-    3:  (220, 190, 100),  # 沙漠
-    7:  (200, 170, 80),   # 沙漠(变体)
-    8:  (210, 160, 90),   # 沙漠丘陵
-    12: (230, 210, 130),  # 沙漠(岩地)
-    # marsh: 暗青绿
-    9:  (70, 120, 90),    # 沼泽
-    # urban: 紫灰
-    13: (160, 130, 170),  # 城市
-    # jungle: 黄绿
-    21: (60, 140, 20),    # 丛林
-    22: (80, 160, 40),    # 丛林(变体)
-    # water (不可画但需要显示)
-    14: (60, 130, 200),   # 湖泊
-    15: (30, 80, 180),    # 海洋
+    # plains group: green
+    0:  (120, 180, 60),   # plain
+    5:  (100, 160, 40),   # plain (variant)
+    19: (180, 200, 220),  # Snowfield (white-blue)
+    # forest group: dark green
+    1:  (30, 130, 30),    # forest
+    4:  (50, 150, 70),    # forest (variant)
+    # hills group: yellow orange
+    2:  (210, 180, 80),   # desert hills
+    17: (230, 200, 60),   # hills
+    # mountain group: distinct gray and brown
+    6:  (140, 130, 120),  # Mountain
+    10: (160, 140, 100),  # Mountain (variant)
+    11: (180, 150, 100),  # desert mountains
+    16: (200, 210, 230),  # Snow Mountain (white-blue)
+    18: (190, 170, 110),  # sandy mountains
+    20: (130, 150, 100),  # grassy mountains
+    27: (80, 120, 70),    # jungle mountains
+    31: (110, 90, 60),    # Desert mountain top (dark brown)
+    # desert group: yellow sand series
+    3:  (220, 190, 100),  # desert
+    7:  (200, 170, 80),   # Desert (variant)
+    8:  (210, 160, 90),   # desert hills
+    12: (230, 210, 130),  # desert (rocky land)
+    # marsh: dark green
+    9:  (70, 120, 90),    # swamp
+    # urban: purple gray
+    13: (160, 130, 170),  # city
+    # jungle: yellow-green
+    21: (60, 140, 20),    # jungle
+    22: (80, 160, 40),    # Jungle (variant)
+    # water (not drawable but needs to be displayed)
+    14: (60, 130, 200),   # lake
+    15: (30, 80, 180),    # ocean
 }
 for _idx, (_r, _g, _b) in _TERRAIN_DISPLAY_COLORS.items():
     _TERRAIN_COLOR_LUT[_idx] = (_b, _g, _r, 255)  # BGRA
 
-# 河流颜色 LUT (索引 → BGRA)
+# River Color LUT (Index → BGRA)
 _RIVER_COLOR_LUT = np.zeros((256, 4), dtype=np.uint8)
 for _ridx, _rbgra in RIVER_DISPLAY_COLORS.items():
     _RIVER_COLOR_LUT[_ridx] = _rbgra
-# 背景色不需要在画布上显示（用底图）
+# The background color does not need to be displayed on the canvas (use a basemap)
 
-# 高度 → BGRA 彩色 LUT (供 height renderer 及 state/country 地形底图共用)
-# 色带: 0-40 深蓝 深海 / 40-90 浅蓝 浅海 / 90-95 青色 海平面
-#       95-130 绿色 平原 / 130-160 黄绿 丘陵 / 160-200 棕色 山地
-#       200-240 深棕 高山 / 240-255 白色 雪顶
+# Height → BGRA color LUT (shared by height renderer and state/country terrain basemap)
+# Color band: 0-40 dark blue deep sea / 40-90 light blue shallow sea / 90-95 cyan sea level
+# 95-130 green plains / 130-160 yellow-green hills / 160-200 brown mountains
+# 200-240 dark brown mountain / 240-255 white snow top
 _HEIGHT_COLOR_LUT = np.zeros((256, 4), dtype=np.uint8)
 _HEIGHT_BANDS = [
     (0,   40,  (20,  40,  80),  (30,  60, 120)),
@@ -91,8 +89,8 @@ for _lo, _hi, (_r0, _g0, _b0), (_r1, _g1, _b1) in _HEIGHT_BANDS:
         _b = int(_b0 + (_b1 - _b0) * _t)
         _HEIGHT_COLOR_LUT[_v] = (_b, _g, _r, 255)  # BGRA
 
-# State/Country 模式下的地形底图 LUT (去饱和，避免抢 state/country 的彩色)
-# 海域：深→浅蓝（高度 < SEA_LEVEL）；陆地：灰度（高度 >= SEA_LEVEL，越高越亮）
+# Terrain basemap LUT in State/Country mode (desaturate to avoid grabbing the color of state/country)
+# Sea area: dark → light blue (height < SEA_LEVEL); land: grayscale (height >= SEA_LEVEL, the higher the brighter)
 _HEIGHT_UNDERLAY_LUT = np.zeros((256, 4), dtype=np.uint8)
 _SEA_LVL = 90
 for _v in range(256):
@@ -107,7 +105,7 @@ for _v in range(256):
         _gray = int(120 + _t * 120)
         _HEIGHT_UNDERLAY_LUT[_v] = (_gray, _gray, _gray, 255)
 
-# 省份随机颜色 LUT (确定性, 基于省份ID)
+# Province random color LUT (deterministic, based on province ID)
 _PROVINCE_COLOR_LUT_SIZE = 65536
 _rng = np.random.RandomState(42)
 _PROVINCE_COLOR_LUT = np.zeros((_PROVINCE_COLOR_LUT_SIZE, 4), dtype=np.uint8)
@@ -115,5 +113,5 @@ _PROVINCE_COLOR_LUT[:, 0] = _rng.randint(40, 220, _PROVINCE_COLOR_LUT_SIZE, dtyp
 _PROVINCE_COLOR_LUT[:, 1] = _rng.randint(40, 220, _PROVINCE_COLOR_LUT_SIZE, dtype=np.uint8)
 _PROVINCE_COLOR_LUT[:, 2] = _rng.randint(40, 220, _PROVINCE_COLOR_LUT_SIZE, dtype=np.uint8)
 _PROVINCE_COLOR_LUT[:, 3] = 255
-# ID 0 = 未分配，用深色
+# ID 0 = not assigned, use dark color
 _PROVINCE_COLOR_LUT[0] = (30, 20, 20, 255)

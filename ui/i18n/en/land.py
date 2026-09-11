@@ -1,8 +1,4 @@
-"""
-land — en 翻译
-
-本文件由 tools/migrate_i18n.py 生成。后续手动维护。
-"""
+"""English strings for land, sea, lake, and reference-map editing."""
 
 STRINGS: dict[str, str] = {
     "smooth_coast_confirm_title": "Smooth Coastline",

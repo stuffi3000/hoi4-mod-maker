@@ -1,8 +1,4 @@
-"""
-context_menu — en 翻译
-
-本文件由 tools/migrate_i18n.py 生成。后续手动维护。
-"""
+"""English labels for map-canvas context-menu actions."""
 
 STRINGS: dict[str, str] = {
     "context_belongs_country": "Belongs to Country: {}",

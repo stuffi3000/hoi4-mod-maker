@@ -1,20 +1,18 @@
-"""
-trees.bmp 调色板 — 从 vanilla 提取的 256 色 BGRA palette.
+"""trees.bmp palette — 256-color BGRA palette extracted from vanilla.
 
-前 16 色有意义:
-  0 = 无树 (黑)
-  1 = 未使用 (红)
-  2-4 = 热带树 (shallow forest / medium / dense)
-  5-7 = 温带树 (sparse / medium / dense)
-  8-10 = 棕榈树 (sparse / medium / dense)
-  11-15 = 其他 (丛林等)
+The first 16 colors are meaningful:
+  0 = no tree (black)
+  1 = not used (red)
+  2-4 = tropical trees (shallow forest / medium / dense)
+  5-7 = temperate trees (sparse / medium / dense)
+  8-10 = palm tree (sparse / medium / dense)
+  11-15 = Other (Jungle, etc.)
 
-default.map 的 `tree = { 3 4 7 10 }` 定义哪些索引被 HOI4 算作"有树".
-"""
+`tree = { 3 4 7 10 }` of default.map defines which indexes are counted as "treed" by HOI4."""
 
-# (R, G, B) — 从 vanilla trees.bmp 抽出
+# (R, G, B) — extracted from vanilla trees.bmp
 TREES_PALETTE_RGB: list[tuple[int, int, int]] = [
-    (  0,   0,   0),  #  0: 无树
+    (  0,   0,   0),  # 0: no tree
     (255,   0,   0),  #  1: unused
     ( 30, 139, 109),  #  2: tropical sparse
     ( 18, 100,  78),  #  3: tropical medium  ← tree
@@ -32,11 +30,11 @@ TREES_PALETTE_RGB: list[tuple[int, int, int]] = [
     (  0,  60,   0),  # 15: jungle dense
 ]
 
-# 补齐到 256 色 (全黑)
+# Completed to 256 colors (all black)
 while len(TREES_PALETTE_RGB) < 256:
     TREES_PALETTE_RGB.append((0, 0, 0))
 
-# BMP palette 是 BGRA 格式
+# BMP palette is in BGRA format
 TREES_PALETTE_BGRA: list[bytes] = []
 for r, g, b in TREES_PALETTE_RGB:
     TREES_PALETTE_BGRA.append(bytes([b, g, r, 0]))
@@ -44,19 +42,19 @@ for r, g, b in TREES_PALETTE_RGB:
 TREES_PALETTE_BYTES = b"".join(TREES_PALETTE_BGRA)  # 1024 bytes
 
 
-# 地形类型 → trees.bmp 索引 映射 (自动生成用)
-# 参考 Map modding.txt §Trees (行 419-470)
+# Terrain type → trees.bmp index mapping (for automatic generation)
+# Reference Map modding.txt §Trees (lines 419-470)
 #
-# ⚠️ vanilla trees.bmp 实际只使用 [0, 2, 3, 5, 6, 11, 28, 29]
-# 非法索引（7, 14 等）HOI4 引擎查不到树类型，可能崩溃
-# 本映射严格使用 vanilla 合法索引
+# ⚠️ vanilla trees.bmp actually only uses [0, 2, 3, 5, 6, 11, 28, 29]
+# Illegal index (7, 14, etc.) The HOI4 engine cannot find the tree type and may crash.
+# This mapping strictly uses vanilla legal indexes
 TERRAIN_TO_TREE_INDEX: dict[str, int] = {
-    "forest":   6,   # temperate medium（原为 7，vanilla 不用）
+    "forest":   6,   # temperate medium (originally 7, not used in vanilla)
     "hills":    5,   # temperate sparse
-    "jungle":  11,   # jungle impassable（原为 14，vanilla 不用）
+    "jungle":  11,   # jungle impassable (originally 14, not used in vanilla)
     "marsh":    6,   # temperate medium
-    "mountain": 0,   # 无树
-    "plains":   0,   # 无树 (平原默认不放树)
+    "mountain": 0,   # no tree
+    "plains":   0,   # No trees (no trees in plains by default)
     "desert":   0,
     "urban":    0,
     "ocean":    0,

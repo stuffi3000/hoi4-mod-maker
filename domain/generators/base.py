@@ -1,20 +1,18 @@
-"""
-生成器统一协议 — "自动生成打底 + 手动精修"(路线 C) 的标准模子。
+"""Generator unified protocol — the standard model for "auto-generated base + manual refinement" (Route C).
 
-约定 (所有图层生成器共同遵守, 地形/高度/树木/城市/色调都照此实现):
+Convention (commonly followed by all layer generators, terrain/height/trees/city/tone are all implemented accordingly):
 
-1. **纯函数式**: generate() 只读 map_data, 返回一张完整尺寸的新数组,
-   绝不直接修改项目数据 — 写入由命令层负责, 保证可撤销。
-2. **参数化 + 种子**: 参数是 frozen dataclass, 自带 seed;
-   同参数同种子结果可复现, "换一批"=换种子重新 generate。
-3. **可选 mask**: 传入 bool 掩码时, 掩码外的像素保持原图层不变
-   (局部重新生成/保护手动精修区域)。
+1. **Purely functional**: generate() read-only map_data, returns a new array of full size,
+   Project data is never modified directly - writes are handled by the command layer and are guaranteed to be reversible.
+2. **Parameterization + Seed**: The parameter is frozen dataclass, which comes with seed;
+   The results can be reproduced with the same parameters and the same seed. "Change a batch" = change the seed and generate again.
+3. **Optional mask**: When a bool mask is passed in, the pixels outside the mask remain unchanged on the original layer.
+   (Partial regeneration/protection of manually refined areas).
 
-接入 UI 的标准路径:
-    generator.generate(map_data, params) → 写入命令 (如
+Standard path to access the UI:
+    generator.generate(map_data, params) → write command (such as
     commands/map/generate_terrain.GenerateTerrainCommand) →
-    cmd_history.execute() → 可撤销。
-"""
+    cmd_history.execute() → Undoable."""
 
 from __future__ import annotations
 
@@ -26,18 +24,18 @@ import numpy as np
 
 @dataclass(frozen=True)
 class GeneratorParams:
-    """生成器参数基类 — 至少有种子。"""
+    """Generator parameter base class — at least with seeds."""
     seed: int = 0
 
 
 class Generator(Protocol):
-    """图层生成器协议。"""
+    """Layer Builder Protocol."""
 
-    id: str             # 全局唯一, 如 "terrain_detail"
-    target_layer: str   # 写入 MapData 的哪个数组属性, 如 "terrain_map"
+    id: str             # Globally unique, such as "terrain_detail"
+    target_layer: str   # Which array attribute of MapData is written to, such as "terrain_map"
 
     def default_params(self) -> GeneratorParams:
-        """返回默认参数 (UI 初始值)。"""
+        """Return default parameters (UI initial values)."""
         ...
 
     def generate(
@@ -46,5 +44,5 @@ class Generator(Protocol):
         params: GeneratorParams,
         mask: np.ndarray | None = None,
     ) -> np.ndarray:
-        """产出完整尺寸的新图层数组, 不修改 map_data。"""
+        """Produce a new layer array of full size, without modifying map_data."""
         ...

@@ -1,4 +1,4 @@
-"""political 图层单元测试 — 混合/国界/无数据降级"""
+"""political layer unit test — mixed/border/no data degradation"""
 import numpy as np
 
 from domain.preview.political import apply_political_layer
@@ -21,9 +21,9 @@ def test_owned_area_blended():
     mask = np.zeros((10, 10), dtype=bool)
     mask[:, :5] = True
     out = apply_political_layer(base, rgb, mask, mix=0.5, border_dim=1.0)
-    # 有主区域: 100*0.5 + 200*0.5 = 150 (R 通道)
+    # With main area: 100*0.5 + 200*0.5 = 150 (R channel)
     assert out[0, 0, 0] == 150
-    # 无主区域保持底图
+    # Unowned areas maintain basemaps
     assert (out[0, 7] == 100).all()
 
 
@@ -34,5 +34,5 @@ def test_border_darkened():
     rgb[:, 5:] = (0, 0, 200)
     mask = np.ones((10, 10), dtype=bool)
     out = apply_political_layer(base, rgb, mask, mix=0.5, border_dim=0.5)
-    # 两国交界列 (x=4) 被压暗: 亮度低于同国内部像素
+    # The border column between two countries (x=4) is darkened: the brightness is lower than the pixels inside the same country
     assert out[5, 4].sum() < out[5, 2].sum()

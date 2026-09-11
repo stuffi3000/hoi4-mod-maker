@@ -1,23 +1,21 @@
-"""
-map/ambient_object.txt 写入器.
+"""map/ambient_object.txt writer.
 
-vanilla 用 frame_border_entity_top/bottom 3D 模型挡住地图上下边界空白。
-位置根据地图高度计算。
+vanilla uses frame_border_entity_top/bottom 3D model to block the upper and lower borders of the map.
+Location is calculated based on map height.
 
-参考: Map modding.txt §Ambient objects (行 557-606)
-"""
+Reference: Map modding.txt §Ambient objects (lines 557-606)"""
 
 from __future__ import annotations
 
 import os
 
-# 注意: 用 import as 而非 from import — set_map_size 改的是模块属性,
-# from import 复制了值, 后续不会跟着更新.
+# Note: Use import as instead of from import — set_map_size changes module attributes,
+# from import copies the value and will not update it later.
 import data.constants as _const
 
 
 def write_ambient_object_txt(output_dir: str) -> None:
-    """生成 map/ambient_object.txt — 地图边框 + 风效果."""
+    """Generate map/ambient_object.txt — map border + wind effect."""
     d = os.path.join(output_dir, "map")
     os.makedirs(d, exist_ok=True)
 

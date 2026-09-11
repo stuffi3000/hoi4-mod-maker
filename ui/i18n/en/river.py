@@ -1,8 +1,4 @@
-"""
-river — en 翻译
-
-本文件由 tools/migrate_i18n.py 生成。后续手动维护。
-"""
+"""English strings for river painting, generation, and validation."""
 
 STRINGS: dict[str, str] = {
     "dlg_river_validate_title": "River Validation",

@@ -1,24 +1,23 @@
-"""State 模式渲染.
+"""State mode rendering.
 
-三层叠加, 让用户编辑省份归属时一眼看清"哪个国家 / 哪个州 / 选中的属于谁":
+Three layers are superimposed, allowing users to see clearly "which country/state/who the selected one belongs to" at a glance when editing province ownership:
 
-  1. **底色 = state 色 ⊗ 国家色 50/50 混合** (assigned 区域)
-     未分配 state 退化为纯 state 色, 没有国家数据则不混合.
-  2. **国家边界 = 3 像素白色加粗线**, 只画在两个已分配国家之间
-     (跳过海洋 / 未分配区域).
-  3. **选中国家高亮** = 选中州的 owner 那一国, 全部像素叠加暖黄色调,
-     可立刻看出"这国家还有别的州在哪". 通过 canvas._highlight_country_rgb 传入.
+  1. **Background color = state color ⊗ National color 50/50 mix** (assigned area)
+     Unallocated state degenerates into pure state color, and without country data there is no mixing.
+  2. **Country Borders = 3 pixel white bold line**, drawn only between two assigned countries
+     (Skip ocean/unallocated area).
+  3. **Selected Country Highlight** = Select the country of the owner of the state, all pixels are superimposed with a warm yellow tone,
+     You can immediately see "where are the other states in this country". Pass in canvas._highlight_country_rgb.
 
-性能: 国家边界 mask 缓存到 canvas, 只在 country_rgb / assigned_mask 变化时重算.
-"""
+Performance: The country border mask is cached in the canvas and is only recalculated when country_rgb / assigned_mask changes."""
 import numpy as np
 
 
-_HL_BGR = np.array([80, 230, 255], dtype=np.uint16)  # 暖黄色 (BGR)
+_HL_BGR = np.array([80, 230, 255], dtype=np.uint16)  # warm yellow (BGR)
 
 
 def _compute_country_borders(country_rgb, assigned_mask):
-    """两个已分配国家间的边界 mask, 加粗到 ~3 像素厚."""
+    """Border mask between two assigned countries, bolded to ~3 pixels thick."""
     h, w = country_rgb.shape[:2]
     borders = np.zeros((h, w), dtype=bool)
 
@@ -69,7 +68,7 @@ def _highlight_mask(country_rgb, assigned_mask, highlight_rgb):
 
 
 def _fill_blended(buf, state_rgb, country_rgb, mask) -> None:
-    """state 色 ⊗ 国家色 50/50 写进 BGRA 缓冲. mask 之外只用 state 色."""
+    """State color ⊗ National color 50/50 is written into the BGRA buffer. Only the state color is used in addition to the mask."""
     if state_rgb is None:
         buf[..., 0] = 40
         buf[..., 1] = 40
@@ -97,7 +96,7 @@ def _draw_borders(buf, borders) -> None:
 
 
 def _draw_highlight(buf, hl_mask) -> None:
-    """选中国家像素与暖黄按 7:9 混合 (黄占 ~56%, 比纯涂色保留更多原信息)."""
+    """Select the national pixels and mix them with warm yellow in a ratio of 7:9 (yellow accounts for ~56%, retaining more original information than pure coloring)."""
     if hl_mask is None or not hl_mask.any():
         return
     cur = buf[hl_mask, :3].astype(np.uint16)

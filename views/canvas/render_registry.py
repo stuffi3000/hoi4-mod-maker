@@ -1,18 +1,16 @@
-"""
-显示模式 → renderer 模块路径 注册表。
+"""display-mode → renderer module-path registry.
 
-加新显示模式 = 在 DEFAULT_RENDERERS 加一行, 不再需要改 canvas/widget.py
-(旧做法是在 widget.py 手写 _render_X_mode / _partial_render_X 薄壳对,
- 已在 2026-06 架构整理中废除)。
+Add new display mode = add a line in DEFAULT_RENDERERS, no need to change canvas/widget.py
+(The old method is to hand-write _render_X_mode / _partial_render_X thin shell pair in widget.py,
+ Already abolished in the 2026-06 architecture overhaul).
 
-renderer 模块的约定:
-- 必须提供 render(canvas) — 全量渲染
-- 可选提供 partial_render(canvas, x0, y0, x1, y1) — 局部渲染;
-  没有该函数的模式 (如预览这种整图合成) 自动回退全量渲染
+Conventions of the renderer module:
+- Must provide render(canvas) — full rendering
+- Optional partial_render(canvas, x0, y0, x1, y1) — partial rendering;
+  Modes without this function (such as whole-image synthesis such as preview) automatically fall back to full rendering.
 
-模块按需延迟加载并缓存, 与旧薄壳的延迟 import 行为一致。
-运行时扩展走 MapCanvas.register_renderer(mode, module_path)。
-"""
+Modules are lazily loaded and cached on demand, consistent with the old thin shell's lazy import behavior.
+The runtime extension goes like MapCanvas.register_renderer(mode, module_path)."""
 
 DEFAULT_RENDERERS: dict[str, str] = {
     "land": "features.map.land.renderer",
@@ -26,9 +24,9 @@ DEFAULT_RENDERERS: dict[str, str] = {
     "continent": "features.map.continent.renderer",
     "strategic_region": "features.map.strategic_region.renderer",
     "province_terrain": "features.map.province_terrain.renderer",
-    # 预览: 整图合成, 无 partial_render (自动回退全量)
+    # Preview: whole image synthesis, no partial_render (automatically revert to full image)
     "preview": "features.map.preview.renderer",
-    # 暂无专用渲染的模式复用 land
+    # There is currently no mode reuse for dedicated rendering land
     "colormap": "features.map.land.renderer",
     "default_map": "features.map.land.renderer",
 }

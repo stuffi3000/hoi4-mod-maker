@@ -1,8 +1,4 @@
-"""
-continent — en 翻译
-
-本文件由 tools/migrate_i18n.py 生成。后续手动维护。
-"""
+"""English strings for continent creation and assignment controls."""
 
 STRINGS: dict[str, str] = {
     "continent_remove_confirm_title": "Delete Continent",

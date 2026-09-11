@@ -1,7 +1,6 @@
-"""DefaultMapController — default.map 配置控制器。
+"""DefaultMapController — default.map configuration controller.
 
-处理河流等级和树木调色板索引配置。
-"""
+Handle river class and tree palette index configuration."""
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
@@ -14,18 +13,18 @@ if TYPE_CHECKING:
 
 
 class DefaultMapController(BaseController):
-    """default.map 配置编辑。"""
+    """default.map configuration editor."""
 
     def __init__(self, project: "Project", command_history: "CommandHistory") -> None:
         super().__init__(project, command_history)
 
     def set_river_level(self, level: int) -> None:
-        """设置河流最大等级。"""
+        """Set the maximum level of the river."""
         self.project.default_map_settings.river_max_level = level
         self.project.mark_dirty()
 
     def add_tree_index(self, index: int) -> bool:
-        """添加树木调色板索引。返回是否成功。"""
+        """Added tree palette index. Return whether successful."""
         settings = self.project.default_map_settings
         if index in settings.tree_palette_indices:
             return False
@@ -35,7 +34,7 @@ class DefaultMapController(BaseController):
         return True
 
     def remove_tree_index(self, position: int) -> bool:
-        """按位置删除树木调色板索引。"""
+        """Remove tree palette index by position."""
         settings = self.project.default_map_settings
         if 0 <= position < len(settings.tree_palette_indices):
             settings.tree_palette_indices.pop(position)
@@ -44,6 +43,6 @@ class DefaultMapController(BaseController):
         return False
 
     def reset_tree_indices(self) -> None:
-        """重置树木调色板索引为默认值。"""
+        """Resets the tree palette index to default."""
         self.project.default_map_settings.tree_palette_indices = [3, 4, 7, 10]
         self.project.mark_dirty()

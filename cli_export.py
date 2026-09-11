@@ -1,7 +1,6 @@
-"""命令行导出: python cli_export.py <project.hoi4proj> [output_dir] [--mod-name NAME]
+"""Command line export: python cli_export.py <project.hoi4proj> [output_dir] [--mod-name NAME]
 
-从 .hoi4proj 项目文件加载数据, 自动补全缺失内容, 导出可玩 MOD.
-"""
+Load data from .hoi4proj project files, automatically complete missing content, and export playable MODs."""
 import os
 import sys
 import shutil
@@ -30,29 +29,29 @@ DEFAULT_MOD_NAME = "WorldTest"
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="从 .hoi4proj 项目文件导出 HOI4 MOD"
+        description="Export an HOI4 MOD from a .hoi4proj project file"
     )
-    parser.add_argument("project", help=".hoi4proj 项目文件路径")
+    parser.add_argument("project", help="Path to the .hoi4proj project file")
     parser.add_argument(
         "output_dir", nargs="?", default=DEFAULT_OUTPUT,
-        help=f"导出目录 (默认: {DEFAULT_OUTPUT})",
+        help=f"Export directory (default: {DEFAULT_OUTPUT})",
     )
     parser.add_argument(
         "--mod-name", default=DEFAULT_MOD_NAME,
-        help=f"MOD 名称 (默认: {DEFAULT_MOD_NAME})",
+        help=f"MOD name (default: {DEFAULT_MOD_NAME})",
     )
     parser.add_argument(
         "--clean", action="store_true",
-        help="导出前清空输出目录",
+        help="Clear the output directory before exporting",
     )
     args = parser.parse_args()
 
     if not os.path.isfile(args.project):
-        print(f"错误: 找不到项目文件 {args.project}")
+        print(f"Error: project file not found: {args.project}")
         sys.exit(1)
 
-    # ── 1. 加载项目 ──
-    print(f"加载项目: {args.project}")
+    # ── 1. Load project ──
+    print(f"Loading project: {args.project}")
     state_mgr = StateManager()
     country_mgr = CountryManager()
     continent_mgr = ContinentManager()
@@ -78,9 +77,9 @@ def main() -> None:
     pcount = int(province_map.max())
     land_pixels = int(np.sum(tile_map == TILE_LAND))
     sea_pixels = int(np.sum(tile_map == TILE_SEA))
-    print(f"地图: {W}x{H}, 省份: {pcount}, 陆地: {land_pixels:,}, 海洋: {sea_pixels:,}")
+    print(f"Map: {W}x{H}, provinces: {pcount}, land pixels: {land_pixels:,}, sea pixels: {sea_pixels:,}")
 
-    # ── 2. 同步地形 ──
+    # ── 2. Synchronized terrain ──
     ocean_idx = TERRAIN_PALETTE_INDEX["ocean"]
     plains_idx = TERRAIN_PALETTE_INDEX["plains"]
     land_mask = tile_map == TILE_LAND
@@ -88,34 +87,34 @@ def main() -> None:
     bad_count = int(np.sum(bad_land))
     if bad_count > 0:
         terrain_map[bad_land] = plains_idx
-        print(f"修正: {bad_count:,} 个陆地像素的地形 ocean→plains")
+        print(f"Fixed {bad_count:,} land pixels with ocean terrain: ocean -> plains")
 
     sea_mask = tile_map == TILE_SEA
     sea_bad = sea_mask & (terrain_map != ocean_idx)
     sea_bad_count = int(np.sum(sea_bad))
     if sea_bad_count > 0:
         terrain_map[sea_bad] = ocean_idx
-        print(f"修正: {sea_bad_count:,} 个海洋像素的地形→ocean")
+        print(f"Fixed {sea_bad_count:,} sea pixels with non-ocean terrain: -> ocean")
 
-    # ── 3. 自动生成高度图 ──
+    # ── 3. Automatically generate height map ──
     if height_map is not None and land_mask.any():
         land_heights = height_map[land_mask]
         if np.all(land_heights == land_heights[0]):
-            print("高度未调整，自动生成...")
+            print("Height map is flat; generating it automatically...")
             from services.terrain_service import auto_height
             height_map = auto_height(tile_map)
 
-    # ── 4. 自动生成 State ──
+    # ── 4. Automatically generate State ──
     if not state_mgr.states:
-        print("没有 State，自动生成...")
+        print("No states found; generating them automatically...")
         state_mgr.auto_split(province_map, tile_map, per_state=20)
-        print(f"自动生成 State: {len(state_mgr.states)}")
+        print(f"Generated states: {len(state_mgr.states)}")
     else:
-        print(f"已有 State: {len(state_mgr.states)}")
+        print(f"Existing states: {len(state_mgr.states)}")
 
-    # ── 5. 自动创建国家 ──
+    # ── 5. Automatically create countries ──
     if not country_mgr.countries:
-        print("没有国家，自动创建测试国家...")
+        print("No countries found; creating a test country automatically...")
         c = country_mgr.create_country("AAA", "Aurora", (60, 130, 220))
         c.ruling_party = "democratic"
         c.popularities = {
@@ -130,11 +129,11 @@ def main() -> None:
         first_state = state_mgr.get_state(1)
         if first_state and first_state.provinces:
             c.capital = first_state.provinces[0]
-        print(f"创建国家 AAA, {len(state_mgr.states)} states")
+        print(f"Created country AAA with {len(state_mgr.states)} states")
     else:
-        print(f"已有国家: {list(country_mgr.countries.keys())}")
+        print(f"Existing countries: {list(country_mgr.countries.keys())}")
 
-    # ── 6. 导出前检查 & 填充默认数据 ──
+    # ── 6. Check & fill in default data before export ──
     from services.export_service import pre_export_check_and_fix, fill_default_state_data
     report = pre_export_check_and_fix(
         tile_map, province_map, terrain_map,
@@ -142,32 +141,32 @@ def main() -> None:
         strategic_region_mgr=strategic_region_mgr,
     )
     if report.fixed:
-        print("\n── 自动修复 ──")
+        print("\n── Automatic fixes ──")
         for f in report.fixed:
-            print(f"  [已修复] {f}")
+            print(f"  [FIXED] {f}")
     if report.warnings:
-        print("\n── 警告 ──")
+        print("\n── Warnings ──")
         for w in report.warnings:
-            print(f"  [警告] {w}")
+            print(f"  [WARNING] {w}")
 
     filled = fill_default_state_data(state_mgr, terrain_map, province_map, tile_map)
     if filled > 0:
-        print(f"为 {filled} 个 State 填充了默认资源/建筑")
+        print(f"Filled {filled} states with default resources/buildings")
 
-    # ── 7. 清理旧 MOD ──
+    # ── 7. Clean up old MODs ──
     if args.clean and os.path.exists(args.output_dir):
         shutil.rmtree(args.output_dir, ignore_errors=True)
-        # Windows 上 rmtree 有延迟，等目录确实消失
+        # There is a delay in rmtree on Windows, waiting for the directory to disappear.
         import time
         for _ in range(50):
             if not os.path.exists(args.output_dir):
                 break
             time.sleep(0.1)
-        print(f"已清空: {args.output_dir}")
+        print(f"Cleared: {args.output_dir}")
     os.makedirs(args.output_dir, exist_ok=True)
 
-    # ── 8. 导出 ──
-    print(f"\n导出到: {args.output_dir}")
+    # ── 8. Export ──
+    print(f"\nExporting to: {args.output_dir}")
     export_full_mod(
         tile_map=tile_map,
         province_map=province_map,
@@ -189,12 +188,12 @@ def main() -> None:
     )
 
     file_count = sum(len(files) for _, _, files in os.walk(args.output_dir))
-    print(f"\n[OK] {args.mod_name} 导出完成: {file_count} 个文件")
-    print(f"省份: {pcount}, State: {len(state_mgr.states)}, "
-          f"国家: {len(country_mgr.countries)}")
+    print(f"\n[OK] Exported {args.mod_name}: {file_count} files")
+    print(f"Provinces: {pcount}, states: {len(state_mgr.states)}, "
+          f"countries: {len(country_mgr.countries)}")
 
-    # ── 9. 导出验证 ──
-    print("\n── 导出验证 ──")
+    # ── 9. Export verification ──
+    print("\n── Export verification ──")
     critical_files = [
         "map/default.map", "map/provinces.bmp", "map/definition.csv",
         "map/terrain.bmp", "map/heightmap.bmp", "map/rivers.bmp",
@@ -208,36 +207,36 @@ def main() -> None:
         if os.path.exists(path):
             size = os.path.getsize(path)
             if size == 0:
-                print(f"  [空文件!] {f}")
+                print(f"  [EMPTY FILE] {f}")
                 missing.append(f)
             else:
                 print(f"  [OK] {f} ({size:,} bytes)")
         else:
-            print(f"  [缺失!] {f}")
+            print(f"  [MISSING] {f}")
             missing.append(f)
 
-    # 检查目录
+    # Check directory
     for d in ["history/states", "history/countries", "common/country_tags"]:
         dp = os.path.join(args.output_dir, d)
         if os.path.isdir(dp):
             count = len(os.listdir(dp))
-            print(f"  [OK] {d}/ ({count} 个文件)")
+            print(f"  [OK] {d}/ ({count} files)")
         else:
-            print(f"  [缺失!] {d}/")
+            print(f"  [MISSING] {d}/")
             missing.append(d)
 
-    # .mod 启动器文件
+    # .mod launcher file
     mod_file = args.output_dir + ".mod"
     if os.path.exists(mod_file):
         print(f"  [OK] {os.path.basename(mod_file)}")
     else:
-        print(f"  [缺失!] {os.path.basename(mod_file)}")
+        print(f"  [MISSING] {os.path.basename(mod_file)}")
         missing.append(mod_file)
 
     if missing:
-        print(f"\n[警告] {len(missing)} 个关键文件缺失或为空!")
+        print(f"\n[WARNING] {len(missing)} critical files are missing or empty!")
     else:
-        print("\n[验证通过] 所有关键文件完整，可以进游戏测试。")
+        print("\n[VALIDATION PASSED] All critical files are present and ready for an in-game test.")
 
 
 if __name__ == "__main__":

@@ -1,22 +1,20 @@
-"""
-ExpandProvinceTool — 省份扩张工具（两步激活 + 画笔扩张）。
+"""ExpandProvinceTool — Province expansion tool (two-step activation + brush expansion).
 
-工作流程（2026-04-09 修正: 一次只扩张一圈）：
-1. 第一次点击省份 A → 选中（黄色边框 + 半透明 allowed 区域 overlay）
-2. 第二次点击同一省份 A → 进入扩张模式，开始绘制
-3. 按住拖动 → 光标经过的像素归给省份 A（限当前 allowed_mask 内）
-4. 松开鼠标 → **退出扩张模式**，allowed_mask 不再生效
-5. 想继续扩张（吃下一圈邻居）→ 重新点击省份 A 两次, 新的 allowed_mask
-   会包含"吃掉第一圈后暴露出来的第二圈邻居"
+Workflow (2026-04-09 correction: only expand one circle at a time):
+1. Click province A for the first time → select (yellow border + translucent allowed area overlay)
+2. Click the same province A for the second time → enter expansion mode and start drawing
+3. Press and drag → the pixel passed by the cursor is assigned to province A (limited to the current allowed_mask)
+4. Release the mouse → **Exit expansion mode**, allowed_mask will no longer take effect
+5. Want to continue to expand (eat the next circle of neighbors) → click province A twice again, new allowed_mask
+   Will include "eat the second circle of neighbors exposed after the first circle"
 
-约束：
-- 单次 stroke 只能扩张到**当前**的直接邻居（neighborhood mask）
-- 松开后必须重新激活才能扩张下一圈, 防止一次拖拽吃掉整条大陆
-- 只能影响相同地块类型（陆地省份不会吃海洋像素）
-- 邻居被吃掉的像素自动减少；邻居完全消失会触发 ID 压实（导出时）
+Constraints:
+- A single stroke can only expand to the **current** direct neighbor (neighborhood mask)
+- After releasing, it must be reactivated to expand to the next circle to prevent the entire continent from being eaten up by one drag.
+- Can only affect the same tile type (land provinces will not eat ocean pixels)
+- The pixels of eaten neighbors are automatically reduced; the complete disappearance of neighbors will trigger ID compaction (when exporting)
 
-为了向后兼容，工具名仍叫 lasso_province（注册名）。
-"""
+For backward compatibility, the tool name is still called lasso_province (registered name)."""
 from __future__ import annotations
 
 import numpy as np
@@ -24,7 +22,7 @@ import numpy as np
 from domain.tools.base import Tool, ToolContext, CleanupLevel
 
 
-# 扩张笔刷半径（像素）。固定值，不依赖全局 brush_size 滑块以避免歧义。
+# Expand brush radius (pixels). Fixed value, does not rely on global brush_size slider to avoid ambiguity.
 EXPAND_RADIUS = 4
 
 
@@ -32,8 +30,8 @@ class LassoProvinceTool(Tool):
     name = "lasso_province"
     display_modes = ("province",)
     cleanup_level = CleanupLevel.FAST
-    label = "省份扩张"
-    description = "点选省份 → 再点同一省份进入扩张 → 拖动画笔扩张边界"
+    label = "Expand province"
+    description = "Select a province, select it again to enter expand mode, then drag the brush along its boundary"
     cursor = "cross"
 
     def get_undo_array_names(self, ctx: ToolContext) -> list[str]:
@@ -47,24 +45,24 @@ class LassoProvinceTool(Tool):
 
         sel = ctx.state.get("pid", 0)
 
-        # Case 1: 没选过 / 选了别的省份 → 首次选中
+        # Case 1: Never selected / selected another province → first selection
         if pid_under != sel:
             ctx.state["pid"] = pid_under
             ctx.state["tile"] = md.get_province_tile_type(pid_under)
             ctx.state["allowed_mask"] = md.get_neighborhood_mask(pid_under)
-            ctx.state["active"] = False  # 还没进入扩张模式
+            ctx.state["active"] = False  # Not in expansion mode yet
             ctx.state["painting"] = False
             ctx.selected_province_id = pid_under
             return
 
-        # Case 2: 已选中同一省份 → 进入扩张模式 + 立刻画第一笔
+        # Case 2: The same province has been selected → enter expansion mode + draw the first stroke immediately
         if not ctx.state.get("active"):
             ctx.state["active"] = True
             ctx.state["painting"] = True
             self._paint_at(ctx, x, y)
             return
 
-        # Case 3: 已在扩张模式 → 继续画
+        # Case 3: Already in expansion mode → continue drawing
         ctx.state["painting"] = True
         self._paint_at(ctx, x, y)
 
@@ -76,9 +74,9 @@ class LassoProvinceTool(Tool):
 
     def on_release(self, ctx: ToolContext, x: int, y: int) -> None:
         ctx.state["painting"] = False
-        # 松开就退出扩张模式 (2026-04-09 修正):
-        # 用户必须重新点击才能扩张下一圈, 避免一次拖拽把整片大陆吃掉.
-        # pid 保留, 下次同省份点击时走 Case 2 重新激活, 并拿到新的 allowed_mask.
+        # Release to exit expansion mode (corrected on 2026-04-09):
+        # The user must click again to expand to the next circle to avoid eating the entire continent with one drag.
+        # The pid is retained, and the next time you click on the same province, go to Case 2 to reactivate, and get a new allowed_mask.
         ctx.state["active"] = False
 
     def on_cancel(self, ctx: ToolContext) -> None:
@@ -87,13 +85,13 @@ class LassoProvinceTool(Tool):
         ctx.selected_province_id = 0
 
     def run_cleanup(self, ctx: ToolContext) -> None:
-        """只做局部 X-crossing 修复，不压实 ID（保留空洞供切割填补）。"""
+        """Only partial X-crossing repair is performed, and the ID is not compacted (the holes are reserved for cutting and filling)."""
         super().run_cleanup(ctx)
 
-    # ────── 笔刷 ──────
+    # ────── Brushes ──────
 
     def _paint_at(self, ctx: ToolContext, cx: int, cy: int) -> None:
-        """在 (cx, cy) 周围画一个笔刷印章，把符合条件的像素归给选中省份。"""
+        """Draw a brush seal around (cx, cy) and assign qualified pixels to the selected province."""
         md = ctx.map_data
         sel_pid = ctx.state.get("pid", 0)
         if sel_pid <= 0:

@@ -1,6 +1,4 @@
-"""
-PaintTileCommand 单元测试。
-"""
+"""PaintTileCommand unit test."""
 
 import numpy as np
 import pytest
@@ -10,7 +8,7 @@ from commands.map.paint_tile import PaintTileCommand
 
 
 def _make_map_data(h: int = 4, w: int = 4) -> MapData:
-    """创建小尺寸 MapData 用于测试。"""
+    """Create a small MapData for testing."""
     md = MapData.__new__(MapData)
     md.tile_map = np.zeros((h, w), dtype=np.uint8)
     md.province_map = np.zeros((h, w), dtype=np.int32)
@@ -22,10 +20,10 @@ def _make_map_data(h: int = 4, w: int = 4) -> MapData:
 
 
 class TestPaintTileCommand:
-    """PaintTileCommand 测试。"""
+    """PaintTileCommand test."""
 
     def test_execute_changes_pixels(self) -> None:
-        """execute 应该修改 tile_map 对应像素。"""
+        """execute should modify the corresponding pixels of tile_map."""
         md = _make_map_data()
         changes = {(0, 0): 1, (1, 2): 2, (3, 3): 1}
         cmd = PaintTileCommand(md, changes)
@@ -34,11 +32,11 @@ class TestPaintTileCommand:
         assert md.tile_map[0, 0] == 1
         assert md.tile_map[1, 2] == 2
         assert md.tile_map[3, 3] == 1
-        # 未修改的像素保持不变
+        # Unmodified pixels remain unchanged
         assert md.tile_map[0, 1] == 0
 
     def test_undo_restores_old_values(self) -> None:
-        """undo 应该恢复修改前的值。"""
+        """undo should restore the value before modification."""
         md = _make_map_data()
         md.tile_map[0, 0] = 5
         md.tile_map[1, 1] = 7
@@ -56,7 +54,7 @@ class TestPaintTileCommand:
         assert md.tile_map[1, 1] == 7
 
     def test_can_merge_with_same_type(self) -> None:
-        """can_merge_with 对同类型应返回 True。"""
+        """can_merge_with should return True for the same type."""
         md = _make_map_data()
         cmd1 = PaintTileCommand(md, {(0, 0): 1})
         cmd2 = PaintTileCommand(md, {(1, 1): 2})
@@ -64,7 +62,7 @@ class TestPaintTileCommand:
         assert cmd1.can_merge_with(cmd2) is True
 
     def test_can_merge_with_different_type(self) -> None:
-        """can_merge_with 对不同类型应返回 False。"""
+        """can_merge_with should return False for different types."""
         from commands.base import Command
 
         md = _make_map_data()
@@ -78,7 +76,7 @@ class TestPaintTileCommand:
         assert cmd1.can_merge_with(cmd2) is False
 
     def test_merge_combines_changes(self) -> None:
-        """merge 应合并两个命令的 changes，保留最早旧值。"""
+        """merge should merge the changes from the two commands, retaining the oldest value."""
         md = _make_map_data()
         md.tile_map[0, 0] = 10
         md.tile_map[1, 1] = 20
@@ -91,13 +89,13 @@ class TestPaintTileCommand:
 
         cmd1.merge(cmd2)
 
-        # 合并后 undo 应恢复到最初始值
+        # After merging, undo should be restored to the original value.
         cmd1.undo()
-        assert md.tile_map[0, 0] == 10  # 最早的旧值
-        assert md.tile_map[1, 1] == 20  # cmd2 记录的旧值
+        assert md.tile_map[0, 0] == 10  # oldest old value
+        assert md.tile_map[1, 1] == 20  # The old value recorded by cmd2
 
     def test_execute_is_reentrant(self) -> None:
-        """execute 可重入（redo 再调一次不出错）。"""
+        """execute can be reentrant (no error will occur if redo is called again)."""
         md = _make_map_data()
         changes = {(0, 0): 1}
         cmd = PaintTileCommand(md, changes)

@@ -1,22 +1,21 @@
-"""国家肖像 portraits/TAG.txt."""
+"""National portraits portraits/TAG.txt."""
 import os
 
 
 def write_country_portraits(tag, output_dir):
-    """生成 portraits/<TAG>.txt — HOI4 顶级 portraits 目录
+    """Generate portraits/<TAG>.txt — HOI4 top-level portraits directory
 
-    【崩溃根因】HOI4 在启动游戏时为每个国家自动生成缺失的 scientist，
-    它从 portraits/<TAG>.txt 或 portraits/continent_xxx.txt 里的 scientist 池
-    随机选择肖像。如果国家没有这个文件，自动生成失败 → 崩溃。
+    [Cause of crash] HOI4 automatically generates missing scientists for each country when starting the game.
+    It comes from the scientist pool in portraits/<TAG>.txt or portraits/continent_xxx.txt
+    Randomly select portraits. If the country does not have this file, autogeneration fails → crashes.
 
-    文件必须放在 MOD 根目录下的 portraits/ 文件夹（不是 common/portraits）。
-    """
+    Files must be placed in the portraits/ folder (not common/portraits) in the MOD root directory."""
     d = os.path.join(output_dir, "portraits")
     os.makedirs(d, exist_ok=True)
     with open(os.path.join(d, f"{tag}.txt"), "w", encoding="utf-8") as f:
         f.write(f"{tag} = {{\n")
 
-        # scientist（关键，否则崩溃）
+        # scientist (key, otherwise crash)
         f.write("\tscientist = {\n")
         f.write("\t\tmale = {\n")
         for i in range(1, 17):
@@ -28,7 +27,7 @@ def write_country_portraits(tag, output_dir):
         f.write("\t\t}\n")
         f.write("\t}\n")
 
-        # army（将领）
+        # army (general)
         f.write("\tarmy = {\n")
         f.write("\t\tmale = {\n")
         for i in range(1, 6):
@@ -36,7 +35,7 @@ def write_country_portraits(tag, output_dir):
         f.write("\t\t}\n")
         f.write("\t}\n")
 
-        # navy（海军）
+        # navy
         f.write("\tnavy = {\n")
         f.write("\t\tmale = {\n")
         for i in range(1, 4):
@@ -44,7 +43,7 @@ def write_country_portraits(tag, output_dir):
         f.write("\t\t}\n")
         f.write("\t}\n")
 
-        # political（领袖，按意识形态）
+        # political (leader, by ideology)
         f.write("\tpolitical = {\n")
         for i, ideo in enumerate(["communism", "democratic", "fascism", "neutrality"], 1):
             f.write(f"\t\t{ideo} = {{\n")
@@ -54,7 +53,7 @@ def write_country_portraits(tag, output_dir):
             f.write("\t\t}\n")
         f.write("\t}\n")
 
-        # operative（特工）
+        # operative
         f.write("\toperative = {\n")
         f.write("\t\tmale = { \"GFX_portrait_operative_unknown\" }\n")
         f.write("\t\tfemale = { \"GFX_portrait_operative_unknown\" }\n")

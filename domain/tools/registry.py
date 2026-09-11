@@ -1,13 +1,11 @@
-"""
-Tool 注册表 — 全局存储所有已注册的工具实例。
-"""
+"""Tool Registry—Globally stores all registered tool instances."""
 from __future__ import annotations
 
 from domain.tools.base import Tool
 
 
 class ToolRegistry:
-    """单例注册表。"""
+    """Singleton registry."""
     _tools: dict[str, Tool] = {}
 
     @classmethod
@@ -31,7 +29,7 @@ class ToolRegistry:
         return list(cls._tools.values())
 
 
-# 便捷函数
+# Convenience function
 def register_tool(tool: Tool) -> None:
     ToolRegistry.register(tool)
 

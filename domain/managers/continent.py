@@ -1,15 +1,13 @@
-"""
-Continent 管理器 — 大陆数据结构、省份指派、导出
+"""Continent Manager — Continent data structures, province assignments, exports
 
-HOI4 规则（Map modding §Continents）:
-- continent.txt 列出所有大陆名
-- definition.csv 最后一列 continent 是整数索引 (1-based)
-- 海/湖省份 continent = 0
-- 所有陆地省份必须属于某个大陆, 否则报错
+HOI4 rules (Map modding §Continents):
+- continent.txt lists all continent names
+- The last column continent in definition.csv is an integer index (1-based)
+- sea/lake province continent = 0
+- All land provinces must belong to a certain continent, otherwise an error will be reported
 
-默认值: 一个大陆 "default_continent", 所有陆地省份全部归属它.
-用户可在 UI 添加/重命名/删除大陆, 并把省份指派到指定大陆.
-"""
+Default: a continent "default_continent" to which all land provinces belong.
+Users can add/rename/delete continents in the UI, and assign provinces to specified continents."""
 
 from __future__ import annotations
 
@@ -17,34 +15,34 @@ import numpy as np
 
 
 class ContinentManager:
-    """管理大陆列表 + 省份→大陆映射"""
+    """Manage continent list + province → continent map"""
 
     DEFAULT_NAME = "default_continent"
 
     def __init__(self) -> None:
-        # 大陆名列表, 索引从 0 开始; HOI4 continent ID = index + 1
+        # List of continent names, index starts from 0; HOI4 continent ID = index + 1
         self._names: list[str] = [self.DEFAULT_NAME]
-        # 省份 → 大陆索引 (0-based); 未在此 dict 的 land 省份默认指向 0
+        # province → continent index (0-based); land provinces not in this dict default to 0
         self._province_continent: dict[int, int] = {}
 
-    # ───────────── 大陆 CRUD ─────────────
+    # ───────────── Mainland CRUD ─────────────
 
     @property
     def names(self) -> list[str]:
-        """返回大陆名列表 (顺序即 HOI4 ID 顺序, 1-based)"""
+        """Return the list of continent names (the order is HOI4 ID order, 1-based)"""
         return list(self._names)
 
     def count(self) -> int:
         return len(self._names)
 
     def get_name(self, index: int) -> str:
-        """按 0-based 索引取名, 越界返回默认"""
+        """Name according to 0-based index, return to default if out of bounds"""
         if 0 <= index < len(self._names):
             return self._names[index]
         return self.DEFAULT_NAME
 
     def add_continent(self, name: str) -> int:
-        """添加大陆, 返回其 0-based 索引. 重名则返回现有索引."""
+        """Add a continent and return its 0-based index. If the name is the same, return the existing index."""
         name = name.strip()
         if not name:
             raise ValueError("Continent name cannot be empty")
@@ -64,13 +62,13 @@ class ContinentManager:
         self._names[index] = new_name
 
     def remove_continent(self, index: int) -> None:
-        """删除大陆. 必须至少保留 1 个. 指向该大陆的省份改指向 0."""
+        """Delete continent. Must keep at least 1. Provinces pointing to this continent point to 0 instead."""
         if len(self._names) <= 1:
             raise ValueError("At least one continent must remain")
         if not (0 <= index < len(self._names)):
             raise IndexError(f"Continent index out of range: {index}")
         self._names.pop(index)
-        # 重新映射省份: 被删的 → 0, 后面的 → 前移 1
+        # Remap provinces: deleted → 0, later → moved forward 1
         new_map: dict[int, int] = {}
         for pid, ci in self._province_continent.items():
             if ci == index:
@@ -81,7 +79,7 @@ class ContinentManager:
                 new_map[pid] = ci
         self._province_continent = new_map
 
-    # ───────────── 省份指派 ─────────────
+    # ──────────── Provincial assignment ─────────────
 
     def assign_province(self, pid: int, continent_index: int) -> None:
         if not (0 <= continent_index < len(self._names)):
@@ -93,24 +91,24 @@ class ContinentManager:
             self.assign_province(pid, continent_index)
 
     def get_province_continent(self, pid: int) -> int:
-        """返回省份的 0-based 大陆索引, 未指派返回 0"""
+        """Returns the 0-based continent index of the province, or 0 if not assigned"""
         return self._province_continent.get(pid, 0)
 
     def get_province_continent_hoi4_id(self, pid: int, is_land: bool) -> int:
-        """返回 HOI4 continent ID (1-based). 海/湖返回 0."""
+        """Returns HOI4 continent ID (1-based). Sea/Lake returns 0."""
         if not is_land:
             return 0
         return self.get_province_continent(pid) + 1
 
-    # ───────────── 数据同步 ─────────────
+    # ───────────── Data synchronization ──────────────
 
     def drop_provinces(self, pids: set[int]) -> None:
-        """删除一批省份的指派 (供 compact_with_references 调用)"""
+        """Delete a batch of province assignments (called by compact_with_references)"""
         for pid in pids:
             self._province_continent.pop(pid, None)
 
     def remap_provinces(self, old_to_new: dict[int, int]) -> None:
-        """按旧→新 ID 映射重写 (供 ID 压实调用)"""
+        """Rewrite according to old→new ID mapping (called for ID compaction)"""
         new_map: dict[int, int] = {}
         for old_pid, ci in self._province_continent.items():
             new_pid = old_to_new.get(old_pid)
@@ -122,7 +120,7 @@ class ContinentManager:
         self._names = [self.DEFAULT_NAME]
         self._province_continent = {}
 
-    # ───────────── 序列化 ─────────────
+    # ───────────── Serialization ─────────────
 
     def to_dict(self) -> dict:
         return {
@@ -135,10 +133,10 @@ class ContinentManager:
         if not self._names:
             self._names = [self.DEFAULT_NAME]
         raw = data.get("province_continent", {})
-        # JSON 会把 int key 转成 str, 这里兼容
+        # JSON will convert int key to str, which is compatible here
         self._province_continent = {int(k): int(v) for k, v in raw.items()}
 
-    # ───────────── 可视化 ─────────────
+    # ───────────── Visualization ─────────────
 
     def build_continent_color_map(
         self,
@@ -146,28 +144,27 @@ class ContinentManager:
         tile_map: np.ndarray,
         state_manager=None,
     ) -> np.ndarray:
-        """生成大陆颜色图（用于显示）。
+        """Generate continent color map (for display).
 
-        规则:
-        - 有指派的陆地省份 → 该大陆的专属颜色（鲜艳，按 continent index 确定性生成）
-        - 未指派的陆地省份 → state 色去饱和变暗（看清 state 边界）, 没 state 就深灰
-        - 海/湖省份 → 深蓝灰
+        Rules:
+        - Assigned land provinces → exclusive colors for the continent (bright, deterministically generated according to continent index)
+        - Unassigned land provinces → The state color is desaturated and darkened (to see the state boundary clearly), without state it is dark gray
+        - Sea/Lake provinces → dark blue gray
 
-        参数:
-            province_map: (H, W) uint16 / uint32 省份 ID 图
-            tile_map: (H, W) uint8 地块类型（区分陆/海/湖）
-            state_manager: 可选, 用于给未指派省份上 state 色
-        """
+        Parameters:
+            province_map: (H, W) uint16 / uint32 province ID map
+            tile_map: (H, W) uint8 tile type (differentiate between land/sea/lake)
+            state_manager: optional, used to add state color to unassigned provinces"""
         from data.constants import TILE_LAND
 
         max_pid = int(province_map.max())
-        # 初始: 全部设成海色
+        # Initial: Set all to sea color
         lut = np.full((max_pid + 1, 3), (30, 40, 70), dtype=np.uint8)
 
-        # 大陆颜色（确定性: 按 continent index 取固定色轮）
+        # Continent color (deterministic: take the fixed color wheel according to continent index)
         cont_palette = _generate_continent_palette(len(self._names))
 
-        # state 颜色（和 StateManager 同种子, 保证一致）
+        # state color (same seed as StateManager, guaranteed to be consistent)
         state_colors: dict[int, tuple[int, int, int]] = {}
         if state_manager is not None:
             rng = np.random.RandomState(123)
@@ -178,18 +175,18 @@ class ContinentManager:
                     int(rng.randint(60, 220)),
                 )
 
-        # 识别每个省份的"主体类型": 用**多数决**而不是"有一个陆地像素就算陆地"
-        # 后者会把沾了几个陆地像素的海洋省误判成陆地 → 渲染成灰色块
+        # Identify the "subject type" of each province: use majority rule instead of "one land pixel counts as land"
+        # The latter will misjudge an ocean province with a few land pixels as land → render it as a gray block
         h, w = province_map.shape
         land_mask_flat = (tile_map == TILE_LAND).ravel()
         pid_flat = province_map.ravel()
         land_count = np.bincount(pid_flat, weights=land_mask_flat, minlength=max_pid + 1)
         total_count = np.bincount(pid_flat, minlength=max_pid + 1)
-        # 陆地像素占比 > 50% 才算陆地省; 纯海/湖/混合沾边 都视为海
+        # Land pixels account for >50% to be considered a land province; pure sea/lake/mixed areas are considered sea
         is_land = land_count * 2 > total_count
 
-        # 填 LUT — 未显式指派的陆地省份默认属于 continent 0 (default_continent)
-        # 与 get_province_continent 的语义一致；docstring 明确规定"默认指向 0"。
+        # Fill LUT — Continental provinces not explicitly assigned default to continent 0 (default_continent)
+        # Consistent with the semantics of get_province_continent; the docstring clearly states "default points to 0".
         for pid in range(1, max_pid + 1):
             if not is_land[pid]:
                 continue
@@ -197,7 +194,7 @@ class ContinentManager:
             if 0 <= ci < len(cont_palette):
                 lut[pid] = cont_palette[ci]
             else:
-                # 索引越界（理论不应发生）: 灰色兜底
+                # Index out of bounds (theoretically should not happen): gray cover
                 lut[pid] = (70, 70, 70)
 
         flat_clipped = np.clip(pid_flat, 0, max_pid)
@@ -206,24 +203,24 @@ class ContinentManager:
 
 
 def _generate_continent_palette(n: int) -> list[tuple[int, int, int]]:
-    """为 n 个大陆生成确定性的鲜艳色轮。"""
-    # 手选前几个大陆用 vanilla 感知友好的饱和色, 后面用 HSV 均分
+    """Generate a deterministic vivid color wheel for n continents."""
+    # Hand-select the first few continents using vanilla perception-friendly saturated colors, and use HSV to divide them evenly.
     preset = [
-        (90, 160, 220),   # 欧洲风 蓝
-        (220, 180, 110),  # 北美 沙金
-        (180, 210, 120),  # 南美 黄绿
-        (200, 140, 200),  # 澳洲 紫粉
-        (200, 120, 100),  # 非洲 橙红
-        (110, 200, 180),  # 亚洲 青
+        (90, 160, 220),   # European style blue
+        (220, 180, 110),  # North America Alluvial Gold
+        (180, 210, 120),  # south america yellow green
+        (200, 140, 200),  # Australia Purple Pink
+        (200, 120, 100),  # africa orange red
+        (110, 200, 180),  # asian green
     ]
     if n <= len(preset):
         return preset[:n]
-    # 多于 6 个: 延续色轮
+    # More than 6: Continue color wheel
     import colorsys
     out = list(preset)
     extra = n - len(preset)
     for i in range(extra):
-        h = (i / extra) * 0.83 + 0.08  # 避开已用的蓝色范围
+        h = (i / extra) * 0.83 + 0.08  # Avoid used blue range
         r, g, b = colorsys.hsv_to_rgb(h, 0.55, 0.85)
         out.append((int(r * 255), int(g * 255), int(b * 255)))
     return out

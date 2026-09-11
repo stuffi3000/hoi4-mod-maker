@@ -1,11 +1,9 @@
-"""
-导出时省份 ID 压实测试 — 只压导出副本, 项目数据零改动。
+"""Province ID compaction test when exporting - only the exported copy is compacted, with zero changes to the project data.
 
-工程故意带编号空洞 (省份 1/5/9, 空洞 2-4/6-8):
-1. 导出后项目本体 (province_map / 各 manager) 与导出前逐字节一致
-2. 导出的 definition.csv 编号连续 (0..N 无空洞)
-3. 铁路 / 补给节点在导出文件里按新编号重映射
-"""
+The project has deliberately numbered holes (province 1/5/9, holes 2-4/6-8):
+1. After exporting, the project body (province_map / each manager) is the same byte by byte as before exporting.
+2. The exported definition.csv numbers are consecutive (0..N without holes)
+3. Railway/supply nodes are remapped according to new numbers in the export file"""
 
 import os
 import shutil
@@ -24,7 +22,7 @@ from data.constants import MAP_WIDTH, MAP_HEIGHT, TILE_LAND, TILE_SEA
 
 
 def _build_gappy_project():
-    """迷你工程: 省份 ID 1/5/9 带空洞 (模拟合并掉 2-4/6-8 后的状态)."""
+    """Mini project: Province ID 1/5/9 with holes (simulating the state after merging 2-4/6-8)."""
     tile_map = np.full((MAP_HEIGHT, MAP_WIDTH), TILE_LAND, dtype=np.uint8)
     tile_map[0, :] = TILE_SEA
     tile_map[-1, :] = TILE_SEA
@@ -33,9 +31,9 @@ def _build_gappy_project():
 
     province_map = np.zeros((MAP_HEIGHT, MAP_WIDTH), dtype=np.int32)
     mid = MAP_WIDTH // 2
-    province_map[1:-1, 1:mid] = 1       # 左半陆
-    province_map[1:-1, mid:-1] = 5      # 右半陆 (空洞 2-4)
-    province_map[tile_map == TILE_SEA] = 9  # 边框海 (空洞 6-8)
+    province_map[1:-1, 1:mid] = 1       # Zuo Banlu
+    province_map[1:-1, mid:-1] = 5      # Right half of the continent (holes 2-4)
+    province_map[tile_map == TILE_SEA] = 9  # Border Sea (voids 6-8)
 
     state_mgr = StateManager()
     s1 = StateData(id=1, name="TestState", provinces=[1, 5],
@@ -88,33 +86,33 @@ def test_export_compacts_copy_without_mutating_project():
             supply_mgr=supply_mgr,
         )
 
-        # ── 1. 项目本体零改动 ──
+        # ── 1. Zero changes to the project body ──
         assert np.array_equal(province_map, pm_before), \
-            "导出不应修改项目的 province_map"
+            "Export must not modify the project's province_map"
         assert state_mgr._states[1].provinces == [1, 5], \
-            "导出不应修改 state 的省份列表"
+            "Export must not modify the state's province list"
         assert country_mgr.get_country("TST").capital == 1
         assert railway_mgr.get_all()[0].province_ids == [1, 5], \
-            "导出不应修改铁路数据"
+            "Export must not modify railway data"
         assert [n.province_id for n in supply_mgr.get_all()] == [5], \
-            "导出不应修改补给节点数据"
+            "Export must not modify supply-node data"
 
-        # ── 2. definition.csv 编号连续 (1→1, 5→2, 9→3) ──
+        # ── 2. definition.csv numbers are consecutive (1→1, 5→2, 9→3) ──
         defn = _read(os.path.join(tmpdir, "map", "definition.csv"))
         ids = [int(line.split(";")[0])
                for line in defn.strip().splitlines() if line.strip()]
         assert ids == list(range(len(ids))), \
-            f"definition.csv 编号必须从 0 连续: 实际 {ids[:10]}..."
-        assert max(ids) == 3  # 0 + 3 个省份
+            f"definition.csv IDs must be consecutive from 0: got {ids[:10]}..."
+        assert max(ids) == 3  # 0 + 3 provinces
 
-        # ── 3. 导出文件按新编号重映射 ──
-        # railways.txt 行格式: level 省份数 省份... → 铁路 [1,5] 压实后 = "1 2 1 2"
+        # ── 3. The exported file is remapped according to the new number ──
+        # railways.txt line format: level number of provinces province... → railways [1,5] after compaction = "1 2 1 2"
         railways = _read(os.path.join(tmpdir, "map", "railways.txt"))
         assert "1 2 1 2" in railways, \
-            f"铁路应重映射为省份 1,2: 实际内容 {railways!r}"
-        # supply_nodes.txt 行格式: level 省份 → 节点在省份 5(新编号 2) = "1 2"
+            f"Railway provinces should be remapped to 1,2: got {railways!r}"
+        # supply_nodes.txt line format: level province → node in province 5 (new number 2) = "1 2"
         supply = _read(os.path.join(tmpdir, "map", "supply_nodes.txt"))
         assert "1 2" in supply, \
-            f"补给节点应重映射为省份 2: 实际内容 {supply!r}"
+            f"Supply node should be remapped to province 2: got {supply!r}"
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)

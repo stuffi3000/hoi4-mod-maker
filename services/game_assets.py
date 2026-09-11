@@ -1,18 +1,16 @@
-"""
-游戏资产读取 — 预览功能从用户的 HOI4 安装目录读取原版资源。
+"""Game Asset Reading - The preview function reads original assets from the user's HOI4 installation directory.
 
-预览要用游戏自己的"配方"合成接近游戏内观感的画面：
-- common/terrain/00_terrain.txt 的 terrain={} 块:
-    terrain.bmp 调色板索引 → atlas 瓦片号 (texture = N)
-- map/terrain/atlas0.dds:        地形材质图集, 4×4 网格 × 512px 瓦片
-- map/terrain/atlas_normal0.dds: 法线贴图 (凹凸光影)
+The preview needs to use the game's own "recipe" to synthesize a picture that is close to the in-game look and feel:
+- terrain={} block in common/terrain/00_terrain.txt:
+    terrain.bmp palette index → atlas tile number (texture = N)
+- map/terrain/atlas0.dds: terrain material atlas, 4×4 grid × 512px tiles
+- map/terrain/atlas_normal0.dds: normal map (bump light and shadow)
 
-所有文件运行时按需读取并缓存; 游戏目录/文件缺失时各 getter 返回 None,
-由调用方降级为纯色渲染。本模块不依赖 Qt。
+All files are read and cached on demand during runtime; when the game directory/file is missing, each getter returns None,
+Downgraded by the caller to solid color rendering. This module does not depend on Qt.
 
-参考: 参考/Map modding.txt 行 344-362 (atlas 瓦片排列为行优先:
-texture = 11 即 4×4 网格第 3 行最右格)。
-"""
+Reference: Reference/Map modding.txt lines 344-362 (atlas tiles are arranged row-major:
+texture = 11, which is the rightmost cell in row 3 of the 4×4 grid)."""
 
 from __future__ import annotations
 
@@ -23,25 +21,23 @@ import re
 import numpy as np
 
 from data.constants import DEFAULT_HOI4_PATH
-from ui.i18n import tr_pair
-
-# atlas 图集固定为 4×4 瓦片网格
+# The atlas atlas is fixed to a 4×4 tile grid
 ATLAS_GRID = 4
 
 TERRAIN_DEF_RELPATH = "common/terrain/00_terrain.txt"
 ATLAS_RELPATH = "map/terrain/atlas0.dds"
 ATLAS_NORMAL_RELPATH = "map/terrain/atlas_normal0.dds"
-# 区域色调图 (RGB=色调, A=城市灯光遮罩); 分辨率是所属地图的一半
+# Area tone map (RGB=Hue, A=City Lights Mask); half the resolution of the corresponding map
 COLORMAP_RGB_RELPATH = "map/terrain/colormap_rgb_cityemissivemask_a.dds"
 
 
-# 用户配置文件 (与语言设置共用), 游戏目录持久化到这里
+# User configuration file (shared with language settings), game directory persisted here
 CONFIG_PATH = os.path.join(os.path.expanduser("~"), ".hoi4_map_maker.json")
 _CONFIG_KEY_GAME_DIR = "hoi4_game_dir"
 
 
 def _read_config_game_dir() -> str | None:
-    """读用户配置里保存的游戏目录; 不存在或已失效返回 None。"""
+    """Read the game directory saved in the user configuration; returns None if it does not exist or has expired."""
     try:
         with open(CONFIG_PATH, "r", encoding="utf-8") as f:
             path = json.load(f).get(_CONFIG_KEY_GAME_DIR)
@@ -53,7 +49,7 @@ def _read_config_game_dir() -> str | None:
 
 
 def _save_config_game_dir(path: str) -> None:
-    """把游戏目录写进用户配置 (保留其他键如 language); 写失败不致命。"""
+    """Write the game directory into the user configuration (retain other keys such as language); failure to write is not fatal."""
     config: dict = {}
     try:
         with open(CONFIG_PATH, "r", encoding="utf-8") as f:
@@ -65,15 +61,14 @@ def _save_config_game_dir(path: str) -> None:
         with open(CONFIG_PATH, "w", encoding="utf-8") as f:
             json.dump(config, f, ensure_ascii=False, indent=2)
     except OSError:
-        pass  # 本次会话内仍然生效, 只是下次启动要重选
+        pass  # It will still take effect in this session, but you will have to reselect it next time you start it.
 
 
 def find_hoi4_install() -> str | None:
-    """返回 HOI4 安装目录, 找不到返回 None。
+    """Returns to the HOI4 installation directory, returns None if not found.
 
-    查找顺序: 用户配置保存的目录 → 内置默认路径 (DEFAULT_HOI4_PATH)。
-    自动扫描 Steam 库列表属于 M3 (公开发布准备)。
-    """
+    Search order: Directory where user configuration is saved → Built-in default path (DEFAULT_HOI4_PATH).
+    Automatic scanning of Steam library lists is part of M3 (preparing for public release)."""
     saved = _read_config_game_dir()
     if saved is not None:
         return saved
@@ -82,9 +77,9 @@ def find_hoi4_install() -> str | None:
     return None
 
 
-# 匹配图形地形条目: { ... color = { 索引列表 } ... texture = N ... }
-# 条目体除 color 的大括号外不含其他大括号 ([^{}] 保证不会跨条目匹配);
-# categories 块的条目没有 texture 字段, 不会被匹配。
+# Match graphic terrain entries: { ... color = { index list } ... texture = N ... }
+# The entry body does not contain other braces except the braces for color ([^{}] guarantees no cross-entry matching);
+# Entries in the categories block do not have a texture field and will not be matched.
 _GFX_ENTRY_RE = re.compile(
     r"\{[^{}]*?color\s*=\s*\{([\d\s]+)\}[^{}]*?texture\s*=\s*(\d+)[^{}]*?\}",
     re.S,
@@ -93,12 +88,11 @@ _TYPE_RE = re.compile(r"type\s*=\s*(\w+)")
 
 
 def parse_graphical_terrain(text: str) -> list[dict]:
-    """解析 00_terrain.txt 的图形地形条目。
+    """Parse the graphical terrain entry of 00_terrain.txt.
 
-    返回 [{"type": "plains", "indices": [0], "texture": 1}, ...]。
-    只认同时具备 color 和 texture 字段的条目 (即 terrain={} 块内容)。
-    """
-    text = re.sub(r"#[^\n]*", "", text)  # 去注释
+    Returns [{"type": "plains", "indices": [0], "texture": 1}, ...].
+    Only items with color and texture fields are recognized (i.e. terrain={} block content)."""
+    text = re.sub(r"#[^\n]*", "", text)  # Go to annotation
     entries: list[dict] = []
     for m in _GFX_ENTRY_RE.finditer(text):
         type_m = _TYPE_RE.search(m.group(0))
@@ -111,11 +105,10 @@ def parse_graphical_terrain(text: str) -> list[dict]:
 
 
 def parse_terrain_to_texture(text: str) -> dict[int, int]:
-    """解析 00_terrain.txt 文本, 返回 {terrain.bmp 调色板索引: atlas 瓦片号}。
+    """Parse the 00_terrain.txt text and return {terrain.bmp palette index: atlas tile number}.
 
-    一个条目的 color 可以列多个索引, 都映射到同一瓦片。
-    texture = 255 (湖泊) 原样保留, 由合成器决定如何处理。
-    """
+    The color of an entry can be listed in multiple indexes, all mapped to the same tile.
+    texture = 255 (Lake) is left as is, it is up to the compositor to decide what to do with it."""
     mapping: dict[int, int] = {}
     for e in parse_graphical_terrain(text):
         for idx in e["indices"]:
@@ -124,7 +117,7 @@ def parse_terrain_to_texture(text: str) -> dict[int, int]:
 
 
 def parse_water_palette_indices(text: str) -> set[int]:
-    """返回 terrain.bmp 中属于水体 (ocean/lakes) 的调色板索引集合。"""
+    """Returns a collection of palette indices belonging to water bodies (ocean/lakes) in terrain.bmp."""
     water: set[int] = set()
     for e in parse_graphical_terrain(text):
         if e["type"] in ("ocean", "lakes"):
@@ -133,7 +126,7 @@ def parse_water_palette_indices(text: str) -> set[int]:
 
 
 def slice_atlas(atlas: np.ndarray, grid: int = ATLAS_GRID) -> np.ndarray:
-    """把图集切成瓦片数组, 返回 (grid*grid, 高, 宽, 通道), 行优先排列。"""
+    """Cut the atlas into a tile array, return (grid*grid, height, width, channel), arranged in row priority."""
     h, w = atlas.shape[:2]
     th, tw = h // grid, w // grid
     c = atlas.shape[2]
@@ -142,42 +135,41 @@ def slice_atlas(atlas: np.ndarray, grid: int = ATLAS_GRID) -> np.ndarray:
 
 
 class GameAssets:
-    """惰性读取 + 进程内缓存的游戏资产容器。
+    """Lazy read + in-process cached game asset container.
 
-    用法:
+    Usage:
         assets = GameAssets()
         if not assets.available():
-            ... 提示用户选择游戏目录, 或降级纯色渲染 ...
-        tiles = assets.atlas_tiles()   # None = 该文件读取失败
-    """
+            ... prompt the user to select a game directory, or downgrade solid color rendering ...
+        tiles = assets.atlas_tiles() # None = Failed to read the file"""
 
     def __init__(self, install_dir: str | None = None) -> None:
         self.install_dir = install_dir if install_dir else find_hoi4_install()
         self._cache: dict[str, object] = {}
-        # 最近一次读取失败的原因, 供 UI 提示和排查
+        # The reason for the latest reading failure, for UI prompts and troubleshooting
         self.last_error: str = ""
 
     def available(self) -> bool:
         return self.install_dir is not None
 
-    # ─────────── 各资产 getter ───────────
+    # ─────────── Getters for each asset ────────────
 
     def terrain_to_texture(self) -> dict[int, int] | None:
-        """调色板索引 → atlas 瓦片号 映射。"""
+        """palette-index → atlas-tile-number mapping."""
         return self._cached("terrain_to_texture", self._load_terrain_mapping)
 
     def atlas_tiles(self) -> np.ndarray | None:
-        """地形材质瓦片 (16, 512, 512, 4) uint8。"""
+        """Terrain Material Tiles (16, 512, 512, 4) uint8."""
         return self._cached(
             "atlas_tiles", lambda: self._load_dds_tiles(ATLAS_RELPATH))
 
     def atlas_normal_tiles(self) -> np.ndarray | None:
-        """法线贴图瓦片 (16, 512, 512, 4) uint8。"""
+        """Normal map tiles (16, 512, 512, 4) uint8."""
         return self._cached(
             "atlas_normal_tiles", lambda: self._load_dds_tiles(ATLAS_NORMAL_RELPATH))
 
     def water_palette_indices(self) -> set[int] | None:
-        """terrain.bmp 中水体 (ocean/lakes) 的调色板索引。"""
+        """Palette index for water bodies (ocean/lakes) in terrain.bmp."""
         def _load():
             path = self._abs(TERRAIN_DEF_RELPATH)
             if path is None:
@@ -186,22 +178,21 @@ class GameAssets:
                 with open(path, "r", encoding="utf-8", errors="replace") as f:
                     return parse_water_palette_indices(f.read())
             except OSError as e:
-                self.last_error = tr_pair(f"读取 {path} 失败: {e}", f"Failed to read {path}: {e}")
+                self.last_error = f"Failed to read {path}: {e}"
                 return None
         return self._cached("water_palette_indices", _load)
 
     def colormap_rgb(self) -> np.ndarray | None:
-        """vanilla 区域色调图 (H, W, 3) uint8 (alpha 通道是城市灯光遮罩, 丢弃)。
+        """vanilla area tone map (H, W, 3) uint8 (alpha channel is city lights mask, discarded).
 
-        分辨率是 vanilla 地图的一半, 只配 vanilla 地图数据使用;
-        自制地图的色调走本工具自己的 colormap 功能。
-        """
+        The resolution is half of the vanilla map, and is only used with vanilla map data;
+        The color tone of the self-made map uses this tool's own colormap function."""
         def _load():
             arr = self._read_dds(COLORMAP_RGB_RELPATH)
             return None if arr is None else arr[:, :, :3]
         return self._cached("colormap_rgb", _load)
 
-    # ─────────── 内部实现 ───────────
+    # ─────────── Internal implementation ───────────
 
     def _cached(self, key: str, loader):
         if key not in self._cache:
@@ -210,11 +201,11 @@ class GameAssets:
 
     def _abs(self, relpath: str) -> str | None:
         if self.install_dir is None:
-            self.last_error = tr_pair("未找到 HOI4 安装目录", "HOI4 installation directory was not found")
+            self.last_error = "HOI4 installation directory was not found"
             return None
         path = os.path.join(self.install_dir, relpath)
         if not os.path.isfile(path):
-            self.last_error = tr_pair(f"游戏文件不存在: {path}", f"Game file does not exist: {path}")
+            self.last_error = f"Game file does not exist: {path}"
             return None
         return path
 
@@ -226,15 +217,15 @@ class GameAssets:
             with open(path, "r", encoding="utf-8", errors="replace") as f:
                 mapping = parse_terrain_to_texture(f.read())
         except OSError as e:
-            self.last_error = tr_pair(f"读取 {path} 失败: {e}", f"Failed to read {path}: {e}")
+            self.last_error = f"Failed to read {path}: {e}"
             return None
         if not mapping:
-            self.last_error = tr_pair(f"{path} 中未找到图形地形定义", f"No graphical terrain definitions were found in {path}")
+            self.last_error = f"No graphical terrain definitions were found in {path}"
             return None
         return mapping
 
     def _read_dds(self, relpath: str) -> np.ndarray | None:
-        """读取 DDS 为 (H, W, 4) uint8, 失败返回 None。"""
+        """Read DDS as (H, W, 4) uint8, and return None on failure."""
         path = self._abs(relpath)
         if path is None:
             return None
@@ -242,8 +233,8 @@ class GameAssets:
             from PIL import Image
             with Image.open(path) as im:
                 return np.asarray(im.convert("RGBA"))
-        except Exception as e:  # PIL 解码失败种类繁多, 统一降级
-            self.last_error = tr_pair(f"解码 {path} 失败: {e}", f"Failed to decode {path}: {e}")
+        except Exception as e:  # There are many types of PIL decoding failures and they are all downgraded uniformly.
+            self.last_error = f"Failed to decode {path}: {e}"
             return None
 
     def _load_dds_tiles(self, relpath: str) -> np.ndarray | None:
@@ -251,19 +242,18 @@ class GameAssets:
         if arr is None:
             return None
         if arr.shape[0] % ATLAS_GRID or arr.shape[1] % ATLAS_GRID:
-            self.last_error = tr_pair(f"{relpath} 尺寸 {arr.shape} 不是 {ATLAS_GRID}×{ATLAS_GRID} 网格", f"{relpath} size {arr.shape} is not a {ATLAS_GRID}×{ATLAS_GRID} grid")
+            self.last_error = f"{relpath} size {arr.shape} is not a {ATLAS_GRID}×{ATLAS_GRID} grid"
             return None
         return slice_atlas(arr)
 
 
 def detect_supported_version() -> str | None:
-    """从本机游戏安装检测版本, 返回 descriptor 用的 '主.次.*' 形式。
+    """Install the detected version from the local game and return the 'major.minor.*' format used by the descriptor.
 
-    读 launcher-settings.json 的 rawVersion (如 "1.19.2.0" → "1.19.*")。
-    游戏更新后导出的 MOD 自动声明新版本, 不再因写死旧版本号被启动器
-    标成"过时"。检测不到 (没装游戏/文件格式变了) 返回 None,
-    调用方回退 data/constants.DEFAULT_SUPPORTED_VERSION。
-    """
+    Read the rawVersion of launcher-settings.json (such as "1.19.2.0" → "1.19.*").
+    Mods exported after the game is updated will automatically declare the new version and will no longer be blocked by the launcher due to hard-coding of the old version number.
+    Marked as "obsolete". Undetectable (no game installed/file format changed) Returns None,
+    The caller falls back to data/constants.DEFAULT_SUPPORTED_VERSION."""
     install = find_hoi4_install()
     if install is None:
         return None
@@ -280,18 +270,18 @@ def detect_supported_version() -> str | None:
 
 
 def resolve_supported_version() -> str:
-    """导出 MOD 声明的游戏版本: 优先本机检测, 失败回退默认常量。"""
+    """Export the game version declared by the MOD: give priority to local detection, and fall back to the default constants if it fails."""
     from data.constants import DEFAULT_SUPPORTED_VERSION
     return detect_supported_version() or DEFAULT_SUPPORTED_VERSION
 
 
-# ─────────── 进程级默认实例 (预览渲染器和预览页共享缓存) ───────────
+# ─────────── Process-level default instance (preview renderer and preview page shared cache) ───────────
 
 _default_assets: GameAssets | None = None
 
 
 def get_default_assets() -> GameAssets:
-    """取进程级默认 GameAssets, 首次调用时创建。"""
+    """Get the process-level default GameAssets, created when called for the first time."""
     global _default_assets
     if _default_assets is None:
         _default_assets = GameAssets()
@@ -299,10 +289,9 @@ def get_default_assets() -> GameAssets:
 
 
 def set_default_install_dir(path: str) -> GameAssets:
-    """用户手动选择游戏目录后重建默认实例 (旧缓存全部作废)。
+    """The user manually selects the game directory and rebuilds the default instance (all old caches are invalidated).
 
-    同时持久化到用户配置, 下次启动自动使用该目录。
-    """
+    At the same time, it is persisted to the user configuration, and the directory will be automatically used next time it is started."""
     global _default_assets
     _default_assets = GameAssets(install_dir=path)
     _save_config_game_dir(path)

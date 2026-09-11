@@ -1,4 +1,4 @@
-"""state feature 页面 — 独立 QWidget, 不依赖 ToolPanel."""
+"""state feature page — independent QWidget, does not depend on ToolPanel."""
 
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtWidgets import (
@@ -9,7 +9,7 @@ from PyQt5.QtWidgets import (
 
 from domain.managers.state import StateManager
 
-from ui.i18n import tr, tr_pair
+from ui.i18n import tr
 from ui.styles import (
     make_section as _make_section,
     _DIM, _SECTION_STYLE, _LABEL_STYLE, _DIM_LABEL_STYLE,
@@ -19,7 +19,7 @@ from ui.styles import (
 
 
 def _format_state_item(sid: int, name: str, count: int, tag: str) -> str:
-    """格式化 state list item 文本（含国家归属）。"""
+    """Format state list item text (including country affiliation)."""
     if tag:
         return tr("state_list_item_fmt").format(sid=sid, name=name, tag=tag, count=count)
     return tr("state_list_item_fmt_no_owner").format(sid=sid, name=name, count=count)
@@ -28,9 +28,9 @@ def _format_state_item(sid: int, name: str, count: int, tag: str) -> str:
 
 
 class StatePage(QWidget):
-    """州编辑页面."""
+    """State edit page."""
 
-    # 输出信号
+    # Output signal
     auto_states_requested = pyqtSignal(int)
     state_selected = pyqtSignal(int)
     state_property_changed = pyqtSignal(int, str, object)
@@ -40,12 +40,12 @@ class StatePage(QWidget):
     assign_mode_changed = pyqtSignal(bool)
     state_delete_requested = pyqtSignal(int)
     show_names_toggled = pyqtSignal(bool)
-    resplit_state_requested = pyqtSignal(int, int)  # (state_id, 目标省份数)
+    resplit_state_requested = pyqtSignal(int, int)  # (state_id, target province number)
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self._current_state_id = 0
-        # 缓存当前 state 列表数据用于搜索过滤（每次 update_state_list 覆盖）
+        # Cache current state list data for search filtering (overwritten each time update_state_list is used)
         self._state_items_cache: list[tuple[int, str, int, str]] = []
         self._search_text: str = ""
         self._init_ui()
@@ -55,7 +55,7 @@ class StatePage(QWidget):
         lay.setContentsMargins(8, 8, 8, 8)
         lay.setSpacing(10)
 
-        # ── 快速开始 ──
+        # ──Quick start──
         quick_box = _make_section(tr("state_quick_section"))
         ql = quick_box.layout()
         auto_row = QHBoxLayout()
@@ -80,13 +80,13 @@ class StatePage(QWidget):
         ql.addWidget(self._show_names_chk)
         lay.addWidget(quick_box)
 
-        # ── 手动编辑 ──
+        # ── Manual editing ──
         edit_box = _make_section(tr("state_edit_section"))
         el = edit_box.layout()
 
         self._assign_chk = QCheckBox(tr("state_assign_drag_label"))
         self._assign_chk.setChecked(False)
-        self._assign_chk.setToolTip(tr("state_assign_drag_label") + tr_pair(" — 再次点击退出", " — click again to exit"))
+        self._assign_chk.setToolTip(tr("state_assign_drag_label") + " — click again to exit")
         self._assign_chk.setStyleSheet(
             "QCheckBox { color: #e8eaed; font-size: 13px; font-weight: 600; padding: 6px; }"
             "QCheckBox:checked { color: #86efac; }"
@@ -98,7 +98,7 @@ class StatePage(QWidget):
         self._batch_btn = QPushButton(tr("state_batch_select_btn_short"))
         self._batch_btn.setCheckable(True)
         self._batch_btn.setStyleSheet(_PRIMARY_BTN_STYLE)
-        self._batch_btn.setToolTip(tr("state_batch_select_tip") + tr_pair("（再次点击退出）", " (click again to exit)"))
+        self._batch_btn.setToolTip(tr("state_batch_select_tip") + " (click again to exit)")
         self._batch_btn.toggled.connect(self._on_batch_toggled)
         batch_row.addWidget(self._batch_btn)
 
@@ -113,7 +113,7 @@ class StatePage(QWidget):
         el.addLayout(batch_row)
         lay.addWidget(edit_box)
 
-        # ── 州列表（含搜索）──
+        # ── State list (with search)──
         list_box = _make_section(tr("state_list_section"))
 
         self._state_search = QLineEdit()
@@ -129,7 +129,7 @@ class StatePage(QWidget):
         list_box.layout().addWidget(self._state_list)
         lay.addWidget(list_box)
 
-        # ── 选中州属性 ──
+        # ── Select the state attribute ──
         info_box = _make_section(tr("state_props_section"))
         il = info_box.layout()
 
@@ -171,7 +171,7 @@ class StatePage(QWidget):
         detail_btn.clicked.connect(self._on_state_detail_clicked)
         il.addWidget(detail_btn)
 
-        # 重新分割州内省份 (数量可调)
+        # Redivide the provinces within the state (the number is adjustable)
         resplit_row = QHBoxLayout()
         resplit_lbl = QLabel(tr("state_resplit_count_label"))
         resplit_lbl.setStyleSheet(_LABEL_STYLE)
@@ -188,7 +188,7 @@ class StatePage(QWidget):
         resplit_btn.clicked.connect(self._on_resplit_clicked)
         il.addWidget(resplit_btn)
 
-        # 删除当前州按钮 (危险操作, 用红色按钮 + 二次确认)
+        # Delete current state button (dangerous operation, use red button + second confirmation)
         delete_btn = QPushButton(tr("state_delete_btn"))
         delete_btn.setStyleSheet(
             "QPushButton { background: #b91c1c; color: white; padding: 6px;"
@@ -204,13 +204,13 @@ class StatePage(QWidget):
 
         lay.addStretch()
 
-    # ── 槽函数 ──
+    # ── Slot function ──
     def _on_auto_states(self) -> None:
         per_state = self._state_per_spin.value()
         self.auto_states_requested.emit(per_state)
 
     def _on_assign_toggled(self, checked: bool) -> None:
-        """分配模式切换：文字变激活态 + 通知 controller。"""
+        """Distribution mode switching: text becomes active + notification controller."""
         self._assign_chk.setText(
             tr("state_assign_drag_label_active") if checked
             else tr("state_assign_drag_label")
@@ -218,7 +218,7 @@ class StatePage(QWidget):
         self.assign_mode_changed.emit(checked)
 
     def _on_batch_toggled(self, checked: bool) -> None:
-        """框选建州切换：文字变激活态 + 通知 controller。"""
+        """Toggle the frame-selection state-creation mode and notify the controller."""
         self._batch_btn.setText(
             tr("state_batch_select_btn_short_active") if checked
             else tr("state_batch_select_btn_short")
@@ -231,7 +231,7 @@ class StatePage(QWidget):
             state_id = item.data(Qt.UserRole)
             if state_id is not None:
                 self._current_state_id = int(state_id)
-                # 重分割数量默认 = 该州当前省份数
+                # The default number of redivisions = the current number of provinces in the state
                 for sid, _name, count, _tag in self._state_items_cache:
                     if sid == state_id and count > 0:
                         self._resplit_spin.setValue(min(count, 500))
@@ -284,12 +284,12 @@ class StatePage(QWidget):
             self.state_delete_requested.emit(self._current_state_id)
 
     def _on_search_changed(self, text: str) -> None:
-        """搜索框输入 → 持久化 + 重建可见列表。"""
+        """Search box input → Persistence + Rebuild visible list."""
         self._search_text = text.strip().lower()
         self._rebuild_state_list()
 
     def _rebuild_state_list(self) -> None:
-        """根据 cache + search_text 重建可见列表项（保留 currentRow 选中）。"""
+        """Rebuild visible list items based on cache + search_text (leaving currentRow selected)."""
         self._state_list.blockSignals(True)
         prev_id = self._current_state_id
         self._state_list.clear()
@@ -305,10 +305,10 @@ class StatePage(QWidget):
                 self._state_list.setCurrentItem(item)
         self._state_list.blockSignals(False)
 
-    # ── 公共更新方法 ──
+    # ── Public update method ──
     def update_state_list(self, states) -> None:
-        """刷新 State 列表。
-        兼容旧签名 (id, name, count) 和新签名 (id, name, count, owner_tag)。"""
+        """Refresh the State list.
+        Compatible with old signatures (id, name, count) and new signatures (id, name, count, owner_tag)."""
         self._state_items_cache = []
         for it in states:
             if len(it) == 3:
@@ -320,7 +320,7 @@ class StatePage(QWidget):
         self._rebuild_state_list()
 
     def update_state_info(self, name: str, manpower: int, category: str) -> None:
-        """填充 State 属性字段"""
+        """Populate the State property field"""
         self._state_name_edit.blockSignals(True)
         self._state_name_edit.setText(name)
         self._state_name_edit.blockSignals(False)

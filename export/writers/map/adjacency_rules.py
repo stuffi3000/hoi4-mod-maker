@@ -1,11 +1,9 @@
-"""
-map/adjacency_rules.txt 写入器.
+"""map/adjacency_rules.txt writer.
 
-参考: 参考/Map modding.txt 行 504-520.
-- 必须 UTF-8 无 BOM (行 505)
-- 多个 adjacency_rule = { ... } 块, 每块独立
-- LF 换行
-"""
+Reference: Reference/Map modding.txt lines 504-520.
+- Required UTF-8 no BOM (line 505)
+- Multiple adjacency_rule = { ... } blocks, each block independent
+- LF line feed"""
 
 from __future__ import annotations
 
@@ -13,10 +11,9 @@ import os
 
 
 def write_adjacency_rules_txt(output_dir: str, rule_mgr=None) -> None:
-    """生成 map/adjacency_rules.txt.
+    """Generate map/adjacency_rules.txt.
 
-    rule_mgr: AdjacencyRuleManager 实例. None 或空时写空文件 (HOI4 接受空).
-    """
+    rule_mgr: AdjacencyRuleManager instance. Writes an empty file when None or empty (HOI4 accepts empty)."""
     d = os.path.join(output_dir, "map")
     os.makedirs(d, exist_ok=True)
     path = os.path.join(d, "adjacency_rules.txt")

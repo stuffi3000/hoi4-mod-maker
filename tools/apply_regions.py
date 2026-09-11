@@ -1,26 +1,24 @@
-"""
-把 region_annotator.html 导出的 JSON 应用到 5.hoi4proj。
+"""Apply the JSON exported by region_annotator.html to 5.hoi4proj.
 
-用法:
-    1. 把网页里"复制到剪贴板"的 JSON 存为 tools/regions.json
-       (或直接在命令行参数传路径)
+Usage:
+    1. Save the "copy to clipboard" JSON in the web page as tools/regions.json
+       (Or pass the path directly in the command line parameter)
     2. python tools/apply_regions.py [regions.json]
 
-应用规则 (每种 type 的效果):
-    mountain  → terrain palette=6, height ~=185 (mountain band 中部)
-    snow      → terrain palette=16, height ~=225
-    hills     → terrain palette=17, height ~=145
-    plains    → terrain palette=0, height ~=108 (降低突兀高度)
-    forest    → terrain palette=1, height ~=118
-    desert    → terrain palette=3, height ~=110
-    downgrade → 山地/雪山降一级 (保留大致位置), 高度下调对应量
-    sea       → tile_map=2, height=60
-    lake      → tile_map=3, height=90
+Application rules (effects for each type):
+    mountain → terrain palette=6, height ~=185 (middle of mountain band)
+    snow → terrain palette=16, height ~=225
+    hills → terrain palette=17, height ~=145
+    plains → terrain palette=0, height ~=108 (reduces abrupt height)
+    forest → terrain palette=1, height ~=118
+    desert → terrain palette=3, height ~=110
+    downgrade → Downgrade the mountain/snow mountain by one level (retaining the approximate location), and decrease the height by the corresponding amount
+    sea → tile_map=2, height=60
+    lake → tile_map=3, height=90
 
-边界羽化:
-    所有高度修改在 mask 边缘做 10 像素羽化, 避免硬切
-    (保留底线 >= SEA_LEVEL+1)
-"""
+Border feathering:
+    All height modifications are feathered by 10 pixels on the edges of the mask to avoid hard cuts
+    (keep bottom line >= SEA_LEVEL+1)"""
 from __future__ import annotations
 
 import json
@@ -34,10 +32,10 @@ import numpy as np
 from scipy.ndimage import binary_dilation, distance_transform_edt
 
 HOME = os.path.expanduser("~")
-PROJECT_PATH = os.path.join(HOME, "Desktop", "欧若拉", "5.hoi4proj")
+PROJECT_PATH = os.path.join(HOME, "Desktop", "Aurora", "5.hoi4proj")
 BACKUP_PATH = PROJECT_PATH + ".bak"
 SEA_LEVEL = 95
-FEATHER = 10   # 像素, 高度渐变宽度
+FEATHER = 10   # pixels, height gradient width
 
 # type → (palette, target_height, is_land)
 TYPE_SPECS: dict[str, tuple[int, int, bool]] = {
@@ -47,14 +45,14 @@ TYPE_SPECS: dict[str, tuple[int, int, bool]] = {
     "plains":   (0,   108, True),
     "forest":   (1,   118, True),
     "desert":   (3,   110, True),
-    # sea/lake 特殊处理
+    # sea/lake special treatment
     "sea":      (15,  60,  False),
     "lake":     (14,  90,  False),
 }
 
 
 def polygon_mask(points: list[list[float]], h: int, w: int) -> np.ndarray:
-    """射线法填充多边形 -> bool mask."""
+    """Ray filled polygon -> bool mask."""
     if len(points) < 3:
         return np.zeros((h, w), dtype=bool)
     ys = np.array([p[1] for p in points], dtype=np.float32)
@@ -97,7 +95,7 @@ def line_mask(
     w: int,
     width: int,
 ) -> np.ndarray:
-    """折线 + 膨胀 = 山脊 mask."""
+    """Polyline + Dilation = Ridge mask."""
     if len(points) < 2:
         return np.zeros((h, w), dtype=bool)
     mask = np.zeros((h, w), dtype=bool)
@@ -105,18 +103,18 @@ def line_mask(
         x0, y0 = int(points[i][0]), int(points[i][1])
         x1, y1 = int(points[i + 1][0]), int(points[i + 1][1])
         _bres(mask, y0, x0, y1, x1)
-    # 膨胀半径 = width/2
+    # Expansion radius = width/2
     from scipy.ndimage import binary_dilation
     from scipy.ndimage import generate_binary_structure
     r = max(1, width // 2)
-    # 用圆形结构元素
+    # Use circular structural elements
     yy, xx = np.ogrid[-r:r + 1, -r:r + 1]
     struct = (yy * yy + xx * xx <= r * r)
     return binary_dilation(mask, structure=struct)
 
 
 def _bres(mask: np.ndarray, y0: int, x0: int, y1: int, x1: int) -> None:
-    """Bresenham 画线."""
+    """Bresenham draws the line."""
     h, w = mask.shape
     dx = abs(x1 - x0); dy = abs(y1 - y0)
     sx = 1 if x0 < x1 else -1
@@ -141,24 +139,24 @@ def apply_region(
     mask: np.ndarray,
     type_name: str,
 ) -> None:
-    """按 type 把 mask 区域改为对应地形。原地修改。"""
+    """Press type to change the mask area to the corresponding terrain. Modify in place."""
     if not np.any(mask):
         return
 
     if type_name == "downgrade":
-        # 特殊: 识别山地/雪山并降一级
+        # Special: Recognize mountains/snowy mountains and downgrade one level
         snow_mask = mask & (terrain == 16)
         mountain_mask = mask & np.isin(terrain, [6, 10, 11, 18, 20, 27, 31])
         hills_mask = mask & np.isin(terrain, [17, 2, 8])
-        # 雪→山, 山→丘, 丘→平
+        # snow→mountain, mountain→hill, hill→flat
         terrain[snow_mask] = 6
         terrain[mountain_mask] = 17
         terrain[hills_mask] = 0
-        # 高度同步下降 (有羽化)
+        # Altitude synchronized descent (with feathering)
         _lower_height_feathered(height, snow_mask, drop=45)
         _lower_height_feathered(height, mountain_mask, drop=35)
         _lower_height_feathered(height, hills_mask, drop=30)
-        # 守陆地底线
+        # Keep the bottom line on land
         land_in = mask & (tile == 1)
         np.maximum(height, SEA_LEVEL + 1, out=height, where=land_in)
         return
@@ -170,14 +168,14 @@ def apply_region(
     palette, target_h, is_land = spec
 
     if is_land:
-        # 把 mask 内原本是海的改成陆地
+        # Change the sea in the mask to land
         tile[mask & (tile != 1)] = 1
         terrain[mask] = palette
         _set_height_feathered(height, mask, target_h, tile_land_only=True, tile=tile)
-        # 守底线
+        # Keep the bottom line
         np.maximum(height, SEA_LEVEL + 1, out=height, where=mask)
     else:
-        # 海/湖: 改 tile, 高度压低
+        # Sea/Lake: Change tile, lower height
         if type_name == "sea":
             tile[mask] = 2
             terrain[mask] = 15
@@ -192,7 +190,7 @@ def _lower_height_feathered(
     mask: np.ndarray,
     drop: int,
 ) -> None:
-    """对 mask 区域的高度 -= drop, 边缘 FEATHER 像素羽化. 不低于海平面."""
+    """Height of the mask area -= drop, edge FEATHER pixel feathering. Not lower than sea level."""
     if not np.any(mask):
         return
     dist_in = distance_transform_edt(mask).astype(np.float32)
@@ -209,11 +207,11 @@ def _set_height_feathered(
     tile_land_only: bool,
     tile: np.ndarray,
 ) -> None:
-    """把 mask 内高度向 target 平滑过渡. 边缘 FEATHER 像素羽化保持原始高度."""
+    """Smoothly transition the inner height of the mask to the target. Edge FEATHER pixel feathering maintains the original height."""
     if not np.any(mask):
         return
     dist_in = distance_transform_edt(mask).astype(np.float32)
-    w = np.minimum(dist_in / FEATHER, 1.0)  # mask 内: 0 边缘, 1 中心
+    w = np.minimum(dist_in / FEATHER, 1.0)  # Inside mask: 0 edge, 1 center
     orig = height.astype(np.float32)
     new_h = orig * (1 - w) + float(target) * w
     new_h = np.clip(new_h, 0, 255)
@@ -223,7 +221,7 @@ def _set_height_feathered(
 
 
 def main() -> None:
-    # 路径解析
+    # path resolution
     if len(sys.argv) > 1:
         json_path = sys.argv[1]
     else:
@@ -232,7 +230,7 @@ def main() -> None:
         )
     assert os.path.exists(json_path), f"not found: {json_path}"
 
-    # 备份
+    # backup
     if not os.path.exists(BACKUP_PATH):
         shutil.copy2(PROJECT_PATH, BACKUP_PATH)
         print(f"Backup created: {BACKUP_PATH}")
@@ -244,7 +242,7 @@ def main() -> None:
     regions = data.get("regions", [])
     print(f"Loaded {len(regions)} regions from {json_path}")
 
-    # 读 project
+    # Read project
     entries: dict[str, bytes] = {}
     with ZipFile(PROJECT_PATH, "r") as zf:
         for name in zf.namelist():
@@ -255,7 +253,7 @@ def main() -> None:
     height = np.load(BytesIO(entries["height_map.npy"])).copy()
     h, w = tile.shape
 
-    # 应用每个 region
+    # Apply each region
     for i, r in enumerate(regions):
         type_name = r.get("type")
         mode = r.get("mode", "polygon")
@@ -269,7 +267,7 @@ def main() -> None:
               f"→ {n:,d} px")
         apply_region(tile, terrain, height, mask, type_name)
 
-    # 写回
+    # write back
     entries["tile_map.npy"] = _np_to_bytes(tile)
     entries["terrain_map.npy"] = _np_to_bytes(terrain)
     entries["height_map.npy"] = _np_to_bytes(height)

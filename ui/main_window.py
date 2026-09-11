@@ -1,2 +1,2 @@
-"""兼容层 — 旧代码通过 ui.main_window 引用 MainWindow。"""
+"""Compatibility layer - legacy code references MainWindow via ui.main_window."""
 from views.main_window import MainWindow

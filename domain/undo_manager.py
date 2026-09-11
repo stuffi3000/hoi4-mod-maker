@@ -1,13 +1,11 @@
-"""
-撤销/重做管理器 — 基于压缩快照的命令历史
-支持对 numpy 数组的局部差异存储
-"""
+"""Undo/Redo Manager — Command history based on compressed snapshots
+Support for local differential storage of numpy arrays"""
 import zlib
 import numpy as np
 
 
 class UndoStep:
-    """一个撤销步骤，存储操作前的压缩数据"""
+    """An undo step that stores the compressed data before the operation"""
     __slots__ = ("description", "snapshots")
 
     def __init__(self, description: str, snapshots: list[tuple[str, bytes, tuple]]):
@@ -19,13 +17,13 @@ class UndoStep:
 
 
 class UndoManager:
-    """管理撤销/重做栈"""
+    """Manage undo/redo stack"""
 
     def __init__(self, max_steps: int = 30):
         self._max_steps = max_steps
         self._undo_stack: list[UndoStep] = []
         self._redo_stack: list[UndoStep] = []
-        # 当前正在记录的操作（mousePress 到 mouseRelease）
+        # The operation currently being logged (mousePress to mouseRelease)
         self._pending: dict[str, tuple[bytes, tuple]] | None = None
         self._pending_desc: str = ""
 
@@ -38,7 +36,7 @@ class UndoManager:
         return len(self._redo_stack) > 0
 
     def begin_stroke(self, description: str, arrays: dict[str, np.ndarray]) -> None:
-        """开始一次画笔操作，记录操作前的快照"""
+        """Start a brush operation and record a snapshot before the operation"""
         self._pending_desc = description
         self._pending = {}
         for name, arr in arrays.items():
@@ -46,11 +44,11 @@ class UndoManager:
             self._pending[name] = (compressed, (arr.shape, arr.dtype))
 
     def end_stroke(self, arrays: dict[str, np.ndarray]) -> None:
-        """结束画笔操作，比较并保存差异"""
+        """End the brush operation, compare and save the differences"""
         if self._pending is None:
             return
 
-        # 检查是否有实际变化
+        # Check if there are any actual changes
         changed = False
         for name, arr in arrays.items():
             if name in self._pending:
@@ -75,7 +73,7 @@ class UndoManager:
         self._pending = None
 
     def push_snapshot(self, description: str, arrays: dict[str, np.ndarray]) -> None:
-        """直接压入一个完整快照（用于非画笔操作，如合并/切割/填充）"""
+        """Push directly into a full snapshot (for non-brush operations like merge/cut/fill)"""
         snapshots = []
         for name, arr in arrays.items():
             compressed = zlib.compress(arr.tobytes(), level=1)
@@ -88,17 +86,15 @@ class UndoManager:
         self._redo_stack.clear()
 
     def undo(self, current_arrays: dict[str, np.ndarray]) -> dict[str, np.ndarray] | None:
-        """
-        撤销一步。
-        current_arrays: 当前各数组的引用（用于保存到 redo 栈）
-        返回恢复后的数组字典，或 None（无可撤销）
-        """
+        """Undo a step.
+        current_arrays: Reference to each current array (used to save to redo stack)
+        Returns the restored array dictionary, or None (no undo)"""
         if not self._undo_stack:
             return None
 
         step = self._undo_stack.pop()
 
-        # 保存当前状态到 redo 栈
+        # Save current state to redo stack
         redo_snapshots = []
         for name, _, _ in step.snapshots:
             if name in current_arrays:
@@ -107,7 +103,7 @@ class UndoManager:
                 redo_snapshots.append((name, compressed, (arr.shape, arr.dtype)))
         self._redo_stack.append(UndoStep(step.description, redo_snapshots))
 
-        # 恢复旧数据
+        # Restore old data
         result = {}
         for name, compressed, (shape, dtype) in step.snapshots:
             data = zlib.decompress(compressed)
@@ -115,16 +111,14 @@ class UndoManager:
         return result
 
     def redo(self, current_arrays: dict[str, np.ndarray]) -> dict[str, np.ndarray] | None:
-        """
-        重做一步。
-        返回恢复后的数组字典，或 None（无可重做）
-        """
+        """Redo the step.
+        Returns the restored array dictionary, or None (no redo)"""
         if not self._redo_stack:
             return None
 
         step = self._redo_stack.pop()
 
-        # 保存当前状态到 undo 栈
+        # Save current state to undo stack
         undo_snapshots = []
         for name, _, _ in step.snapshots:
             if name in current_arrays:
@@ -133,7 +127,7 @@ class UndoManager:
                 undo_snapshots.append((name, compressed, (arr.shape, arr.dtype)))
         self._undo_stack.append(UndoStep(step.description, undo_snapshots))
 
-        # 恢复数据
+        # Recover data
         result = {}
         for name, compressed, (shape, dtype) in step.snapshots:
             data = zlib.decompress(compressed)
@@ -141,7 +135,7 @@ class UndoManager:
         return result
 
     def clear(self) -> None:
-        """清空所有历史"""
+        """Clear all history"""
         self._undo_stack.clear()
         self._redo_stack.clear()
         self._pending = None

@@ -1,18 +1,16 @@
-"""
-Adjacency 管理器 — 省份间特殊连接关系.
+"""Adjacency manager — special connections between provinces.
 
-HOI4 用 map/adjacencies.csv 定义三种关系:
-- sea: 海峡/运河 (两个省份跨海相连)
-- impassable: 不可通行 (屏蔽直接相邻的边界)
-- (未明确 type): 默认 sea
+HOI4 uses map/adjacencies.csv to define three relationships:
+- sea: strait/canal (two provinces are connected across the sea)
+- impassable: impassable (blocking directly adjacent borders)
+- (unspecified type): default sea
 
-参考: 参考/Map modding.txt 行 485-502
+Reference: Reference/Map modding.txt lines 485-502
 
-每行 10 字段:
+10 fields per line:
 Start;End;Type;Through;start_x;start_y;stop_x;stop_y;rule;Comment
 
-末尾必须有哨兵行: -1;-1;-1;-1;-1;-1;-1;-1;-1 (行 502)
-"""
+There must be a sentinel line at the end: -1;-1;-1;-1;-1;-1;-1;-1;-1;-1 (line 502)"""
 
 from __future__ import annotations
 
@@ -25,23 +23,22 @@ AdjacencyType = Literal["sea", "impassable"]
 
 @dataclass
 class AdjacencyEntry:
-    """一条邻接关系."""
+    """An adjacency relationship."""
     from_id: int
     to_id: int
     type: AdjacencyType = "sea"
-    through_id: int = -1  # sea 类型才用, impassable 保持 -1
+    through_id: int = -1  # Only used for sea type, impassable remains -1
     start_x: int = -1
     start_y: int = -1
     stop_x: int = -1
     stop_y: int = -1
-    rule_name: str = ""  # adjacency_rules.txt 里定义的 rule name, 空=无规则
+    rule_name: str = ""  # rule name defined in adjacency_rules.txt, empty = no rule
     comment: str = ""
 
     def to_csv_line(self) -> str:
-        """序列化为 CSV 行 (10 字段, ; 分隔).
+        """Serialize to CSV rows (10 fields, ; separated).
 
-        注意: impassable 类型必须把 rule/坐标全置 -1 (行 497).
-        """
+        Note: impassable types must have rule/coordinates set to -1 (line 497)."""
         if self.type == "impassable":
             return (
                 f"{self.from_id};{self.to_id};impassable;-1;"
@@ -55,7 +52,7 @@ class AdjacencyEntry:
 
 
 class AdjacencyManager:
-    """管理所有 adjacency 条目. 按 (from,to) 去重."""
+    """Manage all adjacency entries. Press (from,to) to remove duplicates."""
 
     def __init__(self) -> None:
         self._entries: list[AdjacencyEntry] = []
@@ -63,12 +60,12 @@ class AdjacencyManager:
     # ─────────── CRUD ───────────
 
     def add(self, entry: AdjacencyEntry) -> None:
-        """添加. 重复 (from,to,type) 会覆盖旧的."""
+        """Added. Repeating (from,to,type) will overwrite the old one."""
         self.remove(entry.from_id, entry.to_id, entry.type)
         self._entries.append(entry)
 
     def remove(self, from_id: int, to_id: int, type: AdjacencyType | None = None) -> bool:
-        """删除指定条目. type=None 表示删除所有匹配的 (from,to). 返回是否删掉."""
+        """Delete the specified entry. type=None means to delete all matching (from,to). Returns whether to delete it."""
         before = len(self._entries)
         if type is None:
             self._entries = [
@@ -94,16 +91,16 @@ class AdjacencyManager:
         self._entries = []
 
     def find_by_province(self, province_id: int) -> list[AdjacencyEntry]:
-        """返回涉及指定省份的所有 adjacency (无论起点终点)."""
+        """Returns all adjacencies involving the specified province (regardless of origin and destination)."""
         return [
             e for e in self._entries
             if e.from_id == province_id or e.to_id == province_id
         ]
 
-    # ─────────── 数据同步 (供 compact_with_references) ───────────
+    # ─────────── Data synchronization (for compact_with_references) ───────────
 
     def drop_provinces(self, pids: set[int]) -> None:
-        """删除引用了被删省份的 adjacency."""
+        """Remove adjacency that references the deleted province."""
         self._entries = [
             e for e in self._entries
             if e.from_id not in pids
@@ -112,13 +109,13 @@ class AdjacencyManager:
         ]
 
     def remap_provinces(self, old_to_new: dict[int, int]) -> None:
-        """按旧→新 ID 映射重写."""
+        """Rewrite by old→new ID mapping."""
         new_entries: list[AdjacencyEntry] = []
         for e in self._entries:
             new_from = old_to_new.get(e.from_id)
             new_to = old_to_new.get(e.to_id)
             if new_from is None or new_to is None:
-                continue  # 任一端被删就丢弃
+                continue  # If either end is deleted, discard it.
             new_through = old_to_new.get(e.through_id, e.through_id) if e.through_id >= 0 else -1
             new_entries.append(
                 AdjacencyEntry(
@@ -134,7 +131,7 @@ class AdjacencyManager:
             )
         self._entries = new_entries
 
-    # ─────────── 序列化 ───────────
+    # ─────────── Serialization ───────────
 
     def to_dict(self) -> dict:
         return {

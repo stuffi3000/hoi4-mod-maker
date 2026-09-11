@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>HOI4 地形区域标注器</title>
+<title>HOI4 Terrain area annotator</title>
 <style>
 * { box-sizing: border-box; }
 body { font-family: sans-serif; margin: 10px; background: #222; color: #ddd; }
@@ -23,12 +23,12 @@ input[type=number] { width: 60px; padding: 3px; background: #333; color: #eee; b
 }
 .stage {
   position: relative;
-  /* transform: scale() 由 JS 控制 */
+  /* transform: scale() byJS control*/
   transform-origin: 0 0;
 }
 .stage img, .stage canvas { position: absolute; top: 0; left: 0; display: block; }
-.stage img { z-index: 0; pointer-events: none; }  /* 背景图, 不接收事件 */
-.stage canvas { z-index: 1; cursor: crosshair; }  /* 上层 canvas 接收点击 */
+.stage img { z-index: 0; pointer-events: none; }  /* Background image, Don't receive events*/
+.stage canvas { z-index: 1; cursor: crosshair; }  /* upper levelcanvas receive clicks*/
 .panel { display: flex; gap: 12px; }
 .side { width: 360px; flex-shrink: 0; background: #2a2a2a; padding: 10px; border-radius: 6px; max-height: calc(100vh - 160px); overflow-y: auto; }
 .region { background: #333; padding: 6px; margin: 4px 0; border-radius: 4px; font-size: 12px; display: flex; justify-content: space-between; align-items: center; gap: 6px; }
@@ -42,40 +42,40 @@ kbd { background: #444; padding: 1px 5px; border-radius: 3px; font-family: monos
 </head>
 <body>
 
-<h1>HOI4 地形区域标注器</h1>
+<h1>HOI4 Terrain area annotator</h1>
 
 <div class="toolbar">
-  <span style="color:#aaa">笔刷：</span>
-  <button data-type="mountain" class="type-btn" style="background:#7C877D">山地</button>
-  <button data-type="snow" class="type-btn" style="background:#E0E0E8; color:#000">雪山</button>
-  <button data-type="hills" class="type-btn" style="background:#B8AA46; color:#000">丘陵</button>
-  <button data-type="plains" class="type-btn active" style="background:#5AAA50">平原</button>
-  <button data-type="forest" class="type-btn" style="background:#396B35">森林</button>
-  <button data-type="desert" class="type-btn" style="background:#C07E3A">沙漠</button>
-  <button data-type="downgrade" class="type-btn" style="background:#666">降级</button>
-  <button data-type="sea" class="type-btn" style="background:#2850A0">海洋</button>
-  <button data-type="lake" class="type-btn" style="background:#6080B0">湖泊</button>
+  <span style="color:#aaa">Brushes:</span>
+  <button data-type="mountain" class="type-btn" style="background:#7C877D">Mountain</button>
+  <button data-type="snow" class="type-btn" style="background:#E0E0E8; color:#000">snow mountain</button>
+  <button data-type="hills" class="type-btn" style="background:#B8AA46; color:#000">hills</button>
+  <button data-type="plains" class="type-btn active" style="background:#5AAA50">plain</button>
+  <button data-type="forest" class="type-btn" style="background:#396B35">forest</button>
+  <button data-type="desert" class="type-btn" style="background:#C07E3A">desert</button>
+  <button data-type="downgrade" class="type-btn" style="background:#666">Downgrade</button>
+  <button data-type="sea" class="type-btn" style="background:#2850A0">ocean</button>
+  <button data-type="lake" class="type-btn" style="background:#6080B0">lake</button>
 </div>
 
 <div class="toolbar">
-  <span style="color:#aaa">画法：</span>
-  <button id="mode-polygon" class="mode-btn active">闭合多边形</button>
-  <button id="mode-line" class="mode-btn">线段（→山脊）</button>
-  <label style="font-size:12px">线宽: <input type="number" id="line-width" value="80" min="10" max="400">px</label>
-  <span style="margin-left:10px; color:#aaa">|  缩放：</span>
+  <span style="color:#aaa">Drawing method:</span>
+  <button id="mode-polygon" class="mode-btn active">closed polygon</button>
+  <button id="mode-line" class="mode-btn">line segment (→ridge)</button>
+  <label style="font-size:12px">Line width: <input type="number" id="line-width" value="80" min="10" max="400">px</label>
+  <span style="margin-left:10px; color:#aaa">|  Zoom:</span>
   <button id="zoom-out">−</button>
   <span id="zoom-label" style="color:#9f9; min-width:40px; text-align:center">100%</span>
   <button id="zoom-in">+</button>
-  <button id="zoom-reset">重置</button>
+  <button id="zoom-reset">reset</button>
   <span style="margin-left:10px; color:#aaa">|</span>
-  <button id="undo-pt">撤销点</button>
-  <button id="finish">完成当前 (Enter)</button>
-  <button id="cancel">取消 (Esc)</button>
+  <button id="undo-pt">undo point</button>
+  <button id="finish">Complete the current(Enter)</button>
+  <button id="cancel">Cancel(Esc)</button>
 </div>
 
 <div class="hint">
-  👉 <kbd>左键</kbd>加点 · <kbd>Enter</kbd>闭合 · <kbd>Esc</kbd>取消 · <kbd>Ctrl+Z</kbd>撤销点 ·
-  <kbd>Ctrl+滚轮</kbd>缩放 · 滚动条拖动查看
+  👉 <kbd>left click</kbd>Add some points· <kbd>Enter</kbd>closed· <kbd>Esc</kbd>Cancel· <kbd>Ctrl+Z</kbd>undo point·
+  <kbd>Ctrl+roller</kbd>Zoom· Drag the scroll bar to view
 </div>
 
 <div class="panel">
@@ -86,28 +86,28 @@ kbd { background: #444; padding: 1px 5px; border-radius: 3px; font-family: monos
     </div>
   </div>
   <div class="side">
-    <div class="status" id="status">就绪. 点一下地图试试.</div>
-    <h3 style="margin:8px 0 4px 0;">已标记区域 (<span id="count">0</span>)</h3>
+    <div class="status" id="status">ready. Click on the map to try.</div>
+    <h3 style="margin:8px 0 4px 0;">marked area(<span id="count">0</span>)</h3>
     <div id="regions"></div>
     <hr>
-    <h3 style="margin:8px 0;">导出 JSON</h3>
-    <button id="copy-json">复制到剪贴板</button>
-    <button id="clear-all" class="danger">清空全部</button>
+    <h3 style="margin:8px 0;">ExportJSON</h3>
+    <button id="copy-json">copy to clipboard</button>
+    <button id="clear-all" class="danger">Clear all</button>
     <textarea id="json-out" readonly></textarea>
     <hr>
-    <h3 style="margin:8px 0;">用法</h3>
+    <h3 style="margin:8px 0;">Usage</h3>
     <div class="hint">
-      1. 选笔刷类型<br>
-      2. 在地图上点几个点<br>
-      3. <kbd>Enter</kbd> 闭合<br>
-      4. 点"复制到剪贴板"<br>
-      5. 粘贴给 Claude
+      1. Select brush type<br>
+      2. Click a few points on the map<br>
+      3. <kbd>Enter</kbd> closed<br>
+      4. point"copy to clipboard"<br>
+      5. Paste toClaude
     </div>
   </div>
 </div>
 
 <script>
-const SCALE = 4; // 预览图是真图 1/4
+const SCALE = 4; // The preview picture is the real picture1/4
 const canvas = document.getElementById('canvas');
 const stage = document.getElementById('stage');
 const stageWrap = document.getElementById('stage-wrap');
@@ -195,7 +195,7 @@ function updateSidebar() {
         <span class="swatch" style="background:${style.stroke}"></span>
         #${i + 1} ${r.type} (${r.mode}, ${r.points.length}pt)
       </span>
-      <button data-idx="${i}" class="del-btn danger">删</button>
+      <button data-idx="${i}" class="del-btn danger">delete</button>
     `;
     list.appendChild(div);
   }
@@ -212,29 +212,29 @@ function updateSidebar() {
   });
 }
 
-// —— 点击: 用 offsetX/Y 而不是 clientX/Y, 避免缩放/滚动问题 ——
+// —— Click: useoffsetX/Y instead ofclientX/Y, avoid zoom/scrolling problem——
 canvas.addEventListener('click', (e) => {
-  // offsetX/Y 是相对 canvas 的逻辑坐标 (不受 CSS scale 影响), 已经是 canvas 的 1408x512 坐标系
+  // offsetX/Y It's relativecanvas the logical coordinates of(Not subject toCSS scale influence), Alreadycanvas of1408x512 coordinate system
   const rect = canvas.getBoundingClientRect();
-  // rect 的宽高是视觉尺寸 (1408 * zoom), canvas 内部坐标是 1408
+  // rect The width and height are the visual dimensions of(1408 * zoom), canvas The internal coordinates are1408
   const cx = (e.clientX - rect.left) / rect.width * canvas.width;
   const cy = (e.clientY - rect.top) / rect.height * canvas.height;
-  // 转真图坐标
+  // Convert real map coordinates
   const x = Math.round(cx * SCALE);
   const y = Math.round(cy * SCALE);
   currentPoints.push([x, y]);
-  statusEl.textContent = `加点: (${x}, ${y})  当前 ${currentPoints.length} 点`;
+  statusEl.textContent = `Add some points: (${x}, ${y})  current${currentPoints.length} point`;
   render();
 });
 
 function finishCurrent() {
   if (currentPoints.length === 0) {
-    statusEl.textContent = '没有点可以闭合';
+    statusEl.textContent = 'There is no point to close';
     return;
   }
   const minPts = currentMode === 'line' ? 2 : 3;
   if (currentPoints.length < minPts) {
-    statusEl.textContent = `至少 ${minPts} 个点 (当前 ${currentPoints.length})`;
+    statusEl.textContent = `at least${minPts} point(current${currentPoints.length})`;
     return;
   }
   const region = {
@@ -246,24 +246,24 @@ function finishCurrent() {
     region.width = parseInt(document.getElementById('line-width').value);
   }
   regions.push(region);
-  statusEl.textContent = `✓ 完成 ${currentType} 区域 (${currentPoints.length}点)`;
+  statusEl.textContent = `✓ Complete${currentType} area(${currentPoints.length}point)`;
   currentPoints = [];
   render();
 }
 
 function cancelCurrent() {
   currentPoints = [];
-  statusEl.textContent = '已取消当前';
+  statusEl.textContent = 'Canceled current';
   render();
 }
 
-// 类型/模式按钮
+// Type/mode button
 document.querySelectorAll('.type-btn').forEach(btn => {
   btn.onclick = () => {
     document.querySelectorAll('.type-btn').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
     currentType = btn.dataset.type;
-    statusEl.textContent = `笔刷: ${currentType}`;
+    statusEl.textContent = `brush: ${currentType}`;
   };
 });
 document.querySelectorAll('.mode-btn').forEach(btn => {
@@ -271,7 +271,7 @@ document.querySelectorAll('.mode-btn').forEach(btn => {
     document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
     currentMode = btn.id === 'mode-line' ? 'line' : 'polygon';
-    statusEl.textContent = `模式: ${currentMode}`;
+    statusEl.textContent = `mode: ${currentMode}`;
   };
 });
 
@@ -280,19 +280,19 @@ document.getElementById('cancel').onclick = cancelCurrent;
 document.getElementById('undo-pt').onclick = () => {
   currentPoints.pop();
   render();
-  statusEl.textContent = `撤销, 剩 ${currentPoints.length} 点`;
+  statusEl.textContent = `Cancel, left${currentPoints.length} point`;
 };
 document.getElementById('clear-all').onclick = () => {
-  if (confirm('清空所有标记?')) { regions = []; currentPoints = []; render(); }
+  if (confirm('Clear all markers?')) { regions = []; currentPoints = []; render(); }
 };
 document.getElementById('copy-json').onclick = () => {
   const ta = document.getElementById('json-out');
   ta.select();
   document.execCommand('copy');
-  statusEl.textContent = '✓ 已复制到剪贴板';
+  statusEl.textContent = '✓ Copied to clipboard';
 };
 
-// —— 缩放 ——
+// —— Zoom——
 function setZoom(z) {
   zoom = Math.max(0.25, Math.min(8, z));
   stage.style.transform = `scale(${zoom})`;
@@ -300,14 +300,14 @@ function setZoom(z) {
   stage.style.height = `${512 * zoom}px`;
   document.getElementById('zoom-label').textContent = `${Math.round(zoom * 100)}%`;
 }
-// 注意: transform scale 会让子元素的 offset/rect 跟着变, 上面点击处理已用 rect.width 换算, 不会错位
+// Note: transform scale will allow child elements tooffset/rect Follow the changes, The above click processing has been usedrect.width Conversion, Will not be misplaced
 function setZoomKeepSize(z) {
-  // 改为改 stage 本身的尺寸(不用 transform, 简单)
+  // Change tostage own size(No needtransform, simple)
   zoom = Math.max(0.25, Math.min(8, z));
   stage.style.transform = '';
   stage.style.width = `${1408 * zoom}px`;
   stage.style.height = `${512 * zoom}px`;
-  // 子元素 img/canvas 用 width/height 跟随
+  // child elementimg/canvas usewidth/height follow
   const img = document.getElementById('preview');
   img.style.width = `${1408 * zoom}px`;
   img.style.height = `${512 * zoom}px`;
@@ -318,7 +318,7 @@ function setZoomKeepSize(z) {
 document.getElementById('zoom-in').onclick = () => setZoomKeepSize(zoom * 1.4);
 document.getElementById('zoom-out').onclick = () => setZoomKeepSize(zoom / 1.4);
 document.getElementById('zoom-reset').onclick = () => setZoomKeepSize(1.0);
-// Ctrl+滚轮
+// Ctrl+roller
 stageWrap.addEventListener('wheel', (e) => {
   if (e.ctrlKey) {
     e.preventDefault();
@@ -326,7 +326,7 @@ stageWrap.addEventListener('wheel', (e) => {
   }
 }, { passive: false });
 
-// 键盘
+// keyboard
 window.addEventListener('keydown', (e) => {
   if (document.activeElement.tagName === 'INPUT' ||
       document.activeElement.tagName === 'TEXTAREA') return;
@@ -341,7 +341,7 @@ window.addEventListener('keydown', (e) => {
 
 setZoomKeepSize(1.0);
 render();
-statusEl.textContent = '就绪. 点一下地图加点, Enter 闭合.';
+statusEl.textContent = 'ready. Click on the map to add points, Enter closed.';
 </script>
 </body>
 </html>

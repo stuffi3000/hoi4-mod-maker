@@ -1,6 +1,6 @@
-# PyInstaller spec — HOI4 MOD 制作工具打包配置.
-# 用法: pyinstaller hoi4_map_maker.spec
-# 产物: dist/HOI4MapMaker/HOI4MapMaker.exe
+# PyInstaller spec — package configuration for the HOI4 MOD creation tool.
+# Usage: pyinstaller hoi4_map_maker.spec
+# Output: dist/HOI4MapMaker/HOI4MapMaker.exe
 
 # -*- mode: python ; coding: utf-8 -*-
 
@@ -10,8 +10,8 @@ from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
 block_cipher = None
 
-# 动态扫描 ui/i18n/<lang>/*.py, 自动生成 hiddenimports
-# 社区加新语言只要放 ui/i18n/<lang>/ 文件夹, 重打包自动识别, 不用改这个 spec
+# Scan ui/i18n/<lang>/*.py dynamically and generate hidden imports.
+# The English catalog is discovered automatically when the package is rebuilt.
 _I18N_DIR = Path('ui/i18n')
 _i18n_hiddenimports = [
     f'ui.i18n.{p.parent.name}.{p.stem}'
@@ -27,21 +27,21 @@ a = Analysis(
     datas=[
         ('data/atlas_tiles', 'data/atlas_tiles'),
         ('ui/i18n', 'ui/i18n'),
-        # qdarktheme 内部 .qss 模板/.svg 图标资源, 不显式列出运行时找不到
+        # qdarktheme's internal .qss templates and .svg icons are needed at runtime.
         *collect_data_files('qdarktheme'),
-        # resources/ (图标等) 是未入库的本地目录, 丢失时不挡打包 —
-        # 程序运行时不读它, 只影响 exe 图标 (icon= 行自带存在性判断)
+        # resources/ contains local assets that are not committed; its absence
+        # should not block packaging because it only affects the executable icon.
         *([('resources', 'resources')] if os.path.exists('resources') else []),
     ],
     hiddenimports=[
-        # features 全部动态加载 (canvas._resolve_renderer 用 importlib 按字符串
-        # import), PyInstaller 静态分析抓不到 → 自动收集整个包, 加新 feature
-        # 不用改 spec。v1.3.2 曾因手工白名单漏掉 strategic_region/continent/
-        # province_terrain/preview 的 renderer 导致 exe 切换这些模式必崩。
+        # Features are loaded dynamically through importlib, so PyInstaller's
+        # static analysis cannot discover them. Collect the whole package so new
+        # features do not require another allowlist entry.
         *collect_submodules('features'),
         'scipy.ndimage',
         'scipy.spatial',
-        # 包名 pyqtdarktheme != 模块名 qdarktheme, PyInstaller 静态分析在某些环境抓不到, 显式声明
+        # The distribution is named pyqtdarktheme but the import is qdarktheme;
+        # declare the runtime module explicitly for PyInstaller.
         'qdarktheme',
         *_i18n_hiddenimports,
     ],
@@ -49,8 +49,8 @@ a = Analysis(
     hooksconfig={},
     runtime_hooks=[],
     excludes=[
-        # 本项目只用 PyQt5 — 环境里混进其他 Qt 绑定会让 PyInstaller 拒绝打包
-        # (2026-07-04: 3.10 环境被某依赖捎带装了 PySide6, 必须显式排除)
+        # The project uses PyQt5 only. Exclude other Qt bindings so PyInstaller
+        # does not bundle conflicting frameworks.
         'PySide6', 'PySide2', 'PyQt6', 'qt_material',
         'pytest', 'pytest_qt', 'tests',
         'torch', 'torchvision', 'torchaudio',
@@ -83,7 +83,7 @@ exe = EXE(
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
-    console=False,     # 发布版不显示控制台
+    console=False,     # The release executable does not display a console.
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,

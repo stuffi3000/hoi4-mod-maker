@@ -1,7 +1,6 @@
-"""ProvincialTerrainController — 只改 province 的 gameplay terrain（不动视觉/高度）。
+"""ProvincialTerrainController — Only changes the province's gameplay terrain (no visual/height changes).
 
-复用 PaintTerrainCommand（已支持只传 provincial_terrain_changes）。
-"""
+Reuse PaintTerrainCommand (supported passing only provincial_terrain_changes)."""
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
@@ -18,16 +17,15 @@ if TYPE_CHECKING:
 
 
 class ProvincialTerrainController(BaseController):
-    """点 province → 改它的 provincial_terrain dict（不动 terrain.bmp / height_map）。
+    """Click province → change its provincial_terrain dict (do not change terrain.bmp / height_map).
 
-    默认是查看模式：点 province 只显示信息（走 app_controller 的省份查询）。
-    开启分配模式后：点 province 改地形。
-    """
+    The default is viewing mode: click province to only display information (go to app_controller's province query).
+    After turning on the allocation mode: click province to change the terrain."""
 
     def __init__(self, project: "Project", command_history: "CommandHistory") -> None:
         super().__init__(project, command_history)
         self.current_type: str = "plains"
-        self.assign_mode: bool = False  # 默认查看模式
+        self.assign_mode: bool = False  # Default viewing mode
 
     def activate(self) -> None:
         self._emit_status(tr("status_pterrain_view"))
@@ -52,7 +50,7 @@ class ProvincialTerrainController(BaseController):
     def on_province_clicked(self, pid: int) -> None:
         if pid <= 0:
             return
-        # 查看模式：不改数据，让 app_controller 的省份信息显示处理即可
+        # View mode: Do not change the data, just let the province information of app_controller be displayed and processed
         if not self.assign_mode:
             return
 
@@ -60,7 +58,7 @@ class ProvincialTerrainController(BaseController):
         province_map = map_data.province_map
         tile_map = map_data.tile_map
 
-        # 海洋/湖泊省份不能改
+        # Ocean/lake provinces cannot be changed
         from data.constants import TILE_SEA, TILE_LAKE
         ys, xs = np.where(province_map == pid)
         if len(ys) == 0:
@@ -70,7 +68,7 @@ class ProvincialTerrainController(BaseController):
             self._emit_status(tr("status_pterrain_sea_skip", pid))
             return
 
-        # 复用 PaintTerrainCommand，只传 provincial_terrain_changes
+        # Reuse PaintTerrainCommand and only pass provincial_terrain_changes
         cmd = PaintTerrainCommand(
             map_data,
             terrain_changes={},
@@ -83,12 +81,11 @@ class ProvincialTerrainController(BaseController):
         self._emit_status(tr("status_pterrain_applied", pid, self.current_type))
 
     def sync_from_visual(self) -> None:
-        """从视觉地形 (terrain.bmp) 重新推断全部陆地省份的属性地形。
+        """Re-infer attribute terrain for all land provinces from visual terrain (terrain.bmp).
 
-        效果: 每个陆地省份的属性 = 它在 terrain_map 上的多数地形, 覆盖手动设置。
-        适用: 自动生成/重画视觉地形后, 想让属性层全量跟上时。
-        调用: 属性地形 page 的同步按钮 (点击前 page 已弹二次确认); 可撤销。
-        """
+        Effect: Each land province's attributes = its majority terrain on terrain_map, overriding manual settings.
+        Applicable: After automatically generating/redrawing the visual terrain, you want the attribute layer to keep up with the full volume.
+        Call: the synchronization button of the attribute terrain page (the page has been played twice for confirmation before clicking); can be revoked."""
         from services.terrain_service import compute_provincial_terrain_from_bmp
 
         map_data = self.project.map_data
@@ -109,7 +106,7 @@ class ProvincialTerrainController(BaseController):
             height_changes=None,
             provincial_terrain_changes=changes,
         )
-        cmd.label = "同步属性地形"
+        cmd.label = "Sync provincial terrain"
         self.history.execute(cmd)
         self.project.mark_dirty()
         self._emit_render(full=True)

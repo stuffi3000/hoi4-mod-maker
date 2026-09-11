@@ -1,8 +1,7 @@
-"""Project — 项目数据中心，持有所有 manager 和地图数据。
+"""Project — The project data center that holds all manager and map data.
 
-一个 Project = 一个 .hoi4proj 文件的全部内容。
-所有 controller 通过 Project 访问数据，不直接持有 manager 引用。
-"""
+A Project = the entire contents of a .hoi4proj file.
+All controllers access data through Project and do not directly hold manager references."""
 from __future__ import annotations
 
 import os
@@ -25,7 +24,7 @@ from domain.managers.default_map_settings import DefaultMapSettings
 
 
 class Project:
-    """项目数据中心。"""
+    """Project data center."""
 
     def __init__(self, event_bus: EventBus | None = None) -> None:
         self.event_bus = event_bus or EventBus()
@@ -47,41 +46,41 @@ class Project:
         self._autosave_timer: threading.Timer | None = None
         self._last_save_time = 0.0
 
-        # ── 美术资产系统 ──
-        # assets: 相对 MOD 路径 → 原始文件字节（从导入的 MOD 读取）
-        # 例：{"map/terrain/colormap_rgb_cityemissivemask_a.dds": b"..."}
-        # 导出时如果 path 在 assets 且不在 dirty_assets → 直接写回原始字节
-        # 不在 assets 或在 dirty_assets → 走 writer 重新生成
+        # ── Art asset system ──
+        # assets: relative mod path → raw file bytes (read from imported mod)
+        # Example: {"map/terrain/colormap_rgb_cityemissivemask_a.dds": b"..."}
+        # When exporting, if path is in assets and not in dirty_assets → write back the original bytes directly
+        # Not in assets or in dirty_assets → go writer Regenerate
         self.assets: dict[str, bytes] = {}
         self.dirty_assets: set[str] = set()
 
-    # ── 美术资产管理 API ──────────────────────────────────────
+    # ── Art Asset Management API ─────────────────────────────────────
     def set_asset(self, rel_path: str, data: bytes) -> None:
-        """导入时记录一个原始美术文件。"""
+        """Record an original art file when importing."""
         self.assets[rel_path] = data
-        # 导入的资产默认是 clean（原始、无需重生）
+        # The imported assets are clean by default (original, no need to regenerate)
         self.dirty_assets.discard(rel_path)
 
     def mark_asset_dirty(self, rel_path: str) -> None:
-        """标记某个美术资产需要在导出时重新生成。"""
+        """Flags an art asset that needs to be regenerated on export."""
         if rel_path in self.assets:
             self.dirty_assets.add(rel_path)
 
     def mark_assets_dirty(self, *rel_paths: str) -> None:
-        """批量标记多个美术资产 dirty。"""
+        """Mark multiple art assets dirty in batches."""
         for p in rel_paths:
             self.mark_asset_dirty(p)
 
     def is_asset_clean(self, rel_path: str) -> bool:
-        """asset 存在且未被标记 dirty → 可以直接写回原字节。"""
+        """The asset exists and is not marked dirty → the original bytes can be written back directly."""
         return rel_path in self.assets and rel_path not in self.dirty_assets
 
     def clean_asset_count(self) -> int:
-        """导出时将保留原字节的资产数。"""
+        """The original number of bytes of assets will be retained when exporting."""
         return len(self.assets) - len(self.dirty_assets & self.assets.keys())
 
     def dirty_asset_count(self) -> int:
-        """导出时将重新生成的资产数。"""
+        """The number of assets that will be regenerated on export."""
         return len(self.dirty_assets & self.assets.keys())
 
     @property
@@ -93,14 +92,14 @@ class Project:
         return self._dirty
 
     def mark_dirty(self) -> None:
-        """标记有未保存的修改。"""
+        """Marked with unsaved changes."""
         self._dirty = True
 
     def mark_clean(self) -> None:
         self._dirty = False
 
     def new_project(self, width: int, height: int) -> None:
-        """创建新项目。"""
+        """Create new project."""
         from data.constants import set_map_size
 
         set_map_size(width, height)
@@ -121,11 +120,10 @@ class Project:
         self._dirty = False
 
     def save(self, path: str | None = None) -> None:
-        """保存项目到文件。"""
+        """Save project to file."""
         save_path = path or self._path
         if not save_path:
-            from ui.i18n import tr_pair
-            raise ValueError(tr_pair("没有指定保存路径", "No save path was specified"))
+            raise ValueError("No save path was specified")
         from domain.project_io import save_project
 
         save_project(
@@ -146,50 +144,50 @@ class Project:
             provincial_terrain=self.map_data.provincial_terrain,
             tile_snapshot=self.map_data.tile_snapshot,
         )
-        # 同时持久化美术资产到 sidecar 目录
+        # At the same time, persist art assets to the sidecar directory
         self._save_assets_sidecar(save_path)
         self._path = save_path
         self._dirty = False
         self._last_save_time = time.time()
 
-    # ── 美术资产 sidecar（伴随 .hoi4proj 的同名 _assets 目录） ──
+    # ── Art asset sidecar (accompanying .hoi4proj’s _assets directory with the same name) ──
     @staticmethod
     def _sidecar_dir(proj_path: str) -> str:
-        """返回 .hoi4proj 对应的资产目录路径。"""
+        """Returns the asset directory path corresponding to .hoi4proj."""
         return proj_path + "_assets"
 
     def _save_assets_sidecar(self, proj_path: str) -> None:
-        """把 self.assets 里所有字节写到 sidecar 目录。"""
+        """Write all bytes in self.assets to the sidecar directory."""
         sidecar = self._sidecar_dir(proj_path)
-        # 没有资产就不建目录
+        # If there are no assets, no directory will be created.
         if not self.assets:
-            # 如果 sidecar 目录已存在但 assets 空，清掉（用户可能删光了导入资产）
+            # If the sidecar directory already exists but assets is empty, clear it (the user may have deleted all imported assets)
             if os.path.isdir(sidecar):
                 shutil.rmtree(sidecar, ignore_errors=True)
             return
         os.makedirs(sidecar, exist_ok=True)
-        # 写清单
+        # write a list
         manifest_lines = []
         for rel_path, data in self.assets.items():
-            # 用 rel_path 直接作为 sidecar 内相对路径
+            # Use rel_path directly as the relative path within the sidecar
             dst = os.path.join(sidecar, rel_path)
             os.makedirs(os.path.dirname(dst), exist_ok=True)
             with open(dst, "wb") as f:
                 f.write(data)
             dirty_mark = "DIRTY" if rel_path in self.dirty_assets else "CLEAN"
             manifest_lines.append(f"{dirty_mark}\t{rel_path}\t{len(data)}")
-        # 清单文件（方便人工查看 + 记 dirty 状态）
+        # Manifest file (convenient for manual viewing + recording dirty status)
         with open(os.path.join(sidecar, "_manifest.txt"), "w", encoding="utf-8") as f:
             f.write("\n".join(manifest_lines))
 
     def _load_assets_sidecar(self, proj_path: str) -> None:
-        """从 sidecar 目录读回 assets 和 dirty 状态。"""
+        """Read back the assets and dirty status from the sidecar directory."""
         self.assets = {}
         self.dirty_assets = set()
         sidecar = self._sidecar_dir(proj_path)
         manifest_path = os.path.join(sidecar, "_manifest.txt")
         if not os.path.isfile(manifest_path):
-            return  # 旧项目或从 0 开始的项目没 sidecar
+            return  # Old projects or projects started from 0 do not have sidecars
         with open(manifest_path, "r", encoding="utf-8") as f:
             for line in f:
                 line = line.strip()
@@ -208,7 +206,7 @@ class Project:
                     self.dirty_assets.add(rel_path)
 
     def load(self, path: str) -> None:
-        """加载项目文件。"""
+        """Load project files."""
         from domain.project_io import load_project
 
         result = load_project(
@@ -242,14 +240,14 @@ class Project:
         self.map_data.provincial_terrain = provincial_terrain or {}
         self.map_data.tile_snapshot = tile_snapshot if tile_snapshot is not None else tile_map.copy()
 
-        # 从 sidecar 读取美术资产
+        # Read art assets from sidecar
         self._load_assets_sidecar(path)
 
         self._path = path
         self._dirty = False
 
     def start_autosave(self) -> None:
-        """启动自动保存定时器。"""
+        """Start the autosave timer."""
         self._stop_autosave()
         if self._path and self._autosave_interval > 0:
             self._autosave_timer = threading.Timer(
@@ -264,20 +262,19 @@ class Project:
             self._autosave_timer = None
 
     def _do_autosave(self) -> None:
-        """自动保存回调。"""
+        """Auto save callback."""
         if self._dirty and self._path:
             try:
                 # Save to autosave path (not overwrite main file)
                 autosave_path = self._path + ".autosave"
                 self.save(autosave_path)
                 self._path = self._path.replace(".autosave", "")  # restore original path
-                from ui.i18n import tr_pair
-                self.event_bus.emit("status_message", text=tr_pair("自动保存完成", "Autosave complete"))
+                self.event_bus.emit("status_message", text="Autosave complete")
             except Exception:
                 pass  # autosave failure is silent
         # Reschedule
         self.start_autosave()
 
     def close(self) -> None:
-        """关闭项目，清理资源。"""
+        """Close the project and clean up resources."""
         self._stop_autosave()

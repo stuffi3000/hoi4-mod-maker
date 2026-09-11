@@ -1,8 +1,4 @@
-"""
-state — en 翻译
-
-本文件由 tools/migrate_i18n.py 生成。后续手动维护。
-"""
+"""English strings for state creation, assignment, and properties."""
 
 STRINGS: dict[str, str] = {
     "state_assign_drag_label": "Drag-assign provinces to state",

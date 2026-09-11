@@ -1,14 +1,12 @@
-"""
-战略区域编辑器对话框.
+"""Strategic Area Editor dialog box.
 
-非模态. 用法:
-1. 打开对话框 → 左侧 region 列表
-2. "自动生成" 按钮 → 按 state 分组, weather 按纬度
-3. 选 region → 右侧编辑: 名字 / weather 预设 / naval_terrain
-4. "拾取模式" → 点画布上的省份 → 加入/移出当前 region
+Non-modal. Usage:
+1. Open the dialog box → region list on the left
+2. "Auto-generate" button → Group by state, weather by latitude
+3. Select region → Edit on the right: name / weather default / naval_terrain
+4. "Pick mode" → click a province on the canvas → add/remove from the current region
 
-复用 continent dialog 的 pick_mode_changed 模式.
-"""
+Reuse continent dialog's pick_mode_changed mode."""
 
 from __future__ import annotations
 
@@ -27,9 +25,9 @@ from ui.i18n import tr
 
 
 class StrategicRegionDialog(QDialog):
-    """战略区域编辑器. 非模态, 支持画布拾取省份."""
+    """Strategic area editor. Non-modal, supports canvas picking of provinces."""
 
-    pick_mode_changed = pyqtSignal(bool, int)  # (开/关, region_id)
+    pick_mode_changed = pyqtSignal(bool, int)  # (on/off, region_id)
 
     def __init__(
         self,
@@ -57,7 +55,7 @@ class StrategicRegionDialog(QDialog):
         root.setContentsMargins(10, 10, 10, 10)
         root.setSpacing(10)
 
-        # ── 左: 列表 ──
+        # ── Left: List ──
         left = QVBoxLayout()
         left_lbl = QLabel(f"<b>{tr('sr_dlg_region_list')}</b>")
         left.addWidget(left_lbl)
@@ -79,10 +77,10 @@ class StrategicRegionDialog(QDialog):
 
         root.addLayout(left, 1)
 
-        # ── 右: 详情 ──
+        # ── Right: Details ──
         right = QVBoxLayout()
 
-        # 名字
+        # name
         name_row = QHBoxLayout()
         name_row.addWidget(QLabel(tr("sr_dlg_name_label")))
         self._name_edit = QLineEdit()
@@ -90,7 +88,7 @@ class StrategicRegionDialog(QDialog):
         name_row.addWidget(self._name_edit)
         right.addLayout(name_row)
 
-        # weather 预设
+        # weather default
         weather_row = QHBoxLayout()
         weather_row.addWidget(QLabel(tr("sr_dlg_weather_label")))
         self._weather_combo = QComboBox()
@@ -115,11 +113,11 @@ class StrategicRegionDialog(QDialog):
         naval_row.addWidget(self._naval_combo)
         right.addLayout(naval_row)
 
-        # 省份数
+        # Number of provinces
         self._prov_count_label = QLabel(tr("sr_dlg_province_count"))
         right.addWidget(self._prov_count_label)
 
-        # 拾取按钮
+        # Pick button
         self._pick_btn = QPushButton(tr("sr_dlg_start_pick"))
         self._pick_btn.setCheckable(True)
         self._pick_btn.toggled.connect(self._on_pick_toggled)
@@ -137,7 +135,7 @@ class StrategicRegionDialog(QDialog):
 
         root.addLayout(right, 2)
 
-    # ─────────── 列表 ───────────
+    # ─────────── List ────────────
 
     def _refresh_list(self) -> None:
         self._list.clear()
@@ -171,7 +169,7 @@ class StrategicRegionDialog(QDialog):
             self._naval_combo.blockSignals(False)
         self._prov_count_label.setText(tr("sr_dlg_province_count_fmt", len(r.province_ids)))
 
-    # ─────────── 操作 ───────────
+    # ────────── Operation ───────────
 
     def _on_auto_generate(self) -> None:
         if self._province_map is None or self._tile_map is None:
@@ -193,7 +191,7 @@ class StrategicRegionDialog(QDialog):
     def _on_new(self) -> None:
         r = self._mgr.create_region()
         self._refresh_list()
-        # 选中新的
+        # Select new
         for i in range(self._list.count()):
             if self._list.item(i).data(Qt.UserRole) == r.id:
                 self._list.setCurrentRow(i)
@@ -226,7 +224,7 @@ class StrategicRegionDialog(QDialog):
         if r:
             r.naval_terrain = self._naval_combo.currentData() or ""
 
-    # ─────────── 拾取 ───────────
+    # ────────── Pick up ───────────
 
     def _on_pick_toggled(self, on: bool) -> None:
         rid = self._current_rid()
@@ -244,7 +242,7 @@ class StrategicRegionDialog(QDialog):
         self.pick_mode_changed.emit(on, rid)
 
     def notify_assigned(self, pid: int) -> None:
-        """主窗口指派省份后回调."""
+        """Called after the province is assigned in the main window."""
         rid = self._current_rid()
         r = self._mgr.get(rid)
         if r:

@@ -1,171 +1,171 @@
-# HOI4 地图制作工具 — 使用教程
+# HOI4 Map Making Tool — Tutorial
 
-从零开始制作一个可以在游戏里玩的 HOI4 全转换 MOD。
+Create a HOI4 full conversion MOD from scratch that can be played in the game.
 
-## 整体流程
+## Overall process
 
 ```
-画陆海 → 生成省份 → 生成高度 → 生成地形 → 建州/国家 → 导出 → 进游戏
+Draw land and sea → Generate provinces → Generate height → Generate terrain → Create states and countries → Export → Enter the game
 ```
 
-总共 7 步，跟着做就行。
+There are 7 steps in total, just follow them.
 
 ---
 
-## 第 1 步：新建项目
+## Step 1: Create a new project
 
-1. 打开软件，点 **新建项目**
-2. 选择地图尺寸（推荐 5632x2048，和原版一样大）
-3. 选择保存路径，起个名字
+1. Open the software and click **New Project**
+2. Select the map size (5632x2048 is recommended, the same size as the original)
+3. Select the save path and give it a name.
 
-> 你会看到一张全黑的地图，这是正常的。
+> You will see a completely black map, this is normal.
 
-## 第 2 步：画陆地和海洋
+## Step 2: Draw the Land and Sea
 
-切到 **「陆地与海洋」** 模式（左侧第一个）。
+Switch to **Land & Sea** mode (first one from the left).
 
-1. 选 **画笔** 工具
-2. 点 **画陆地** 按钮（绿色），在地图上画出大陆的形状
-3. 不需要画海洋 — 没画的地方自动是海洋
-4. 画错了用 **橡皮** 擦除，或 Ctrl+Z 撤销
-5. 用 **填充** 工具可以快速灌满大面积区域
-6. 如果要画湖泊，点 **画湖泊** 按钮
+1. Select the **Brush** tool
+2. Click the **Draw Land** button (green) to draw the shape of the continent on the map
+3. There is no need to draw the ocean - any place not drawn will automatically be the ocean.
+4. If you make a mistake, use **Eraser** to erase it, or Ctrl+Z to undo it.
+5. Use the **Fill** tool to quickly fill large areas
+6. If you want to draw a lake, click the **Draw Lake** button
 
-> **技巧**：可以导入一张参考图片（文件 → 导入参考图片），对着参考图画。
+> **Tip**: You can import a reference picture (File → Import Reference Picture), facing the reference picture.
 
-## 第 3 步：生成省份
+## Step 3: Generate provinces
 
-还是在 **「陆地与海洋」** 模式。
+Still in **"Land and Sea"** mode.
 
-1. 设置 **省份数量**（一般 5000-15000，地图越大越多）
-2. 点 **生成省份**
-3. 等几秒，地图上会出现彩色的省份网格
-4. 点 **验证省份** 检查有没有问题
+1. Set the **number of provinces** (generally 5000-15000, the larger the map, the more)
+2. Click **Generate Province**
+3. Wait a few seconds and a colored province grid will appear on the map.
+4. Click **Verify Province** to check if there are any problems
 
-> 省份是 HOI4 最基础的地图单元，每个彩色块就是一个省份。
+> Province is the most basic map unit in HOI4, and each colored block is a province.
 
-### 手工绘制和精修省份
+### Hand drawn and refined provinces
 
-切到 **「省份」** 模式。自动生成和手工绘制会编辑同一张省份图，可以混合使用：
+Switch to **"Province"** mode. Automatic generation and manual drawing will edit the same province map and can be mixed:
 
-1. 点 **导入参考图**，可以继续使用画陆地时的同一张背景图描边
-2. 用 **选择** 点一个自动生成的省份，再切 **画笔**，从省份内部向外拖动来修改边界
-3. 点 **新建省份** 后直接绘制；第一笔所在位置会决定它是陆地、海洋还是湖泊省份
-4. **填充** 只处理未分配的空白区域；已有省份之间请使用 **合并**
-5. 画笔会保持省份连续，并在松手后局部修复 X 型交叉；完成后仍建议点 **验证省份**
+1. Click **Import Reference Image** to continue using the same background image when drawing the land.
+2. Use **Select** to click on an automatically generated province, then cut the **Brush** and drag from the inside of the province outward to modify the border.
+3. Click **New Province** and draw directly; the location of the first stroke will determine whether it is a land, ocean or lake province
+4. **Fill** only processes unallocated blank areas; please use **Merge** between existing provinces
+5. The brush will keep the provinces continuous and partially repair the X-shaped intersection after letting go; it is still recommended to click **Verify Provinces** after completion.
 
-> 手工画好的像素不会被增量自动生成覆盖。你可以先画关键省份，再让自动生成补齐其余空白区域，也可以先自动生成后逐个精修。
+> Manually drawn pixels will not be overwritten by incremental automatic generation. You can draw the key provinces first, and then let automatic generation fill in the remaining blank areas, or you can automatically generate them first and then refine them one by one.
 
-## 第 4 步：生成高度图
+## Step 4: Generate height map
 
-切到 **「高度」** 模式。
+Switch to **"Height"** mode.
 
-1. 点 **智能生成高度**
-2. 软件会自动算出哪里该高（山）哪里该低（平原）
-3. 不满意？换个 **种子** 数字，再点生成，会得到不同的山脉分布
-4. **山脉强度** 滑块：越大山越高
-5. 可以用 **平滑高度** 让过渡更柔和
+1. Click **Smart Generate Height**
+2. The software will automatically calculate where it should be high (mountains) and where it should be low (plains)
+3. Not satisfied? Change the **seed** number and click Generate, and you will get a different mountain distribution.
+4. **Mountain Strength** Slider: The bigger the mountain, the higher it will be
+5. You can use **Smooth Height** to make the transition softer
 
-> 高度图决定了游戏里的地形高低起伏。亮色=高，暗色=低。
+> The height map determines the ups and downs of the terrain in the game. Light colors = high, dark colors = low.
 
-## 第 5 步：生成地形
+## Step 5: Generate terrain
 
-切到 **「地形」** 模式。
+Switch to **Terrain** mode.
 
-1. 点 **智能地形生成**
-2. 软件根据高度图自动分配：低处=平原/森林，高处=丘陵/山地，最高处=雪山
-3. 不满意可以调参数再生成：
-   - **种子**：换随机结果
-   - **噪声强度**：影响地形边界的复杂度
-   - **散点密度**：影响斑点效果（更自然）
-4. 局部不满意？切到 **画笔** 模式，选一种地形，手动涂改
+1. Click **Intelligent Terrain Generation**
+2. The software automatically assigns based on the height map: low = plains/forests, high = hills/mountains, highest = snow mountains
+3. If you are not satisfied, you can adjust the parameters and regenerate:
+- **Seed**: Change random results
+- **Noise intensity**: affects the complexity of terrain boundaries
+- **Scatter density**: affects the spot effect (more natural)
+4. Partially dissatisfied? Switch to **Brush** mode, select a terrain, and modify it manually
 
-> 地形影响游戏里的战斗加成和移动速度。
+> Terrain affects combat bonuses and movement speed in the game.
 
-## 第 6 步：建州和国家
+## Step 6: Statehood and Nationhood
 
-### 建州
+### Create states
 
-切到 **「州」** 模式。
+Switch to **"State"** mode.
 
-1. 点 **自动分组** — 自动把省份分成若干个州
-2. 或者手动：点 **选择省份建州**，点选省份，点 **确认创建新州**
+1. Click **Auto Group** - automatically divide the province into several states
+2. Or manually: click **Select Province to Create a State**, click the province, and click **Confirm to create a new state**
 
-### 建国家
+### Build a country
 
-切到 **「国家」** 模式。
+Switch to **"Country"** mode.
 
-1. 点 **创建国家**
-2. 输入国家代码（3个英文大写字母，如 AAA）、国家名称、选颜色
-3. 点击州列表里的州，把它分配给国家
+1. Click **Create Country**
+2. Enter the country code (3 English capital letters, such as AAA), country name, and select a color
+3. Click on a state in the states list to assign it to a country
 
-> 至少需要 1 个国家才能进游戏。
+> At least 1 country is required to enter the game.
 
-### 快捷方式
+### Shortcut
 
-如果只是想快速测试，在 **「陆地与海洋」** 模式最下面有 **一键初始化（州+战略区+国家）** 按钮，一步搞定。
+If you just want to test quickly, there is a **One-click initialization (state+strategic area+country)** button at the bottom of the **"Land and Sea"** mode to get it done in one step.
 
-## 第 7 步：导出 MOD
+## Step 7: Export MOD
 
-1. 点左侧最下面的 **导出 MOD** 按钮
-2. 弹出预检对话框，会告诉你缺什么、自动补全
-3. 点 **开始导出**
-4. 等待完成（大地图可能需要几秒到几十秒）
+1. Click the **Export MOD** button at the bottom on the left
+2. A preflight dialog box will pop up, which will tell you what is missing and automatically complete it.
+3. Click **Start Export**
+4. Wait for completion (it may take a few seconds to dozens of seconds for large maps)
 
-导出完成后，MOD 文件在：
+After the export is completed, the MOD file is at:
 ```
 D:\Documents\Paradox Interactive\Hearts of Iron IV\mod\WorldTest\
 ```
 
-## 第 8 步：进游戏测试
+## Step 8: Enter game testing
 
-1. 打开 Steam → 启动 HOI4
-2. 在启动器里勾选你的 MOD（名字叫 Fantasy World）
-3. 点开始游戏
-4. 选国家 → 开始
+1. Open Steam → Launch HOI4
+2. Check your MOD in the launcher (named Fantasy World)
+3. Click to start the game
+4. Select country → Start
 
-> 如果崩溃了，看软件里的"帮助"菜单有调试指南。
-
----
-
-## 常见问题
-
-### Q: 生成的地形全是平的？
-先生成高度图（第4步），再生成地形（第5步）。地形依赖高度图。
-
-### Q: 进游戏崩溃了？
-最常见的原因：
-- 没有国家 → 必须至少建一个
-- 省份太碎 → 减少省份数量重新生成
-- 试试 **一键初始化** 自动补全所有缺失数据
-
-### Q: 画笔太小/太大？
-每个模式页面都有 **画笔大小** 滑块，拖动调整。
-
-### Q: 怎么撤销？
-Ctrl+Z 撤销，Ctrl+Y 重做。
-
-### Q: 怎么缩放地图？
-鼠标滚轮缩放，按住中键/右键拖动平移。Ctrl+0 适应窗口。
-
-### Q: 怎么切换英文界面？
-菜单 → 设置 → 语言 / Language
+> If it crashes, check the "Help" menu in the software for debugging guidance.
 
 ---
 
-## 模式说明速查
+## FAQ
 
-| 模式 | 用途 | 关键操作 |
+### Q: Is the generated terrain all flat?
+First generate the height map (step 4), and then generate the terrain (step 5). Terrain depends on the height map.
+
+### Q: The game crashes?
+Most common reasons:
+- No country → Must build at least one
+- Provinces are too fragmented → reduce the number of provinces and regenerate them
+- Try **One-click initialization** to automatically complete all missing data
+
+### Q: Is the brush too small/large?
+Each mode page has a **Brush Size** slider, drag to adjust.
+
+### Q: How to cancel?
+Ctrl+Z undo, Ctrl+Y redo.
+
+### Q: How to zoom in and out of the map?
+Use the mouse wheel to zoom, hold down the middle/right button and drag to pan. Ctrl+0 Fit to window.
+
+### Q: How to switch to English interface?
+Menu → Settings → Language / Language
+
+---
+
+## Pattern description quick check
+
+| Mode | Purpose | Key Operations |
 |------|------|---------|
-| 陆地与海洋 | 画大陆形状 | 画笔画陆地，填充灌满 |
-| 省份 | 编辑省份 | 参考图描边、画笔/填充、合并/切割/扩张 |
-| 高度 | 地形高低 | 智能生成 + 手动微调 |
-| 地形 | 平原/山地等 | 智能生成 + 画笔涂改 |
-| 河流 | 画河流 | 1像素宽，上下左右 |
-| 州 | 省份分组 | 自动分组 or 手动选 |
-| 国家 | 创建国家 | 至少建1个 |
-| 大洲 | 大陆划分 | 添加大陆+指定省份 |
-| 战略区 | 天气/海域 | 自动 or 从州创建 |
-| 后勤 | 铁路/补给 | 画铁路线+补给点 |
-| 总览贴图 | 缩放底色 | 设陆/海/湖颜色 |
-| 地图配置 | 引擎参数 | 一般不用动 |
+| Land and sea | Draw the shape of the continent | Draw the land with a brush and fill it in |
+| Province | Edit province | Reference drawing stroke, brush/fill, merge/cut/expand |
+| Height | Terrain height | Intelligent generation + manual fine-tuning |
+| Terrain | Plains/mountains, etc. | Intelligent generation + brush modification |
+| River | Draw a river | 1 pixel wide, top, bottom, left, and right |
+| State | Province grouping | Automatic grouping or manual selection |
+| Country | Create country | Build at least 1 |
+| Continents | Continent division | Add continent + specified provinces |
+| Strategic Areas | Weather/Sea | Automatic or Create from State |
+| Logistics | Railway/Supply | Draw railway lines + supply points |
+| Overview map | Zoom background color | Set land/sea/lake color |
+| Map configuration | Engine parameters | Generally do not need to touch |

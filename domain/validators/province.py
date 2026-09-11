@@ -1,11 +1,7 @@
-"""
-省份验证器 — 检测 HOI4 省份地图中的各种问题
-"""
+"""Province Validator — detects various issues in HOI4 province maps"""
 import numpy as np
 from collections import deque
 from scipy import ndimage
-
-from ui.i18n import tr_pair
 
 from data.constants import (
     MAP_WIDTH,
@@ -23,21 +19,19 @@ def validate_provinces(
     *,
     min_pixels: int = MIN_PROVINCE_PIXELS,
 ) -> dict:
-    """
-    验证省份地图，检测所有可能导致 HOI4 崩溃的问题。
+    """Validate the province map and detect any issues that may cause HOI4 to crash.
 
-    返回:
+    Return:
         {
-            "x_crossings": int,          # X型交叉数量
-            "x_crossing_positions": list, # 交叉位置列表 [(y, x), ...]
-            "too_small": int,             # 过小省份数量
-            "too_small_ids": list,        # 过小省份ID列表
-            "not_contiguous": int,        # 不连续省份数量
-            "not_contiguous_ids": list,   # 不连续省份ID列表
-            "coastal_mismatch": int,      # 沿海状态不一致数量
-            "coastal_mismatch_ids": list, # 不一致的省份ID列表
-        }
-    """
+            "x_crossings": int, # Number of X-shaped crossings
+            "x_crossing_positions": list, # Crossing position list [(y, x), ...]
+            "too_small": int, # Number of provinces that are too small
+            "too_small_ids": list, # Too small province ID list
+            "not_contiguous": int, # Number of discontinuous provinces
+            "not_contiguous_ids": list, # Discontinuous province ID list
+            "coastal_mismatch": int, # Number of coastal status inconsistencies
+            "coastal_mismatch_ids": list, # List of inconsistent province IDs
+        }"""
     results = {
         "x_crossings": 0,
         "x_crossing_positions": [],
@@ -47,76 +41,74 @@ def validate_provinces(
         "not_contiguous_ids": [],
         "coastal_mismatch": 0,
         "coastal_mismatch_ids": [],
-        # 新增：HOI4 文档明确的硬规则
-        "too_large": 0,           # 单省宽/高 > 地图 1/8 (TOO LARGE BOX 错误)
+        # New: HOI4 documentation clear hard rules
+        "too_large": 0,           # Single Dart Width/Height > Map 1/8 (TOO LARGE BOX Error)
         "too_large_ids": [],
-        "id_gaps": [],            # ID 不连续的位置（应在 1..N 之间无空洞）
+        "id_gaps": [],            # ID is a discontinuous position (there should be no holes between 1..N)
         "total_provinces": 0,
-        "count_warning": "",      # 总数预警字符串
+        "count_warning": "",      # Total warning string
     }
 
     if province_map.max() == 0:
         return results
 
-    # 1. X型交叉检测
+    # 1. X-shaped cross detection
     x_positions = detect_x_crossings(province_map)
     results["x_crossings"] = len(x_positions)
     results["x_crossing_positions"] = x_positions
 
-    # 2. 过小省份检测
+    # 2. Detection of provinces that are too small
     small_ids = detect_small_provinces(province_map, min_pixels=min_pixels)
     results["too_small"] = len(small_ids)
     results["too_small_ids"] = small_ids
 
-    # 3. 连续性检测
+    # 3. Continuity detection
     non_contiguous = detect_non_contiguous(province_map)
     results["not_contiguous"] = len(non_contiguous)
     results["not_contiguous_ids"] = non_contiguous
 
-    # 4. 沿海一致性检测
+    # 4. Coastal consistency testing
     coastal_issues = detect_coastal_mismatch(tile_map, province_map)
     results["coastal_mismatch"] = len(coastal_issues)
     results["coastal_mismatch_ids"] = coastal_issues
 
-    # 5. TOO LARGE BOX 检测（单省宽/高超过地图 1/8）
+    # 5. TOO LARGE BOX detection (the width/height of a single province exceeds 1/8 of the map)
     too_large_ids = detect_too_large_provinces(province_map)
     results["too_large"] = len(too_large_ids)
     results["too_large_ids"] = too_large_ids
 
-    # 6. ID gap 检测（应连续 1..N，否则 csv 串位）
+    # 6. ID gap detection (should be continuous 1..N, otherwise csv string bits)
     results["id_gaps"] = detect_id_gaps(province_map)
 
-    # 7. 总数预警
+    # 7. Total warning
     total = int(province_map.max())
     results["total_provinces"] = total
     if total > 21000:
-        results["count_warning"] = tr_pair(f"危险：{total} > 21000，超过 HOI4 边界硬上限，必崩", f"Danger: {total} > 21000, exceeding HOI4's hard limit and guaranteed to crash")
+        results["count_warning"] = f"Danger: {total} > 21000, exceeding HOI4's hard limit and guaranteed to crash"
     elif total > 14000:
-        results["count_warning"] = tr_pair(f"警告：{total} > 14000，HOI4 文档建议上限", f"Warning: {total} > 14000, the limit recommended by HOI4 documentation")
+        results["count_warning"] = f"Warning: {total} > 14000, the limit recommended by HOI4 documentation"
     elif total > 13000:
-        results["count_warning"] = tr_pair(f"提示：{total} 接近 vanilla 13000-14000 推荐区间", f"Note: {total} is close to the recommended vanilla range of 13000–14000")
+        results["count_warning"] = f"Note: {total} is close to the recommended vanilla range of 13000–14000"
 
     return results
 
 
 def detect_x_crossings(province_map: np.ndarray) -> list[tuple[int, int]]:
-    """
-    检测 X 型交叉：2×2 像素块中出现4种不同省份ID。
-    HOI4 不允许这种情况，会导致崩溃。
+    """Detect X-shaped intersection: 4 different province IDs appear in a 2×2 pixel block.
+    HOI4 does not allow this and will cause a crash.
 
-    返回交叉位置列表 [(y, x), ...]，坐标是2×2块的左上角。
-    """
+    Returns a list of intersection positions [(y, x), ...], with the coordinates being the upper left corner of the 2×2 block."""
     positions = []
 
-    # 取2×2窗口的四个角
-    tl = province_map[:-1, :-1]  # 左上
-    tr_ = province_map[:-1, 1:]  # 右上
-    bl = province_map[1:, :-1]   # 左下
-    br = province_map[1:, 1:]    # 右下
+    # Take the four corners of the 2×2 window
+    tl = province_map[:-1, :-1]  # upper left
+    tr_ = province_map[:-1, 1:]  # upper right
+    bl = province_map[1:, :-1]   # lower left
+    br = province_map[1:, 1:]    # lower right
 
-    # 四个值互不相同的位置就是 X 型交叉
-    # 用集合大小判断：如果4个值全不同，说明有交叉
-    # 优化：先找出至少有3种不同值的位置，再精确判断
+    # The positions where the four values are different from each other are X-shaped intersections.
+    # Use the set size to judge: if the four values ​​are all different, it means there is crossover
+    # Optimization: First find the positions with at least 3 different values, and then judge accurately
     diff1 = tl != tr_
     diff2 = tl != bl
     diff3 = tl != br
@@ -124,16 +116,16 @@ def detect_x_crossings(province_map: np.ndarray) -> list[tuple[int, int]]:
     diff5 = tr_ != br
     diff6 = bl != br
 
-    # 6个两两比较都不同 → 4个值互不相同
+    # 6 pairwise comparisons are all different → 4 values are different from each other
     all_different = diff1 & diff2 & diff3 & diff4 & diff5 & diff6
 
     ys, xs = np.where(all_different)
     positions = [(int(y), int(x)) for y, x in zip(ys, xs)]
 
-    # === 横向 wrap 边缘检测 ===
-    # HOI4 文档明确：地图横向循环，X-crossing 可能正好出现在
-    # 最右列与最左列之间的"接缝"上。普通切片会漏掉。
-    # 取最右列和最左列组成的虚拟 2×2：
+    # === Horizontal wrap edge detection ===
+    # The HOI4 documentation is clear: the map loops horizontally, and X-crossing may appear exactly at
+    # On the "seam" between the rightmost column and the leftmost column. Regular slices will miss it.
+    # Take a virtual 2×2 consisting of the rightmost and leftmost columns:
     #   [last_col[y],    first_col[y]   ]
     #   [last_col[y+1],  first_col[y+1] ]
     last_col = province_map[:, -1]
@@ -146,7 +138,7 @@ def detect_x_crossings(province_map: np.ndarray) -> list[tuple[int, int]]:
         (tl_w != tr_w) & (tl_w != bl_w) & (tl_w != br_w)
         & (tr_w != bl_w) & (tr_w != br_w) & (bl_w != br_w)
     )
-    # 只在全图尺寸时检测 wrap 边缘（子数组不做 wrap）
+    # Only wrap edges are detected at full image size (subarrays are not wrapped)
     h, w = province_map.shape
     if w == MAP_WIDTH:
         ys_w = np.where(diff_w)[0]
@@ -157,16 +149,14 @@ def detect_x_crossings(province_map: np.ndarray) -> list[tuple[int, int]]:
 
 
 def fix_x_crossings(province_map: np.ndarray) -> int:
-    """
-    修复 X 型交叉：将2×2块中右下角的像素改为左上角的省份ID。
+    """Fix X-shaped intersection: Change the bottom right pixel in the 2×2 block to the province ID in the top left corner.
 
-    返回修复数量。
-    """
+    Returns the number of repairs."""
     _h, w = province_map.shape
     fixed = 0
     positions = detect_x_crossings(province_map)
     for y, x in positions:
-        # wrap 边缘特殊处理：x == 最右列时右边像素是 [y+1, 0]
+        # Special treatment for wrap edges: when x == the rightmost column, the right pixel is [y+1, 0]
         if x == w - 1:
             province_map[y + 1, 0] = province_map[y, x]
         else:
@@ -213,14 +203,12 @@ def detect_small_provinces(
     province_map: np.ndarray,
     min_pixels: int = MIN_PROVINCE_PIXELS,
 ) -> list[int]:
-    """
-    检测像素数少于 min_pixels 的省份。
-    返回过小省份ID列表。
-    """
+    """Detect provinces with fewer than min_pixels pixels.
+    Returns a list of province IDs that are too small."""
     if province_map.max() == 0:
         return []
 
-    # 统计每个省份的像素数
+    # Count the number of pixels in each province
     ids, counts = np.unique(province_map, return_counts=True)
     small = []
     for pid, count in zip(ids, counts):
@@ -267,31 +255,29 @@ def detect_coastal_mismatch(
     tile_map: np.ndarray,
     province_map: np.ndarray,
 ) -> list[int]:
-    """
-    检测沿海状态不一致的省份。
-    规则：如果一个 land 省份的任何像素与一个 sea 省份的像素相邻，
-    则该 land 省份必须标记为 coastal=true。
+    """Detect provinces with inconsistent coastal status.
+    Rule: If any pixel in a land province is adjacent to a pixel in a sea province,
+    then the land province must be marked with coastal=true.
 
-    返回应该标记为 coastal 但当前可能未标记的省份ID列表。
-    （这里只检测哪些陆地省份是沿海的，供导出时使用）
-    """
+    Returns a list of province IDs that should be marked as coastal but may not currently be marked.
+    (Here we only detect which land provinces are coastal, for use when exporting)"""
     coastal_provinces = set()
 
-    # 陆地和海洋省份的 mask
-    # 注意：湖泊(TILE_LAKE)不算沿海依据 —— HOI4 规则是只有临海(sea)的陆地省才是 coastal。
-    # 若把湖也算进去，csv 里该省会被标 coastal=true，但 buildings.txt 的 naval_base
-    # 只会对临"海"省写入（sea_ids 不含湖），两边不一致会触发 MAP_ERROR 甚至崩溃。
+    # Masks for land and sea provinces
+    # Note: Lakes (TILE_LAKE) are not considered coastal - the HOI4 rule is that only land provinces facing the sea are coastal.
+    # If the lake is also included, the province will be marked coastal=true in the csv, but the naval_base of buildings.txt
+    # It will only be written to the "sea" province (sea_ids does not include lakes). Inconsistency between the two sides will trigger MAP_ERROR or even crash.
     land_mask = tile_map == TILE_LAND
     sea_mask = tile_map == TILE_SEA
 
-    # 检查每个陆地像素的4邻域是否有海洋像素
-    # 上方
+    # Check if there is an ocean pixel in the 4 neighbors of each land pixel
+    # above
     coastal_up = land_mask[1:, :] & sea_mask[:-1, :]
-    # 下方
+    # below
     coastal_down = land_mask[:-1, :] & sea_mask[1:, :]
-    # 左方
+    # left
     coastal_left = land_mask[:, 1:] & sea_mask[:, :-1]
-    # 右方
+    # right
     coastal_right = land_mask[:, :-1] & sea_mask[:, 1:]
 
     # HOI4's world map wraps horizontally, so x=0 and x=width-1 are also
@@ -301,7 +287,7 @@ def detect_coastal_mismatch(
     coastal_wrap_left = land_mask[:, 0] & sea_mask[:, -1]
     coastal_wrap_right = land_mask[:, -1] & sea_mask[:, 0]
 
-    # 收集沿海陆地像素对应的省份ID
+    # Collect province IDs corresponding to coastal land pixels
     if np.any(coastal_up):
         ys, xs = np.where(coastal_up)
         for pid in np.unique(province_map[ys + 1, xs]):
@@ -343,18 +329,17 @@ def build_coastal_land_to_sea(
     tile_map: np.ndarray,
     province_map: np.ndarray,
 ) -> dict[int, int]:
-    """返回 {coastal_land_pid: adjacent_sea_pid} 映射（**像素级**邻接）。
+    """Returns {coastal_land_pid: adjacent_sea_pid} mapping (**pixel-level** adjacency).
 
-    保证和 get_coastal_provinces 的结果**完全一致** — 任何被标记为 coastal 的
-    陆地省都能在这里找到配对的海洋省。buildings.txt 就用这个结果写
-    naval_base_spawn，避免"CSV 标 coastal 但 buildings 没 port"的崩溃。
-    """
+    Guaranteed to be **exactly consistent** with the results of get_coastal_provinces — anything marked as coastal
+    All land provinces can find paired ocean provinces here. Buildings.txt is written using this result
+    naval_base_spawn, avoid the crash of "CSV marked coastal but buildings without port"."""
     land_mask = tile_map == TILE_LAND
     sea_mask = tile_map == TILE_SEA
     out: dict[int, int] = {}
 
-    # 4 方向扫描：每个像素对 (land, sea) 检查是否真的是 land 在 a 侧、sea 在 b 侧
-    # 上: (y, x) is land, (y-1, x) is sea  → land pid from (y, x), sea pid from (y-1, x)
+    # 4-directional scan: each pixel pair (land, sea) checks whether land is really on side a and sea is on side b
+    # Above: (y, x) is land, (y-1, x) is sea → land pid from (y, x), sea pid from (y-1, x)
     m_up = land_mask[1:, :] & sea_mask[:-1, :]
     if np.any(m_up):
         ys, xs = np.where(m_up)
@@ -426,21 +411,19 @@ def detect_too_large_provinces(
     *,
     include_engine_boundary: bool = False,
 ) -> list[int]:
-    """
-    检测单个省份的 bounding box 是否超过地图宽/高的 1/8。
-    HOI4 文档原文：
+    """Check whether the bounding box of a single province exceeds 1/8 of the map width/height.
+    Original HOI4 document:
         "Province X has TOO LARGE BOX. Perhaps pixels are spread around the world"
-        触发条件：width/height > 1/8 of total map width/height
+        Trigger condition: width/height > 1/8 of total map width/height
 
-    The engine also rejects the exact one-eighth boundary for some map
-    sizes, so real-map validation keeps one pixel of headroom.  Callers that
+    The engine also rejects the exact one-eighth boundary for some maps
+    sizes, so real-map validation keeps one pixel of headroom. Callers that
     need the same rule for small synthetic fixtures can set
     ``include_engine_boundary=True``.
 
-    注意：横向 wrap 的省份（横跨地图东西边界）会有虚假的"超宽"，
-    本函数不处理 wrap，因为 HOI4 引擎本身就是按 bbox 判断的，
-    一个跨 wrap 的省份在 HOI4 看来确实是"超宽"的，需要拆分。
-    """
+    Note: Provinces that are wrapped horizontally (across the east and west borders of the map) will have false "super width".
+    This function does not handle wrap, because the HOI4 engine itself judges based on bbox.
+    A province that spans a wrap is indeed "extra-wide" in HOI4's view and needs to be split."""
     # Validate against the actual map dimensions.  The editor supports
     # several map presets, so the fixed vanilla constants are not sufficient
     # for resized projects.
@@ -451,14 +434,14 @@ def detect_too_large_provinces(
     if province_map.max() == 0:
         return []
 
-    # 向量化求每个 ID 的 bbox
+    # Vectorize to find the bbox of each ID
     flat = province_map.ravel()
     ys, xs = np.indices(province_map.shape)
     flat_y = ys.ravel()
     flat_x = xs.ravel()
 
     n = int(province_map.max()) + 1
-    # 用 bincount 类技巧求 min/max 太麻烦；这里用 np.maximum.at / minimum.at
+    # It is too troublesome to use bincount techniques to find min/max; here use np.maximum.at / minimum.at
     min_y = np.full(n, height, dtype=np.int32)
     max_y = np.full(n, -1, dtype=np.int32)
     min_x = np.full(n, width, dtype=np.int32)
@@ -493,13 +476,11 @@ def detect_too_large_provinces(
 
 
 def detect_id_gaps(province_map: np.ndarray) -> list[int]:
-    """
-    检测 ID gap：1..max 之间应该没有缺失的 ID。
-    HOI4 文档原文：
+    """Detect ID gap: There should be no missing IDs between 1..max.
+    Original HOI4 document:
         "if province 23 doesn't exist, province 24 will take on
          the terrain, type, coastal status, and continent of province 25"
-    返回缺失的 ID 列表。
-    """
+    Returns a list of missing IDs."""
     if province_map.max() == 0:
         return []
     present = set(int(x) for x in np.unique(province_map))
@@ -514,10 +495,8 @@ def get_coastal_provinces(
     tile_map: np.ndarray,
     province_map: np.ndarray,
 ) -> set[int]:
-    """
-    获取所有沿海陆地省份的ID集合。
-    用于导出 definition.csv 时设置 coastal 字段。
-    """
+    """Get the ID set of all coastal land provinces.
+    Used to set the coastal field when exporting definition.csv."""
     return set(detect_coastal_mismatch(tile_map, province_map))
 
 

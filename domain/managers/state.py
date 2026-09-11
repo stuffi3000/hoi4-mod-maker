@@ -1,6 +1,4 @@
-"""
-State 管理器 — State 数据结构、自动分组、手动编辑
-"""
+"""State data structures, province assignments, and automatic state grouping."""
 import numpy as np
 from dataclasses import dataclass, field
 from scipy.ndimage import label
@@ -48,34 +46,34 @@ def normalize_state_category(category: str) -> str:
 
 @dataclass
 class StateData:
-    """一个 State 的数据"""
+    """Store the provinces, ownership, buildings, and other state-level data."""
     id: int
-    name: str = ""                      # 主显示名（任何语言，可中文）— 导出到 simp_chinese yml
-    name_en: str = ""                   # 可选英文名 — 导出到 english yml；空则用 "State {id}"
+    name: str = ""                      # Primary display name; exported to English localization
+    name_en: str = ""                   # Optional English name used by English localization export
     provinces: list[int] = field(default_factory=list)
     manpower: int = 100000
     category: str = "town"
     owner_tag: str = ""
     victory_points: dict[int, int] = field(default_factory=dict)  # {province_id: vp_value}
-    vp_names: dict[int, str] = field(default_factory=dict)  # {province_id: city_name 主显示名}
-    vp_names_en: dict[int, str] = field(default_factory=dict)  # {province_id: city_name 英文}
+    vp_names: dict[int, str] = field(default_factory=dict)  # {province_id: primary city name}
+    vp_names_en: dict[int, str] = field(default_factory=dict)  # {province_id: English city name}
 
-    # ── 进阶字段 (State modding 规范) ──
-    impassable: bool = False  # 不可通行 state, 不能部署单位/建楼
-    controller_tag: str = ""  # 初始控制者 (≠ owner 时用于战争开局)
-    local_supplies: float = 0.0  # 本地补给加成
-    # 资源: oil/aluminium/rubber/tungsten/steel/chromium (值=0 不写)
+    # Advanced state fields following HOI4 state-modding conventions.
+    impassable: bool = False  # The state cannot receive units or buildings
+    controller_tag: str = ""  # Initial controller when it differs from the owner
+    local_supplies: float = 0.0  # Local supply modifier
+    # State resources: oil, aluminium, rubber, tungsten, steel, and chromium.
     resources: dict[str, int] = field(default_factory=dict)
-    # state 级建筑: infrastructure/arms_factory/industrial_complex/dockyard/
+    # State-level buildings such as infrastructure, factories, and dockyards.
     # air_base/anti_air_building/radar_station/synthetic_refinery/fuel_silo/
-    # nuclear_reactor/rocket_site/mass_transit/supply_node (值=0 不写)
+    # nuclear_reactor/rocket_site/mass_transit/supply_node (zero values are omitted)
     buildings: dict[str, int] = field(default_factory=dict)
-    # 省份级建筑: {province_id: {building_name: level}}
-    # 用于 bunker / coastal_bunker / naval_base 按省份写
+    # Province-level buildings stored as {province_id: {building_name: level}}.
+    # Used for bunker, coastal_bunker, and naval_base entries.
     province_buildings: dict[int, dict[str, int]] = field(default_factory=dict)
-    # 额外 core TAG 列表 (owner_tag 会自动 add_core_of)
+    # Additional country tags that receive cores when the state is exported.
     extra_cores: list[str] = field(default_factory=list)
-    # 宣称 TAG 列表
+    # Country tags that receive claims on the state.
     claims: list[str] = field(default_factory=list)
 
     def __post_init__(self):
@@ -85,9 +83,9 @@ class StateData:
 
 
 class StateManager:
-    """管理所有 State"""
+    """Manage state records and the reverse index from provinces to states."""
 
-    # State 类别选项
+    # State-category options accepted by the editor and exporter.
     CATEGORIES = [
         "wasteland", "enclave", "tiny_island", "small_island",
         "large_island", "pastoral", "rural", "town", "large_town",
@@ -107,11 +105,11 @@ class StateManager:
         return self._states.get(state_id)
 
     def get_state_of_province(self, pid: int) -> int:
-        """查询省份所属的 State ID，0=未分配"""
+        """Return the owning state ID, or zero when the province is unassigned."""
         return self._province_to_state.get(pid, 0)
 
     def create_state(self, provinces: list[int] | None = None) -> StateData:
-        """创建新 State"""
+        """Create a state and index each supplied province under its new ID."""
         sid = self._next_id
         self._next_id += 1
         state = StateData(id=sid, provinces=provinces or [])
@@ -121,22 +119,22 @@ class StateManager:
         return state
 
     def assign_province(self, pid: int, state_id: int) -> None:
-        """将省份移动到指定 State"""
-        # 从旧 State 移除
+        """Move a province from its current state into the requested state."""
+        # Remove the province from its previous state first.
         old_sid = self._province_to_state.get(pid, 0)
         if old_sid > 0 and old_sid in self._states:
             provs = self._states[old_sid].provinces
             if pid in provs:
                 provs.remove(pid)
 
-        # 加入新 State
+        # Add the province to the new state and update the reverse index.
         if state_id in self._states:
             if pid not in self._states[state_id].provinces:
                 self._states[state_id].provinces.append(pid)
             self._province_to_state[pid] = state_id
 
     def set_vp(self, province_id: int, value: int, name: str = "") -> None:
-        """设置胜利点 + 城市名"""
+        """Set a province's victory-point value and optional city name."""
         sid = self._province_to_state.get(province_id, 0)
         if sid > 0 and sid in self._states:
             self._states[sid].victory_points[province_id] = value
@@ -146,20 +144,20 @@ class StateManager:
                 self._states[sid].vp_names[province_id] = ""
 
     def remove_vp(self, province_id: int) -> None:
-        """移除胜利点"""
+        """Remove victory points and the associated city name from a province."""
         sid = self._province_to_state.get(province_id, 0)
         if sid > 0 and sid in self._states:
             self._states[sid].victory_points.pop(province_id, None)
             self._states[sid].vp_names.pop(province_id, None)
 
     def clear(self) -> None:
-        """清空所有数据"""
+        """Remove every state and reset the next generated state ID."""
         self._states.clear()
         self._province_to_state.clear()
         self._next_id = 1
 
     def delete_state(self, state_id: int) -> bool:
-        """删除一个 State; 返回是否实际删除. 反向索引里指向该 State 的省份也清掉."""
+        """Delete a state and remove reverse-index entries for its provinces."""
         if state_id not in self._states:
             return False
         for pid in list(self._states[state_id].provinces):
@@ -169,17 +167,16 @@ class StateManager:
         return True
 
     def find_empty_state_ids(self) -> list[int]:
-        """返回所有 provinces 列表为空的 State ID — 通常是合并省份后留下的孤儿."""
+        """Return IDs of states left without provinces after editing."""
         return [sid for sid, st in self._states.items() if not st.provinces]
 
     def compact_ids(self) -> dict[int, int]:
-        """把 state ID 重新编号为 1..N 连续 (按原 ID 升序保持相对顺序).
+        """Renumber states contiguously and return the old-to-new ID mapping.
 
-        HOI4 statetemplate.cpp 要求 state ID 连续, 任何 gap 都会触发 'Missing State ID'
-        进而引发除零崩溃. 合并 province 删空 state 后必须调用这个方法压实 ID.
-
-        返回 {old_id: new_id} 映射; 如果已经连续返回空 dict.
-        StateData.id 字段同步更新; 默认名 'STATE_{old}' 会同步改成 'STATE_{new}'.
+        HOI4 expects state IDs to be contiguous. Empty states created while
+        provinces are merged can leave gaps, so exporters call this method
+        before writing state history files. Predictable ``STATE_N`` names are
+        updated along with their IDs.
         """
         old_ids = sorted(self._states.keys())
         if not old_ids:
@@ -210,10 +207,11 @@ class StateManager:
         tile_map: np.ndarray,
         per_state: int = 15,
     ) -> None:
-        """
-        自动按地理位置把陆地省份分成 State。
-        先用连通分量找独立陆块，再在每个陆块内部按坐标分组，
-        避免隔海的省份被分到同一个 State。
+        """Group land provinces into geographically compact states.
+
+        Connected landmasses are identified first; K-means clustering is then
+        performed independently within each landmass so provinces separated
+        by water are not placed in the same state.
         """
         self.clear()
 
@@ -221,17 +219,17 @@ class StateManager:
         if max_pid == 0:
             return
 
-        # 向量化：一次性计算所有省份的中心和类型
-        # 用 bincount 批量统计，避免逐省份全图扫描
+        # Vectorize province counts and land classification for the whole map.
+        # This avoids scanning the complete image separately for each province.
         flat_pm = province_map.ravel()
         flat_tm = tile_map.ravel()
         flat_land = (flat_tm == TILE_LAND).astype(np.int32)
 
-        # 每个省份的像素数和陆地像素数
+        # Count total pixels and land pixels for every province ID.
         pid_count = np.bincount(flat_pm, minlength=max_pid + 1)
         pid_land_count = np.bincount(flat_pm, weights=flat_land, minlength=max_pid + 1)
 
-        # 陆地省份：陆地像素 > 总像素的一半
+        # A land province contains more land pixels than non-land pixels.
         land_ids = []
         for pid in range(1, max_pid + 1):
             if pid_count[pid] > 0 and pid_land_count[pid] > pid_count[pid] / 2:
@@ -240,9 +238,8 @@ class StateManager:
         if not land_ids:
             return
 
-        # 向量化计算省份质心 — 用 province_map 的真实 shape，
-        # 不信模块级 MAP_WIDTH/MAP_HEIGHT（那是首次 import 时绑定的常量，
-        # set_map_size 改不到这里；若项目非原版尺寸会 bincount 长度不匹配崩）
+        # Compute province centroids using the actual map shape. The module-level
+        # map-size constants may be stale after a project changes dimensions.
         map_h, map_w = province_map.shape
         ys_all, xs_all = np.mgrid[0:map_h, 0:map_w]
         flat_ys = ys_all.ravel().astype(np.float64)
@@ -258,11 +255,11 @@ class StateManager:
             if cnt > 0:
                 centers[pid] = (sum_y[pid] / cnt, sum_x[pid] / cnt)
 
-        # 用连通分量找独立陆块
+        # Find connected components representing independent landmasses.
         land_binary = (tile_map == TILE_LAND).astype(np.int32)
         labeled_land, num_landmasses = label(land_binary)
 
-        # 每个省份属于哪个陆块（用省份中心像素所在的连通分量）
+        # Associate each province with the landmass containing its centroid.
         pid_to_landmass: dict[int, int] = {}
         for pid in land_ids:
             cy, cx = centers[pid]
@@ -271,14 +268,14 @@ class StateManager:
             ix = min(max(ix, 0), map_w - 1)
             lm = int(labeled_land[iy, ix])
             if lm == 0:
-                # 中心点不在陆地上（边缘情况），找该省份任意陆地像素
+                # A centroid can fall on water at an edge; use any land pixel instead.
                 mask = (province_map == pid) & (tile_map == TILE_LAND)
                 pts = np.where(mask)
                 if len(pts[0]) > 0:
                     lm = int(labeled_land[pts[0][0], pts[1][0]])
             pid_to_landmass[pid] = lm
 
-        # 按陆块分组
+        # Group province IDs by their containing landmass.
         landmass_groups: dict[int, list[int]] = {}
         for pid in land_ids:
             lm = pid_to_landmass.get(pid, 0)
@@ -286,37 +283,37 @@ class StateManager:
                 landmass_groups[lm] = []
             landmass_groups[lm].append(pid)
 
-        # 在每个陆块内部用 K-means 聚类质心 → 紧凑 blob，避免横向条带和跨海拉省
+        # Cluster centroids within each landmass to produce compact state blobs.
         from scipy.cluster.vq import kmeans2
-        rng_seed = 42  # 固定种子保证同一项目重复生成结果一致
+        rng_seed = 42  # Fixed seed makes repeated generation deterministic.
         for lm_id, group_pids in landmass_groups.items():
             n_pids = len(group_pids)
             if n_pids == 0:
                 continue
-            # 目标 state 数 = ceil(n_pids / per_state)；至少 1 个
+            # Target state count is ceil(number of provinces / requested size).
             n_states = max(1, (n_pids + per_state - 1) // per_state)
-            # 单 state 或 单点：直接成组
+            # A single cluster or a tiny landmass needs no clustering.
             if n_states == 1 or n_pids <= 2:
                 state = self.create_state(group_pids)
                 state.manpower = n_pids * 50000
                 continue
 
-            # 准备质心矩阵 (n_pids, 2): [y, x]
+            # Build the centroid matrix with one [y, x] row per province.
             pts = np.array(
                 [[centers[p][0], centers[p][1]] for p in group_pids],
                 dtype=np.float64,
             )
-            # 'points' init = 从样本里随机挑 n_states 个点做种子。
-            # 用 np.random.seed 固定种子，保证同一项目重复生成结果一致
-            # （scipy 不同版本的 seed/rng 关键字名不同，这种方式最兼容）
+            # ``points`` initialization chooses sample centroids as seeds.
+            # Seed NumPy explicitly because SciPy changed its RNG keyword across versions.
+            # This is the most compatible way to keep generation repeatable.
             np.random.seed(rng_seed)
             try:
                 _, labels = kmeans2(pts, n_states, iter=20, minit='points')
             except Exception:
-                # 退化场景（如同点过多）—— 兜底为按顺序切块
+                # Degenerate input, such as many identical centroids, falls back to ordered chunks.
                 labels = np.array([i * n_states // n_pids for i in range(n_pids)])
 
-            # 按 cluster 标签分组建 state
+            # Group provinces by the resulting cluster label.
             cluster_to_pids: dict[int, list[int]] = {}
             for pid, lab in zip(group_pids, labels):
                 cluster_to_pids.setdefault(int(lab), []).append(pid)
@@ -330,12 +327,12 @@ class StateManager:
         self, province_map: np.ndarray,
         unassigned_highlight: bool = True,
     ) -> np.ndarray:
-        """生成 State 颜色图（用于显示）。
+        """Build a deterministic RGB overlay for state assignments.
 
-        unassigned_highlight=True：未分配到 state 的 land province 高亮为**鲜红色**，
-        让用户一眼看到还有哪些省份没分配。
+        Unassigned provinces are bright red when highlighting is enabled so
+        missing state assignments are easy to spot on the map.
         """
-        # 为每个 State 分配确定性颜色
+        # Use a fixed seed so state colors do not change between redraws.
         rng = np.random.RandomState(123)
         colors = {}
         for sid in self._states:
@@ -345,30 +342,30 @@ class StateManager:
                 int(rng.randint(60, 220)),
             )
 
-        # 构建 LUT: province_id → (R, G, B)
+        # Build a province-ID lookup table containing each state's RGB color.
         max_pid = int(province_map.max())
         lut = np.zeros((max_pid + 1, 3), dtype=np.uint8)
-        # 未分配：鲜红色（高亮）或深灰（不高亮）
+        # Unassigned provinces use bright red for highlighting or dark gray otherwise.
         if unassigned_highlight:
-            lut[:, :] = (220, 30, 30)  # 鲜红提示"未分配"
+            lut[:, :] = (220, 30, 30)  # Bright red marks an unassigned province.
         else:
-            lut[:, :] = 40  # 深灰
+            lut[:, :] = 40  # Dark gray leaves unassigned provinces unobtrusive.
 
-        # pid=0 保持为特殊值（用灰色，避免红色淹没海洋）
+        # Province ID zero represents ocean or otherwise unmapped pixels.
         lut[0] = (40, 40, 60)
 
         for pid, sid in self._province_to_state.items():
             if pid <= max_pid and sid in colors:
                 lut[pid] = colors[sid]
 
-        # 应用到整张图
+        # Apply the lookup table to the complete province map.
         flat = province_map.ravel()
         flat_clipped = np.clip(flat, 0, max_pid)
         rgb = lut[flat_clipped].reshape(province_map.shape[0], province_map.shape[1], 3)
         return rgb
 
     def build_state_id_map(self, province_map: np.ndarray) -> np.ndarray:
-        """省份图 → state id 图 (0=海洋/未分配), 供名字标签排版用。"""
+        """Convert each province ID in a map to its assigned state ID."""
         max_pid = int(province_map.max())
         lut = np.zeros(max_pid + 1, dtype=np.int32)
         for pid, sid in self._province_to_state.items():
@@ -377,6 +374,6 @@ class StateManager:
         return lut[np.clip(province_map, 0, max_pid)]
 
     def count_unassigned_provinces(self, all_land_pids: set[int]) -> int:
-        """返回还没分配到任何 state 的 land province 数量。"""
+        """Count land provinces that are not present in the reverse index."""
         assigned = set(self._province_to_state.keys())
         return len(all_land_pids - assigned)

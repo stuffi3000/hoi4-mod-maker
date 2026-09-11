@@ -1,8 +1,6 @@
-"""
-预览功能集成测试 — 渲染器缓存 / 降级 / 模式接入。
+"""Preview feature integration testing - renderer cache/downgrade/mode access.
 
-游戏文件不进 CI: 合成走假资产, 真实资产相关行为由 test_game_assets 覆盖。
-"""
+Game files are not included in CI: fake assets are synthesized, and real asset-related behaviors are covered by test_game_assets."""
 
 from types import SimpleNamespace
 
@@ -22,7 +20,7 @@ def qapp():
 
 @pytest.fixture()
 def canvas(qapp):
-    """对齐全局尺寸后构造画布 (与 test_render_registry 相同的防御)。"""
+    """Construct canvas after aligning global dimensions (same defense as test_render_registry)."""
     import views.canvas.widget as widget_mod
     import data.constants as constants
     from data.constants import set_map_size
@@ -37,9 +35,9 @@ def canvas(qapp):
 
 @pytest.fixture()
 def fake_assets(monkeypatch):
-    """注入 16 瓦片假资产, 测试结束还原默认单例。"""
+    """Inject 16 tiles fake assets, and restore the default singleton when the test is over."""
     tiles = np.zeros((16, 4, 4, 4), dtype=np.uint8)
-    tiles[:, :, :, 1] = 200          # 全绿瓦片
+    tiles[:, :, :, 1] = 200          # All green tiles
     tiles[:, :, :, 3] = 255
     fake = SimpleNamespace(
         atlas_tiles=lambda: tiles,
@@ -53,7 +51,7 @@ def fake_assets(monkeypatch):
 
 
 def test_preview_mode_is_valid_and_registered(canvas):
-    """preview 是合法显示模式且注册了渲染器。"""
+    """preview is a legal display mode and has a registered renderer."""
     from views.canvas.render_registry import DEFAULT_RENDERERS
     canvas.display_mode = "preview"
     assert canvas.display_mode == "preview"
@@ -61,18 +59,18 @@ def test_preview_mode_is_valid_and_registered(canvas):
 
 
 def test_render_composes_and_caches(canvas, fake_assets):
-    """首次渲染合成并缓存; 再次渲染直接用缓存。"""
+    """The composition is rendered and cached for the first time; the cache is used directly for subsequent renderings."""
     preview_renderer.render(canvas)
     cache1 = canvas._preview_cache
     assert cache1 is not None
     assert cache1.shape == (*canvas._tile_map.shape, 3)
 
     preview_renderer.render(canvas)
-    assert canvas._preview_cache is cache1     # 同一对象 = 没重新合成
+    assert canvas._preview_cache is cache1     # Same object = no resynthesis
 
 
 def test_invalidate_cache_forces_recompose(canvas, fake_assets):
-    """invalidate_cache 后重新合成 (刷新按钮的路径)。"""
+    """resynthesize after invalidate_cache (path to refresh button)."""
     preview_renderer.render(canvas)
     cache1 = canvas._preview_cache
     preview_renderer.invalidate_cache(canvas)
@@ -81,25 +79,25 @@ def test_invalidate_cache_forces_recompose(canvas, fake_assets):
 
 
 def test_degrades_to_land_when_assets_unavailable(canvas, monkeypatch):
-    """游戏资产不可用: 不崩, 降级 land 渲染, 原因可供页面显示。"""
+    """Game assets are unavailable: not crashing, downgraded land rendering, reason available for page display."""
     broken = SimpleNamespace(
         atlas_tiles=lambda: None,
         terrain_to_texture=lambda: None,
         available=lambda: False,
         install_dir=None,
-        last_error="未找到 HOI4 安装目录",
+        last_error="HOI4 installation directory was not found",
     )
     monkeypatch.setattr(ga, "_default_assets", broken)
     preview_renderer.invalidate_cache(canvas)
 
-    preview_renderer.render(canvas)            # 不抛异常
+    preview_renderer.render(canvas)            # Don't throw exception
 
     assert canvas._preview_cache is None
     assert canvas._preview_error != ""
 
 
 def test_preview_mode_enables_smooth_scaling(canvas):
-    """预览模式开平滑缩放 (纹理图), 编辑模式保持最近邻 (像素硬边)。"""
+    """Preview mode turns on smooth scaling (texture map), editing mode keeps nearest neighbors (pixel hard edges)."""
     from PyQt5.QtGui import QPainter
     canvas.display_mode = "preview"
     assert canvas.renderHints() & QPainter.RenderHint.SmoothPixmapTransform
@@ -108,5 +106,5 @@ def test_preview_mode_enables_smooth_scaling(canvas):
 
 
 def test_renderer_has_no_partial_render():
-    """预览渲染器刻意不提供 partial_render (画布将回退全量)。"""
+    """The preview renderer intentionally does not provide partial_render (the canvas will rewind the full amount)."""
     assert not hasattr(preview_renderer, "partial_render")

@@ -1,6 +1,4 @@
-"""
-导入国家资料测试 — history/countries 解析 + 填充时的国名/首都/政体。
-"""
+"""Import country data test - history/countries parsing + country name/capital/polity when filling."""
 
 from types import SimpleNamespace
 
@@ -16,7 +14,7 @@ def _write_country_file(tmp_path, filename, text):
 
 
 def test_parse_country_history(tmp_path):
-    """提取 capital (State ID) 和 ruling_party; 非法文件名跳过。"""
+    """Extract capital (State ID) and ruling_party; skipping illegal file names."""
     _write_country_file(tmp_path, "GER - Germany.txt", """
 capital = 64
 
@@ -32,11 +30,11 @@ set_politics = {
 
     assert out["GER"] == {"capital_state": 64, "ruling_party": "fascism"}
     assert out["SOV"] == {"capital_state": 219, "ruling_party": ""}
-    assert "REA" not in out  # readme 不是国家文件 (非 .txt 已跳过)
+    assert "REA" not in out  # readme is not a national file (non-.txt skipped)
 
 
 def test_populate_fills_country_details():
-    """国名查本地化、首都从 State ID 换算成 VP 省份、政体导入。"""
+    """Country name search is localized, capital is converted from State ID to VP province, and government system is imported."""
     project = Project()
     result = {
         "states": [{
@@ -54,14 +52,14 @@ def test_populate_fills_country_details():
 
     ger = project.country_mgr.get_country("GER")
     assert ger is not None
-    assert ger.name == "German Reich"          # 本地化国名, 不是 TAG
-    assert ger.capital == 102                  # State 64 里 VP 最高的省份
+    assert ger.name == "German Reich"          # Localized country name, not TAG
+    assert ger.capital == 102                  # The province with the highest VP in State 64
     assert ger.ruling_party == "fascism"
     assert project.country_mgr.get_owner_of_state(64) == "GER"
 
 
 def test_populate_without_history_still_creates_country():
-    """缺 history/本地化时退回旧行为: TAG 当名字, 无首都。"""
+    """Fallback to old behavior when history/localization is missing: TAG as name, no capital."""
     project = Project()
     result = {
         "states": [{

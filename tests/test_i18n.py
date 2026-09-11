@@ -60,17 +60,17 @@ def test_saved_non_english_locale_is_normalized(i18n, monkeypatch):
             pass
 
         def value(self, key, default):
-            return "zh"
+            return "de"
 
     monkeypatch.setattr("PyQt5.QtCore.QSettings", FakeSettings)
     assert i18n._load_saved_language() == "en"
 
 
 def test_set_language_always_keeps_english(i18n):
-    i18n.set_language("zh")
+    i18n.set_language("de")
     assert i18n.get_language() == "en"
     assert i18n.available_languages() == ["en"]
-    i18n.set_language("ru")
+    i18n.set_language("fr")
     assert i18n.get_language() == "en"
 
 
@@ -99,10 +99,9 @@ def test_tr_missing_key_returns_key(i18n):
     assert i18n.tr("__nonexistent_key__") == "__nonexistent_key__"
 
 
-def test_tr_pair_is_always_english(i18n):
-    for locale in ("en", "zh", "ru"):
-        i18n.set_language(locale)
-        assert i18n.tr_pair("非英文 {0}", "English {0}", 42) == "English 42"
+def test_unknown_locale_requests_are_normalized(i18n):
+    i18n.set_language("de")
+    assert i18n.get_language() == "en"
 
 
 def test_tr_placeholder_mismatch_logs_warning(i18n, caplog):
@@ -129,8 +128,7 @@ def test_audit_summary_is_english_only():
     result = _run("i18n_audit.py", "summary")
     assert result.returncode == 0, result.stderr
     assert "English-only" in result.stdout
-    assert "en" in result.stdout
-    assert "zh" not in result.stdout and "ru" not in result.stdout
+    assert re.search(r"^\* en\s+\|\s+\d+ keys$", result.stdout, re.MULTILINE)
 
 
 def test_audit_check_placeholders_passes():
@@ -139,7 +137,7 @@ def test_audit_check_placeholders_passes():
 
 
 def test_audit_rejects_non_english_catalogs():
-    result = _run("i18n_audit.py", "missing", "ru")
+    result = _run("i18n_audit.py", "missing", "de")
     assert result.returncode == 2
     assert "not found" in result.stderr
 

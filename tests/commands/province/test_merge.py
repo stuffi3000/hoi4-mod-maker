@@ -1,6 +1,4 @@
-"""
-MergeProvincesCommand 单元测试。
-"""
+"""MergeProvincesCommand unit test."""
 
 import numpy as np
 import pytest
@@ -10,9 +8,9 @@ from commands.province.merge import MergeProvincesCommand
 
 
 def _make_map_data(h: int = 4, w: int = 4) -> MapData:
-    """创建小尺寸 MapData 用于测试。"""
+    """Create a small MapData for testing."""
     md = MapData.__new__(MapData)
-    md.tile_map = np.ones((h, w), dtype=np.uint8)  # 全陆地
+    md.tile_map = np.ones((h, w), dtype=np.uint8)  # All land
     md.province_map = np.zeros((h, w), dtype=np.int32)
     md.terrain_map = np.zeros((h, w), dtype=np.uint8)
     md.height_map = np.full((h, w), 40, dtype=np.uint8)
@@ -22,24 +20,24 @@ def _make_map_data(h: int = 4, w: int = 4) -> MapData:
 
 
 class TestMergeProvincesCommand:
-    """MergeProvincesCommand 测试。"""
+    """MergeProvincesCommand test."""
 
     def test_merge_changes_pixels(self) -> None:
-        """execute 应将被移除省份的像素改为保留省份 ID。"""
+        """execute should change pixels from removed provinces to retain province IDs."""
         md = _make_map_data()
-        # 设置两个省份: pid=1 占左半，pid=2 占右半
+        # Set two provinces: pid=1 occupies the left half, pid=2 occupies the right half
         md.province_map[:, :2] = 1
         md.province_map[:, 2:] = 2
 
         cmd = MergeProvincesCommand(md, pid_keep=1, pid_remove=2)
         cmd.execute()
 
-        # 所有像素应变为 pid=1
+        # All pixels should have pid=1
         assert (md.province_map[:, 2:] == 1).all()
         assert (md.province_map[:, :2] == 1).all()
 
     def test_undo_restores_pixels(self) -> None:
-        """undo 应恢复被合并省份的像素。"""
+        """undo should restore the pixels of merged provinces."""
         md = _make_map_data()
         md.province_map[:, :2] = 1
         md.province_map[:, 2:] = 2
@@ -49,18 +47,18 @@ class TestMergeProvincesCommand:
         cmd = MergeProvincesCommand(md, pid_keep=1, pid_remove=2)
         cmd.execute()
 
-        # 合并后 pid=2 消失
+        # After merging, pid=2 disappears
         assert not (md.province_map == 2).any()
 
         cmd.undo()
 
-        # 恢复后右半应回到 pid=2
+        # After recovery the right half should be back to pid=2
         assert (md.province_map[:, 2:] == 2).all()
         assert (md.province_map[:, :2] == 1).all()
 
 
 class TestMergeStrategicRegionCleanup:
-    """merge 后 pid_remove 必须从 strategic_region 移除, 否则切割复用 ID 时新省份会继承旧 region."""
+    """After merge, pid_remove must be removed from strategic_region, otherwise the new province will inherit the old region when the reuse ID is cut."""
 
     def test_pid_remove_cleared_from_region_on_execute(self) -> None:
         from domain.managers.strategic_region import StrategicRegionManager
@@ -102,7 +100,7 @@ class TestMergeStrategicRegionCleanup:
 
 
 class TestMergeCapitalMigration:
-    """merge 若吞掉某国首都, capital 必须迁移, 否则 capital 指向死 ID → 启动游戏崩."""
+    """If merge swallows the capital of a country, the capital must be moved, otherwise the capital points to the dead ID → the game will crash when starting."""
 
     def test_capital_migrates_to_pid_keep_when_same_country(self) -> None:
         from domain.managers.state import StateManager
@@ -120,7 +118,7 @@ class TestMergeCapitalMigration:
         country_mgr = CountryManager()
         country_mgr.create_country("AAA", name="A", color=(1, 2, 3))
         country_mgr.assign_state(s.id, "AAA")
-        country_mgr.set_capital("AAA", 2)  # 首都 = pid_remove
+        country_mgr.set_capital("AAA", 2)  # capital = pid_remove
 
         cmd = MergeProvincesCommand(
             md, pid_keep=1, pid_remove=2,
@@ -128,7 +126,7 @@ class TestMergeCapitalMigration:
         )
         cmd.execute()
 
-        # 首都迁到 pid_keep (同国, 物理上接管了 pid_remove 的像素)
+        # The capital is moved to pid_keep (same country, physically takes over the pixels of pid_remove)
         assert country_mgr.get_country("AAA").capital == 1
 
     def test_undo_restores_capital(self) -> None:
@@ -174,7 +172,7 @@ class TestMergeCapitalMigration:
         country_mgr = CountryManager()
         country_mgr.create_country("AAA", name="A", color=(1, 2, 3))
         country_mgr.assign_state(s.id, "AAA")
-        country_mgr.set_capital("AAA", 1)  # 首都 = pid_keep, 不是 pid_remove
+        country_mgr.set_capital("AAA", 1)  # capital = pid_keep, not pid_remove
 
         cmd = MergeProvincesCommand(
             md, pid_keep=1, pid_remove=2,

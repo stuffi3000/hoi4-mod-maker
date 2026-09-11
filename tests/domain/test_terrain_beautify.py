@@ -1,6 +1,4 @@
-"""
-保形美化地形测试 — 布局保留 / 实测比例混变体 / 保护像素。
-"""
+"""Conformal beautification terrain test—layout preservation/measured proportional blending/protected pixels."""
 
 from types import SimpleNamespace
 
@@ -19,7 +17,7 @@ from data.terrain_types import PALETTE_TO_TYPE
 
 
 def _world(h=256, w=512):
-    """左半森林右半平原的手画世界, 顶部一条海。"""
+    """A hand-drawn world with half forests on the left and plains on the right, with a sea at the top."""
     tile_map = np.full((h, w), TILE_LAND, dtype=np.uint8)
     tile_map[:20, :] = TILE_SEA
     terrain = np.full((h, w), IDX_PLAINS, dtype=np.uint8)
@@ -30,12 +28,12 @@ def _world(h=256, w=512):
 
 
 def test_layout_families_preserved():
-    """作者画的家族布局基本不变 (扭曲只动边界, 不搬家)。"""
+    """The family layout drawn by the author basically remains unchanged (distortion only moves the boundaries, not moving)."""
     tile_map, terrain, height = _world()
     out = beautify_terrain(terrain, tile_map, height, seed=1)
 
     fam = np.vectorize(lambda i: PALETTE_TO_TYPE.get(int(i), ""))
-    # 远离边界的采样区: 左侧深处应仍是森林家族, 右侧深处仍是平原家族
+    # Sampling area far away from the boundary: the deep left part should still be the forest family, and the deep right part should still be the plain family
     left = fam(out[100:200, 50:200])
     right = fam(out[100:200, 300:460])
     assert (left == "forest").mean() > 0.95
@@ -43,7 +41,7 @@ def test_layout_families_preserved():
 
 
 def test_variant_mix_matches_vanilla_ratio():
-    """森林块内变体比例贴近原版实测 67:33 (±8%)。"""
+    """The ratio of variants within the forest block is close to the original measured 67:33 (±8%)."""
     tile_map, terrain, height = _world()
     out = beautify_terrain(terrain, tile_map, height, seed=2)
 
@@ -54,12 +52,12 @@ def test_variant_mix_matches_vanilla_ratio():
 
 
 def test_water_urban_marsh_protected():
-    """海/湖强制还原; 城市与沼泽 (作者的明确设计) 原样保留。"""
+    """The sea/lake is forcibly restored; the city and swamp (the author's explicit design) are retained as they are."""
     tile_map, terrain, height = _world()
     tile_map[100:110, 100:110] = TILE_LAKE
     terrain[150:160, 150:160] = IDX_URBAN
     terrain[200:210, 300:310] = IDX_MARSH
-    height[150:170, 140:320] = SEA_LEVEL + 70          # 高海拔也不能覆盖保护区
+    height[150:170, 140:320] = SEA_LEVEL + 70          # High altitudes also cannot cover protected areas.
 
     out = beautify_terrain(terrain, tile_map, height, seed=3)
 
@@ -70,7 +68,7 @@ def test_water_urban_marsh_protected():
 
 
 def test_elevation_overlay_snow_peaks():
-    """超过雪线的高地点缀雪山 (阈值为原版实测 +60)。"""
+    """The highlands above the snow line are dotted with snowy mountains (the threshold is +60 measured in the original version)."""
     tile_map, terrain, height = _world()
     height[120:130, 400:420] = SEA_LEVEL + 70
     out = beautify_terrain(terrain, tile_map, height, seed=4)
@@ -78,7 +76,7 @@ def test_elevation_overlay_snow_peaks():
 
 
 def test_generator_protocol():
-    """协议: 不改输入; 同种子可复现。"""
+    """Agreement: Do not change the input; can be reproduced with the same seed."""
     tile_map, terrain, height = _world()
     md = SimpleNamespace(terrain_map=terrain, tile_map=tile_map,
                          height_map=height)
@@ -88,6 +86,6 @@ def test_generator_protocol():
     a = gen.generate(md, TerrainBeautifyParams(seed=7))
     b = gen.generate(md, TerrainBeautifyParams(seed=7))
 
-    assert np.array_equal(md.terrain_map, before)      # 输入零修改
+    assert np.array_equal(md.terrain_map, before)      # Enter zero modifications
     assert np.array_equal(a, b)
     assert gen.target_layer == "terrain_map"

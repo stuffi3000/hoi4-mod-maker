@@ -1,11 +1,11 @@
-"""CommandHistory 单元测试。"""
+"""CommandHistory unit test."""
 from commands.base import Command
 from commands.history import CommandHistory
 from model.events import EventBus
 
 
 class FakeCommand(Command):
-    """测试用的假命令。"""
+    """Fake command for testing."""
 
     label = "fake"
 
@@ -21,7 +21,7 @@ class FakeCommand(Command):
 
 
 class MergeableCommand(Command):
-    """可合并的假命令。"""
+    """Mergeable false commands."""
 
     label = "mergeable"
 
@@ -44,10 +44,10 @@ class MergeableCommand(Command):
 
 
 class TestCommandHistory:
-    """CommandHistory 基本功能。"""
+    """CommandHistory basic functionality."""
 
     def test_execute_pushes_to_undo_stack(self) -> None:
-        """execute 后命令进入 undo 栈。"""
+        """After execute, the command enters the undo stack."""
         history = CommandHistory()
         cmd = FakeCommand()
         history.execute(cmd)
@@ -56,7 +56,7 @@ class TestCommandHistory:
         assert not history.can_redo
 
     def test_undo_pops_and_calls_undo(self) -> None:
-        """undo 弹出命令并调用 cmd.undo()。"""
+        """undo pops the command and calls cmd.undo()."""
         history = CommandHistory()
         cmd = FakeCommand()
         history.execute(cmd)
@@ -67,7 +67,7 @@ class TestCommandHistory:
         assert history.can_redo
 
     def test_redo_pops_and_calls_execute(self) -> None:
-        """redo 弹出命令并调用 cmd.execute()。"""
+        """redo pops the command and calls cmd.execute()."""
         history = CommandHistory()
         cmd = FakeCommand()
         history.execute(cmd)
@@ -79,17 +79,17 @@ class TestCommandHistory:
         assert not history.can_redo
 
     def test_undo_on_empty_returns_false(self) -> None:
-        """空栈 undo 返回 False。"""
+        """Empty stack undo returns False."""
         history = CommandHistory()
         assert history.undo() is False
 
     def test_redo_on_empty_returns_false(self) -> None:
-        """空栈 redo 返回 False。"""
+        """Empty stack redo returns False."""
         history = CommandHistory()
         assert history.redo() is False
 
     def test_new_execute_clears_redo_stack(self) -> None:
-        """新命令执行后 redo 栈被清空。"""
+        """The redo stack is cleared after the new command is executed."""
         history = CommandHistory()
         history.execute(FakeCommand())
         history.undo()
@@ -98,18 +98,18 @@ class TestCommandHistory:
         assert not history.can_redo
 
     def test_max_size_enforced(self) -> None:
-        """超过 max_size 时最早的命令被丢弃。"""
+        """The oldest commands beyond max_size are discarded."""
         history = CommandHistory(max_size=3)
         for _ in range(5):
             history.execute(FakeCommand())
-        # 只保留最近 3 个
+        # Only keep the last 3
         count = 0
         while history.undo():
             count += 1
         assert count == 3
 
     def test_event_bus_notified(self) -> None:
-        """每次操作后 event_bus 收到 undo_state_changed。"""
+        """event_bus receives undo_state_changed after each operation."""
         bus = EventBus()
         notifications: list[dict] = []
 
@@ -129,7 +129,7 @@ class TestCommandHistory:
         assert notifications[-1] == {"can_undo": True, "can_redo": False}
 
     def test_clear_empties_both_stacks(self) -> None:
-        """clear 清空 undo 和 redo 栈。"""
+        """clear clears the undo and redo stacks."""
         history = CommandHistory()
         history.execute(FakeCommand())
         history.execute(FakeCommand())
@@ -141,13 +141,13 @@ class TestCommandHistory:
         assert not history.can_redo
 
     def test_merge_commands(self) -> None:
-        """可合并的命令不会增加栈深度。"""
+        """Mergeable commands do not increase stack depth."""
         history = CommandHistory()
         history.execute(MergeableCommand(1))
         history.execute(MergeableCommand(2))
         history.execute(MergeableCommand(3))
-        # 全部合并到第一个命令
+        # Merge all into first command
         count = 0
         while history.undo():
             count += 1
-        assert count == 1  # 只有一个命令在栈里
+        assert count == 1  # There is only one command on the stack

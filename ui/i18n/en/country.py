@@ -1,8 +1,4 @@
-"""
-country — en 翻译
-
-本文件由 tools/migrate_i18n.py 生成。后续手动维护。
-"""
+"""English strings for country creation and state ownership controls."""
 
 STRINGS: dict[str, str] = {
     "country_assign_mode_btn": "Assign Territory Mode",

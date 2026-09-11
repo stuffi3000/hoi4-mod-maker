@@ -1,4 +1,4 @@
-"""Project 单元测试。"""
+"""Project unit testing."""
 import pytest
 from model.events import EventBus
 from model.project import Project
@@ -8,7 +8,7 @@ from domain.managers.country import CountryManager
 
 @pytest.fixture(autouse=True)
 def _restore_map_size():
-    """测试后恢复全局 MAP_WIDTH / MAP_HEIGHT，避免污染其他测试。"""
+    """Restore global MAP_WIDTH / MAP_HEIGHT after testing to avoid contaminating other tests."""
     import data.constants as _c
     orig_w, orig_h = _c.MAP_WIDTH, _c.MAP_HEIGHT
     yield
@@ -17,10 +17,10 @@ def _restore_map_size():
 
 
 class TestProject:
-    """Project 基本功能。"""
+    """Project basic functions."""
 
     def test_new_project_creates_fresh_managers(self) -> None:
-        """new_project 后所有 manager 是新实例。"""
+        """All managers after new_project are new instances."""
         proj = Project()
         old_state_mgr = proj.state_mgr
         old_country_mgr = proj.country_mgr
@@ -30,7 +30,7 @@ class TestProject:
         assert not proj.is_dirty
 
     def test_mark_dirty_and_clean(self) -> None:
-        """mark_dirty / mark_clean / is_dirty 状态切换。"""
+        """mark_dirty / mark_clean / is_dirty status switching."""
         proj = Project()
         assert not proj.is_dirty
         proj.mark_dirty()
@@ -39,7 +39,7 @@ class TestProject:
         assert not proj.is_dirty
 
     def test_holds_all_managers(self) -> None:
-        """Project 持有所有必要的 manager。"""
+        """Project holds all necessary managers."""
         proj = Project()
         assert isinstance(proj.state_mgr, StateManager)
         assert isinstance(proj.country_mgr, CountryManager)
@@ -54,33 +54,33 @@ class TestProject:
         assert proj.default_map_settings is not None
 
     def test_path_initially_none(self) -> None:
-        """新建 Project 的 path 为 None。"""
+        """The path of the new Project is None."""
         proj = Project()
         assert proj.path is None
 
     def test_save_without_path_raises(self) -> None:
-        """没有路径时 save 抛异常。"""
+        """save throws an exception when there is no path."""
         proj = Project()
         import pytest
         with pytest.raises(ValueError):
             proj.save()
 
     def test_event_bus_default(self) -> None:
-        """不传 event_bus 时自动创建一个。"""
+        """If event_bus is not passed, one will be automatically created."""
         proj = Project()
         assert proj.event_bus is not None
 
     def test_event_bus_injected(self) -> None:
-        """可以注入 event_bus。"""
+        """event_bus can be injected."""
         bus = EventBus()
         proj = Project(event_bus=bus)
         assert proj.event_bus is bus
 
     def test_close_stops_autosave(self) -> None:
-        """close 后 autosave timer 被清理。"""
+        """The autosave timer is cleared after close."""
         import threading
         proj = Project()
-        # 创建一个不会真正触发的 timer
+        # Create a timer that won't actually fire
         timer = threading.Timer(9999, lambda: None)
         proj._autosave_timer = timer
         proj.close()

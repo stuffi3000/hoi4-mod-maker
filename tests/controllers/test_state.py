@@ -1,4 +1,4 @@
-"""StateController 单元测试。"""
+"""StateController unit tests."""
 import pytest
 import numpy as np
 
@@ -10,12 +10,12 @@ from controllers.state import StateController
 
 @pytest.fixture
 def state_setup():
-    """创建 Project + CommandHistory + StateController，初始化小地图。"""
+    """Create Project + CommandHistory + StateController and initialize the minimap."""
     bus = EventBus()
     project = Project(event_bus=bus)
     history = CommandHistory(event_bus=bus)
 
-    # 创建 4x4 小地图，2 个省份
+    # Create a 4x4 minimap with 2 provinces
     project.map_data.province_map = np.array([
         [1, 1, 2, 2],
         [1, 1, 2, 2],
@@ -24,7 +24,7 @@ def state_setup():
     ], dtype=np.int32)
     project.map_data.tile_map = np.ones((4, 4), dtype=np.uint8)
 
-    # 创建一个 State (create_state 接受 provinces 列表)
+    # Create a State (create_state accepts a list of provinces)
     state = project.state_mgr.create_state([1])
     state.name = "TestState"
 
@@ -39,7 +39,7 @@ def test_on_province_clicked_assigns(state_setup):
 
     ctrl.on_province_clicked(2)
 
-    # 省份 2 应该被分配到 State 1
+    # Province 2 should be assigned to State 1
     assert project.state_mgr.get_state_of_province(2) == 1
 
 
@@ -49,7 +49,7 @@ def test_on_province_clicked_no_state_selected(state_setup):
 
     ctrl.on_province_clicked(2)
 
-    # 省份 2 不应该被分配
+    # Province 2 should not be allocated
     assert project.state_mgr.get_state_of_province(2) == 0
 
 
@@ -76,11 +76,11 @@ def test_set_vp(state_setup):
 
 def test_set_vp_with_name(state_setup):
     ctrl, project, _ = state_setup
-    ctrl.set_vp(1, 10, "斯图加特")
+    ctrl.set_vp(1, 10, "Stuttgart")
     state = project.state_mgr.get_state(1)
     assert state.victory_points.get(1) == 10
-    assert state.vp_names.get(1) == "斯图加特"
-    # 空名字 = 清掉旧名
+    assert state.vp_names.get(1) == "Stuttgart"
+    # Empty name = clear old name
     ctrl.set_vp(1, 10, "")
     assert state.vp_names.get(1) == ""
 

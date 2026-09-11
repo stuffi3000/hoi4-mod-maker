@@ -1,7 +1,5 @@
-"""
-输入事件路由 Mixin — 鼠标/键盘事件处理
-从 canvas_widget.py 拆分而来
-"""
+"""Input event routing Mixin — mouse/keyboard event handling
+Split from canvas_widget.py"""
 from PyQt5.QtWidgets import QGraphicsView
 from PyQt5.QtCore import Qt, QRectF, QTimer
 from PyQt5.QtGui import QMouseEvent, QWheelEvent
@@ -14,18 +12,18 @@ from data.terrain_types import TERRAIN_TYPES, PALETTE_TO_TYPE
 
 
 class InputMixin:
-    """鼠标/键盘事件处理方法。假设 self 拥有 MapCanvas 的全部状态属性。"""
+    """Mouse/keyboard event handling methods. Assume that self owns all the state properties of the MapCanvas."""
 
     def _ensure_continuous_brush_timer(self):
-        """懒初始化连续画笔 timer (按住鼠标不动也能持续画)."""
+        """Lazy initialization of the continuous brush timer (you can continue to draw even if you hold down the mouse)."""
         if not hasattr(self, "_continuous_brush_timer"):
             self._continuous_brush_timer = QTimer(self)
-            self._continuous_brush_timer.setInterval(50)  # 50ms ≈ 20Hz, 流畅且不卡
+            self._continuous_brush_timer.setInterval(50)  # 50ms ≈ 20Hz, smooth and no lag
             self._continuous_brush_timer.timeout.connect(self._on_continuous_brush_tick)
             self._continuous_brush_pos: tuple[int, int] | None = None
 
     def _on_continuous_brush_tick(self):
-        """timer 触发: 在最后记录的位置补画一笔 (鼠标不动时使用)."""
+        """timer trigger: draw a stroke at the last recorded position (used when the mouse is not moving)."""
         pos = getattr(self, "_continuous_brush_pos", None)
         if pos is None or not self._is_drawing:
             return
@@ -34,13 +32,13 @@ class InputMixin:
             self._paint_at(sx, sy)
 
     def _start_continuous_brush(self, sx: int, sy: int) -> None:
-        """开始连续画笔 (按住时一直触发)."""
+        """Starts a continuous brush (fires while held down)."""
         self._ensure_continuous_brush_timer()
         self._continuous_brush_pos = (sx, sy)
         self._continuous_brush_timer.start()
 
     def _stop_continuous_brush(self) -> None:
-        """停止连续画笔 (鼠标释放时调用)."""
+        """Stop the continuous brush (called when mouse is released)."""
         timer = getattr(self, "_continuous_brush_timer", None)
         if timer is not None:
             timer.stop()
@@ -54,7 +52,7 @@ class InputMixin:
             event.accept()
             return
 
-        # 调整参考图模式: 左键 = 拖动参考图, 其余绘制交互全部拦截
+        # Adjust the reference image mode: left click = drag the reference image, all other drawing interactions are intercepted
         if (self._ref_adjust_target is not None
                 and event.button() == Qt.MouseButton.LeftButton):
             if self._space_pressed:
@@ -67,7 +65,7 @@ class InputMixin:
             event.accept()
             return
 
-        # 框选模式拦截
+        # Frame selection mode interception
         if self._selection_mode and event.button() == Qt.MouseButton.LeftButton:
             sx, sy = self._scene_pos(event)
             self._selection_start = (int(sx), int(sy))
@@ -76,7 +74,7 @@ class InputMixin:
             event.accept()
             return
 
-        # Ctrl+左键：拖拽移动参考图
+        # Ctrl+left click: drag and move the reference image
         if (event.button() == Qt.MouseButton.LeftButton
                 and event.modifiers() & Qt.ControlModifier):
             self._ref_dragging = True
@@ -85,7 +83,7 @@ class InputMixin:
             event.accept()
             return
 
-        # 框架工具分发（新规范）
+        # Framework Tool Distribution (New Specification)
         if (event.button() == Qt.MouseButton.LeftButton
                 and self._framework_tool is not None
                 and not self._space_pressed):
@@ -100,7 +98,7 @@ class InputMixin:
                 self._framework_tool.on_press(self._framework_ctx, sx, sy)
                 self._is_drawing = True
 
-                # 扩张工具可视反馈：选中省份后显示 allowed 区域 overlay
+                # Expansion tool visual feedback: allowed area overlay is displayed after selecting a province
                 if self._framework_ctx.state.get("allowed_mask") is not None:
                     self._show_expand_overlay()
 
@@ -116,12 +114,12 @@ class InputMixin:
                 event.accept()
                 return
 
-            # 变换工具
+            # Transform tool
             if self._current_tool == "transform" and self._display_mode == "land":
                 sx, sy = self._scene_pos(event)
 
                 if self._transform_active:
-                    # 已有变换框 — 判断点击位置
+                    # Transform box already exists - determine click position
                     hit = self._hit_test_transform(sx, sy)
                     if hit:
                         self._transform_drag = hit
@@ -137,14 +135,14 @@ class InputMixin:
                         event.accept()
                         return
                     else:
-                        # 点击远处框外 = 确认变换
+                        # Click outside the far box = Confirm transformation
                         self._apply_transform()
                         self.stroke_ended.emit()
                         self._end_transform()
                         event.accept()
                         return
 
-                # 没有变换框 — 开始框选
+                # No transform box — start box selection
                 self._transform_selecting = True
                 self._selection_start = (int(sx), int(sy))
                 self._selection_rect_item.setRect(QRectF(sx, sy, 0, 0))
@@ -153,7 +151,7 @@ class InputMixin:
                 event.accept()
                 return
 
-            # 高度模式 + 山脉画线：拖拽收集点（但高度画笔优先级更高 — 用户点了画笔说明不想画山脉）
+            # Height mode + mountain line drawing: drag and collect points (but the height brush has higher priority - the user clicks the brush to indicate that he does not want to draw mountains)
             if (self._display_mode == "height"
                     and getattr(self, '_ridge_mode', False)
                     and getattr(self, '_height_brush_mode', 'off') == "off"):
@@ -162,7 +160,7 @@ class InputMixin:
                     self._is_drawing = True
                     self._ridge_drawing = True
                     self._ridge_path = [(int(sy), int(sx))]
-                    # 初始化红线路径预览
+                    # Initialize red line path preview
                     from PyQt5.QtGui import QPainterPath
                     path = QPainterPath()
                     path.moveTo(sx, sy)
@@ -172,8 +170,8 @@ class InputMixin:
                 event.accept()
                 return
 
-            # 地形模式 + 选区降级套索: 拖拽收集闭合多边形
-            # （历史上高度精修套索也用这套 drawing 代码, 该功能已删, 变量名保留）
+            # Terrain Mode + Selection Downgrade Lasso: Drag to collect closed polygons
+            # (Historically, highly refined lasso also used this set of drawing codes. This function has been deleted and the variable names are retained.)
             _active_lasso = None
             if (self._display_mode == "terrain"
                     and getattr(self, '_downgrade_lasso_mode', False)):
@@ -194,14 +192,14 @@ class InputMixin:
                 event.accept()
                 return
 
-            # 地形/高度/State/Country/后勤/战略区/属性地形 模式：点击省份 → 委托 controller 处理
+            # Terrain/Height/State/Country/Logistics/Strategic Area/Attribute Terrain Mode: Click on the province → entrust the controller to handle it
             if self._display_mode in ("terrain", "height", "state", "country",
                                        "province_terrain", "logistics", "strategic_region",
                                        "continent"):
                 sx, sy = self._scene_pos(event)
                 if 0 <= sx < self.map_w and 0 <= sy < self.map_h:
                     pid = int(self._province_map[sy, sx])
-                    # 高度画笔模式：逐像素抬升/下沉/平滑（即使落在 pid=0 也处理，例如新陆地）
+                    # Height brush mode: lift/sink/smooth pixel by pixel (handled even if falling on pid=0, e.g. new land)
                     if (self._display_mode == "height"
                             and getattr(self, '_height_brush_mode', 'off') != "off"):
                         self._is_drawing = True
@@ -210,7 +208,7 @@ class InputMixin:
                         event.accept()
                         return
                     if pid > 0:
-                        # 地形画笔模式：逐像素绘制 + 按住鼠标不动持续画
+                        # Terrain Brush Mode: Draw pixel by pixel + hold down the mouse and continue drawing
                         if self._display_mode == "terrain" and self._terrain_brush_mode:
                             self._is_drawing = True
                             self.stroke_started.emit()
@@ -219,7 +217,7 @@ class InputMixin:
                             event.accept()
                             return
                         self.province_clicked.emit(pid)
-                        # 可拖拽分配的模式: 开始拖拽 (controller 内部按 assign_mode 决定要不要写)
+                        # Drag-and-drop assignment mode: start dragging (controller internally presses assign_mode to decide whether to write)
                         if self._display_mode in (
                             "state", "country", "strategic_region", "continent",
                             "province_terrain",
@@ -229,14 +227,14 @@ class InputMixin:
                 event.accept()
                 return
 
-            # 省份模式 + 切割模式：旋转线切割
+            # Province mode + cutting mode: rotating line cutting
             if self._display_mode == "province" and getattr(self, '_split_mode', False):
                 sx, sy = self._scene_pos(event)
                 if 0 <= sx < self.map_w and 0 <= sy < self.map_h:
                     pid = int(self._province_map[int(sy), int(sx)])
                     if pid > 0:
                         if getattr(self, '_split_ready', False):
-                            # 点击确认切割 — 传质心、方向、鼠标点击位置
+                            # Click to confirm cutting - transmit center of mass, direction, mouse click position
                             import math
                             self._split_ready = False
                             self._split_line_item.setVisible(False)
@@ -245,15 +243,15 @@ class InputMixin:
                                 (self._split_cy, self._split_cx),
                                 (int(self._split_cy + 9999 * math.sin(angle)),
                                  int(self._split_cx + 9999 * math.cos(angle))),
-                                (int(sy), int(sx)),  # 鼠标点击位置 → 这一侧切出去
+                                (int(sy), int(sx)),  # Mouse click position → cut out this side
                             ])
                         else:
-                            # 点击省份 → 初始化切割预览
+                            # Click on province → Initialize cutting preview
                             self._init_split_preview(pid)
                 event.accept()
                 return
 
-            # 省份模式：左键只做选中 (扩张需走 lasso 框架工具, 不允许直接拖动改边界)
+            # Province mode: left-click only to select (expansion requires lasso framework tool, direct dragging to change boundaries is not allowed)
             if self._display_mode == "province":
                 sx, sy = self._scene_pos(event)
                 if 0 <= sx < self.map_w and 0 <= sy < self.map_h:
@@ -273,27 +271,27 @@ class InputMixin:
                 event.accept()
                 return
 
-            # 河流模式：画笔绘制
+            # River Mode: Brush Drawing
             if self._display_mode == "river":
                 if self._current_tool in ("brush", "eraser"):
                     self._is_drawing = True
                     self.stroke_started.emit()
                     sx, sy = self._scene_pos(event)
-                    # 河流自动源头：brush 模式下，若起笔点不是在已有河道上，
-                    # 自动在起点放一个源头标记（0=绿色），保证画出来的河合法。
-                    # HOI4 规则：没有源头的河引擎不渲染（Paradox wiki Map modding §721）
+                    # Automatic river source: In brush mode, if the starting point is not on an existing river,
+                    # Automatically place a source marker (0=green) at the starting point to ensure that the drawn river is legal.
+                    # HOI4 Rules: Rivers without sources are not rendered by the engine (Paradox wiki Map modding §721)
                     if (self._current_tool == "brush"
                         and self._current_river_type not in (0, 1, 2)
                         and 0 <= sx < self.map_w and 0 <= sy < self.map_h):
                         from domain.managers.river import VALID_RIVER_VALUES
                         val = int(self._river_map[sy, sx])
                         if val not in VALID_RIVER_VALUES:
-                            # 临时切 source 画一下，再切回原宽度
+                            # Temporarily cut the source to draw, and then cut it back to the original width.
                             orig_type = self._current_river_type
                             self._current_river_type = 0
                             self._stamp_brush(sx, sy)
                             self._current_river_type = orig_type
-                            # 避免下一步与源头之间出对角，_last_draw_pos 设为源头位置
+                            # To avoid the diagonal between the next step and the source, _last_draw_pos is set to the source position
                             self._last_draw_pos = (sx, sy)
                             event.accept()
                             return
@@ -302,8 +300,8 @@ class InputMixin:
                     return
 
             if self._current_tool in ("brush", "eraser", "new_land"):
-                # 已生成省份 → 画笔/橡皮先弹确认（边界会错位）。
-                # 扩展陆地不拦: 它就是为已有省份的增量生成流程设计的。
+                # Province has been generated → Brush/eraser flick first to confirm (borders will be misaligned).
+                # Expanding the land is not blocked: it is designed for the incremental generation process of existing provinces.
                 if (self._current_tool != "new_land"
                         and not self._confirm_land_paint()):
                     event.accept()
@@ -333,13 +331,13 @@ class InputMixin:
         if 0 <= sx < self.map_w and 0 <= sy < self.map_h:
             self.mouse_moved.emit(sx, sy)
             self._update_brush_cursor(sx, sy)
-            # 更新连续画笔的位置 (鼠标动了就用最新位置, 鼠标停了 timer 用记住的位置补画)
+            # Update the position of the continuous brush (when the mouse moves, the latest position is used, when the mouse is stopped, the timer uses the remembered position to repaint)
             if getattr(self, "_continuous_brush_pos", None) is not None:
                 self._continuous_brush_pos = (sx, sy)
         else:
             self._brush_cursor.setVisible(False)
 
-        # 变换工具框选拖拽
+        # Transform tool selection drag
         if self._transform_selecting and self._selection_start:
             x0, y0 = self._selection_start
             x1 = max(0, min(self.map_w, int(sx)))
@@ -351,7 +349,7 @@ class InputMixin:
             event.accept()
             return
 
-        # 变换工具拖拽（移动/缩放）
+        # Transform tool drag (move/zoom)
         if self._transform_drag and self._transform_box:
             dx = sx - self._transform_drag_start[0]
             dy = sy - self._transform_drag_start[1]
@@ -360,7 +358,7 @@ class InputMixin:
             if self._transform_drag == "move":
                 self._transform_box = (bx0 + dx, by0 + dy, bx1 + dx, by1 + dy)
             elif self._transform_drag == "rotate":
-                # 以框中心为原点，计算起始角和当前角的差
+                # Taking the center of the box as the origin, calculate the difference between the starting angle and the current angle
                 import math
                 cx = (bx0 + bx1) / 2
                 cy = (by0 + by1) / 2
@@ -382,13 +380,13 @@ class InputMixin:
 
             self._update_transform_visuals()
 
-            # 实时预览
+            # Live preview
             self._apply_transform()
 
             event.accept()
             return
 
-        # 框选模式拖拽
+        # Drag and drop in frame selection mode
         if self._selection_mode and self._selection_start:
             x0, y0 = self._selection_start
             x1, y1 = max(0, min(self.map_w, int(sx))), max(0, min(self.map_h, int(sy)))
@@ -399,11 +397,11 @@ class InputMixin:
             event.accept()
             return
 
-        # 拖拽移动参考图 (Ctrl+拖拽 = 自定义图; 调整模式 = 当前调整对象)
+        # Drag and drop to move the reference map (Ctrl+drag = custom map; adjustment mode = current adjustment object)
         if getattr(self, '_ref_dragging', False):
             delta = event.pos() - self._ref_drag_start
             self._ref_drag_start = event.pos()
-            # 屏幕像素转场景像素（考虑缩放）
+            # Screen pixels to scene pixels (consider scaling)
             scene_dx = delta.x() / self._zoom
             scene_dy = delta.y() / self._zoom
             target = self._ref_adjust_target or self.REF_CUSTOM
@@ -419,7 +417,7 @@ class InputMixin:
             event.accept()
             return
 
-        # 拖拽分配模式（大陆/州/国家/战略区）
+        # Drag and drop allocation mode (continent/state/country/strategic area)
         if getattr(self, '_assign_dragging', False):
             if 0 <= sx < self.map_w and 0 <= sy < self.map_h:
                 pid = int(self._province_map[int(sy), int(sx)])
@@ -429,11 +427,11 @@ class InputMixin:
             event.accept()
             return
 
-        # 框架工具分发
+        # Framework tool distribution
         if self._is_drawing and self._framework_tool is not None:
             if 0 <= sx < self.map_w and 0 <= sy < self.map_h:
                 self._framework_tool.on_drag(self._framework_ctx, sx, sy)
-                # 拖动期间持续刷新画布，让用户看到扩张效果
+                # Continuously refresh the canvas during dragging to allow users to see the expansion effect
                 if self._framework_ctx.state.get("painting"):
                     brush_radius = max(10, int(self._framework_ctx.brush_size) // 2 + 2)
                     self._mark_dirty(
@@ -446,18 +444,18 @@ class InputMixin:
                 event.accept()
                 return
 
-        # 山脉画线拖拽中
+        # Mountain line drawing is being dragged
         if getattr(self, '_ridge_drawing', False) and self._is_drawing:
             if 0 <= sx < self.map_w and 0 <= sy < self.map_h:
                 self._ridge_path.append((int(sy), int(sx)))
-                # 实时扩展红线预览
+                # Real-time extended redline preview
                 current_path = self._ridge_path_item.path()
                 current_path.lineTo(sx, sy)
                 self._ridge_path_item.setPath(current_path)
             event.accept()
             return
 
-        # 局部精修套索拖拽中
+        # Partial finishing lasso dragging
         if getattr(self, '_refine_lasso_drawing', False) and self._is_drawing:
             if 0 <= sx < self.map_w and 0 <= sy < self.map_h:
                 self._refine_lasso_path.append((int(sy), int(sx)))
@@ -467,7 +465,7 @@ class InputMixin:
             event.accept()
             return
 
-        # 切割旋转线 — 鼠标移动更新角度
+        # Cut rotation line - angle updated with mouse movement
         if getattr(self, '_split_ready', False):
             import math
             cx, cy = self._split_cx, self._split_cy
@@ -477,7 +475,7 @@ class InputMixin:
             event.accept()
             return
 
-        # 高度画笔拖拽
+        # Height brush drag
         if (self._is_drawing and self._display_mode == "height"
                 and getattr(self, '_height_brush_mode', 'off') != "off"):
             if 0 <= sx < self.map_w and 0 <= sy < self.map_h:
@@ -493,7 +491,7 @@ class InputMixin:
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:
-        # 变换工具框选完成 — 激活变换框
+        # Transform tool box selection completed - activate transform box
         if self._transform_selecting and self._selection_start:
             self._transform_selecting = False
             self._selection_start = None
@@ -501,12 +499,12 @@ class InputMixin:
             if self._selection_rect:
                 x0, y0, x1, y1 = self._selection_rect
                 if x1 - x0 > 5 and y1 - y0 > 5:
-                    # 剪切选区内容
+                    # Cut selection content
                     from data.constants import TILE_SEA
                     self._transform_snippet = self._tile_map[y0:y1, x0:x1].copy()
                     self._transform_orig_box = (x0, y0, x1, y1)
                     self._transform_box = (float(x0), float(y0), float(x1), float(y1))
-                    # 清除原位置
+                    # Clear original location
                     self._tile_map[y0:y1, x0:x1] = TILE_SEA
                     self._full_render()
                     self._transform_active = True
@@ -515,21 +513,21 @@ class InputMixin:
             event.accept()
             return
 
-        # 变换工具拖拽释放
+        # Transform tool drag and release
         if self._transform_drag:
             self._transform_drag = None
             self.setCursor(Qt.CursorShape.CrossCursor)
             event.accept()
             return
 
-        # 框选完成
+        # Frame selection completed
         if self._selection_mode and self._selection_start:
             self._selection_start = None
             self._finish_selection()
             event.accept()
             return
 
-        # 结束参考图拖拽
+        # End reference image dragging
         if getattr(self, '_ref_dragging', False):
             self._ref_dragging = False
             self.setCursor(Qt.CursorShape.SizeAllCursor
@@ -538,7 +536,7 @@ class InputMixin:
             event.accept()
             return
 
-        # 结束拖拽分配
+        # End drag assignment
         if getattr(self, '_assign_dragging', False):
             self._assign_dragging = False
             self._assign_drag_seen = set()
@@ -554,14 +552,14 @@ class InputMixin:
                 return
             if self._is_drawing:
                 self._is_drawing = False
-                self._last_draw_pos = None  # 清除插值起点
-                self._stop_continuous_brush()  # 鼠标释放停掉连续画笔 timer
+                self._last_draw_pos = None  # Clear interpolation start point
+                self._stop_continuous_brush()  # Mouse release stops continuous brush timer
 
-                # 山脉画线释放 → 发射信号给 MainWindow 处理
+                # Mountain line drawing release → Send signal to MainWindow for processing
                 if getattr(self, '_ridge_drawing', False):
                     self._ridge_drawing = False
                     path = getattr(self, '_ridge_path', [])
-                    # 隐藏红线（接下来显示预览山脉）
+                    # Hide red lines (show preview mountains next)
                     self._ridge_path_item.setVisible(False)
                     if len(path) >= 2:
                         self.ridge_drawn.emit(path)
@@ -570,11 +568,11 @@ class InputMixin:
                     event.accept()
                     return
 
-                # 套索释放 → 闭合多边形 → 发选区降级信号
+                # Lasso release → Close polygon → Signal selection downgrade
                 if getattr(self, '_refine_lasso_drawing', False):
                     self._refine_lasso_drawing = False
                     path = getattr(self, '_refine_lasso_path', [])
-                    # 闭合：把最后一点连回起点
+                    # Closure: Connect the last point back to the starting point
                     if len(path) >= 3:
                         current_path = self._refine_lasso_item.path()
                         current_path.lineTo(path[0][1], path[0][0])
@@ -588,34 +586,34 @@ class InputMixin:
                     event.accept()
                     return
 
-                # (切割模式用点击确认，不用释放)
+                # (Click to confirm cutting mode, no need to release)
 
-                # 框架工具：先 release，再清理，再 end_undo，最后刷新
+                # Framework tools: release first, then clean, then end_undo, and finally refresh
                 if self._framework_tool is not None:
                     sx, sy = self._scene_pos(event)
                     self._framework_tool.on_release(self._framework_ctx, sx, sy)
                     self._framework_tool.run_cleanup(self._framework_ctx)
                     self._framework_tool.end_undo(self._framework_ctx)
-                    # 同步选中状态到 canvas
+                    # Synchronize the selected state to canvas
                     selected_tile = self._framework_ctx.state.get("tile")
                     self.select_province(
                         self._framework_ctx.selected_province_id,
                         int(selected_tile) if selected_tile is not None else None,
                         additive=False,
                     )
-                    # overlay 跟随：还有 pid 就保留显示，否则清掉
+                    # Overlay follows: If there is still pid, keep it displayed, otherwise clear it.
                     if self._framework_ctx.state.get("allowed_mask") is not None:
                         self._show_expand_overlay()
                     else:
                         self._clear_lasso_visual()
-                    # 清边界缓存 + 全量刷新
+                    # Clear boundary cache + full refresh
                     self._border_cache = None
                     if hasattr(self, '_border_base_pixmap'):
                         self._border_base_pixmap = None
                     self._full_render()
                     if self._display_mode == "province":
                         self._render_province_overlay()
-                    # 检测省份 ID 空洞（扩张可能吞掉整个邻居）
+                    # Detect province ID holes (expansion may swallow entire neighbors)
                     import numpy as np
                     pm = self._province_map
                     max_id = int(pm.max())
@@ -630,10 +628,10 @@ class InputMixin:
                     return
 
                 self._flush_dirty()
-                # 省份模式拖动结束后：只刷新边界，不做重清理
+                # After dragging in province mode: only the boundaries are refreshed and no re-cleaning is performed.
                 if self._display_mode == "province":
                     self._render_province_overlay()
-                # 密度画笔结束后刷新叠加层
+                # Refresh overlay after density brush ends
                 if getattr(self, '_density_overlay_visible', False):
                     self._render_density_overlay()
                 self.stroke_ended.emit()
@@ -642,13 +640,13 @@ class InputMixin:
         super().mouseReleaseEvent(event)
 
     def mouseDoubleClickEvent(self, event: QMouseEvent) -> None:
-        """双击省份 → 设置 VP（所有模式，但不触发画笔）"""
+        """Double click on province → Set VP (all modes, but not triggering the brush)"""
         if event.button() == Qt.MouseButton.LeftButton:
-            # 调整参考图模式: 双击不触发省份 VP 设置
+            # Adjust reference map mode: double-click does not trigger province VP settings
             if self._ref_adjust_target is not None:
                 event.accept()
                 return
-            # 阻止双击触发画笔
+            # Prevent double-click from triggering brush
             self._is_drawing = False
             self._last_draw_pos = None
             sx, sy = self._scene_pos(event)
@@ -661,8 +659,8 @@ class InputMixin:
         super().mouseDoubleClickEvent(event)
 
     def contextMenuEvent(self, event) -> None:
-        """右键省份 → 弹出上下文菜单（所有模式）"""
-        # 调整参考图模式: 不弹省份右键菜单
+        """Right-click on a province → pop up context menu (all modes)"""
+        # Adjust the reference map mode: do not pop up the province right-click menu
         if self._ref_adjust_target is not None:
             event.accept()
             return
@@ -679,14 +677,14 @@ class InputMixin:
                         )
                         self._render_province_overlay()
                 self.province_right_clicked.emit(pid)
-                # 传递屏幕坐标，供弹出菜单定位
+                # Pass screen coordinates for pop-up menu positioning
                 global_pos = self.mapToGlobal(event.pos())
                 self.province_right_clicked_at.emit(pid, global_pos.x(), global_pos.y())
                 return
         super().contextMenuEvent(event)
 
     def wheelEvent(self, event: QWheelEvent) -> None:
-        # 调整参考图模式: 滚轮 = 缩放被调整的参考图
+        # Adjust reference image mode: Wheel = zoom the adjusted reference image
         if self._ref_adjust_target is not None:
             delta = event.angleDelta().y()
             step = 0.1 if delta > 0 else -0.1
@@ -696,7 +694,7 @@ class InputMixin:
             event.accept()
             return
 
-        # Ctrl+滚轮：缩放参考图
+        # Ctrl+scroll wheel: zoom reference image
         if event.modifiers() & Qt.ControlModifier:
             delta = event.angleDelta().y()
             scale_step = 0.1 if delta > 0 else -0.1
@@ -718,21 +716,21 @@ class InputMixin:
             self._space_pressed = True
             if not self._is_drawing:
                 self.setCursor(Qt.CursorShape.OpenHandCursor)
-        # ESC：取消正在进行的套索/框架工具操作
+        # ESC: Cancel an ongoing Lasso/Frame tool operation
         elif event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
-            # Enter 确认变换
+            # Enter to confirm the transformation
             if self._transform_active:
                 self._apply_transform()
                 self.stroke_ended.emit()
                 self._end_transform()
                 return
         elif event.key() == Qt.Key.Key_Escape:
-            # ESC 退出调整参考图模式
+            # ESC exits the adjustment reference image mode
             if self._ref_adjust_target is not None:
                 self.set_ref_adjust_mode(None)
                 self.ref_adjust_exited.emit()
                 return
-            # ESC 取消变换
+            # ESC cancels transformation
             if self._transform_active:
                 self._cancel_transform()
                 self.stroke_ended.emit()
@@ -741,7 +739,7 @@ class InputMixin:
                 self._framework_tool.on_cancel(self._framework_ctx)
                 self._is_drawing = False
                 self._clear_lasso_visual()
-                # 不入撤销栈（因为是取消，pending 直接丢弃）
+                # Does not enter the undo stack (because it is cancelled, pending is discarded directly)
                 self._framework_ctx.undo_mgr._pending = None
                 self.stroke_ended.emit()
         super().keyPressEvent(event)
@@ -755,7 +753,7 @@ class InputMixin:
         super().keyReleaseEvent(event)
 
     def _init_split_preview(self, pid: int) -> None:
-        """初始化切割预览：计算省份质心和 bbox，显示线。"""
+        """Initialize cutting preview: calculate province centroid and bbox, display line."""
         import numpy as np
         mask = self._province_map == pid
         ys, xs = np.where(mask)
@@ -771,7 +769,7 @@ class InputMixin:
         self._update_split_rotate_preview()
 
     def _update_split_rotate_preview(self) -> None:
-        """实时更新切割旋转线预览。线穿过省份质心，长度覆盖 bbox。"""
+        """Real-time update of cutting rotation line preview. The line passes through the province centroid and its length covers the bbox."""
         import math
         from PyQt5.QtGui import QPainterPath
 
@@ -780,7 +778,7 @@ class InputMixin:
         angle = getattr(self, '_split_angle', 0.0)
         y0, x0, y1, x1 = self._split_bbox
 
-        # 线长 = bbox 对角线，确保完全穿过省份
+        # Line length = bbox diagonal, ensuring it passes completely through the province
         diag = math.sqrt((y1 - y0) ** 2 + (x1 - x0) ** 2) / 2 + 10
         dx = diag * math.cos(angle)
         dy = diag * math.sin(angle)

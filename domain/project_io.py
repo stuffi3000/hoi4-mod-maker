@@ -1,7 +1,5 @@
-"""
-项目保存/加载 — 将所有数据序列化到 .hoi4proj 文件
-使用 numpy 压缩存储大数组，JSON 存储元数据
-"""
+"""Project save/load — serializes all data to .hoi4proj file
+Use numpy compression to store large arrays and JSON to store metadata"""
 import os
 import json
 import numpy as np
@@ -18,7 +16,7 @@ def save_project(
     state_mgr,   # StateManager
     country_mgr, # CountryManager
     river_map: np.ndarray | None = None,
-    continent_mgr=None,  # ContinentManager, 可选
+    continent_mgr=None,  # ContinentManager, optional
     adjacency_mgr=None,  # AdjacencyManager (Phase 1)
     railway_mgr=None,    # RailwayManager
     supply_mgr=None,     # SupplyNodeManager
@@ -27,9 +25,9 @@ def save_project(
     provincial_terrain: dict[int, str] | None = None,
     tile_snapshot: np.ndarray | None = None,
 ) -> None:
-    """保存项目到 .hoi4proj 文件（zip 格式）"""
+    """Save project to .hoi4proj file (zip format)"""
     with ZipFile(path, "w", ZIP_DEFLATED) as zf:
-        # 保存 numpy 数组
+        # Save numpy array
         arrays_to_save = [
             ("tile_map.npy", tile_map),
             ("province_map.npy", province_map),
@@ -45,7 +43,7 @@ def save_project(
             np.save(buf, arr)
             zf.writestr(name, buf.getvalue())
 
-        # 保存 State 数据
+        # Save State data
         states_data = {}
         for sid, s in state_mgr.states.items():
             states_data[str(sid)] = {
@@ -66,7 +64,7 @@ def save_project(
                 "vp_names_en": {
                     str(k): v for k, v in (getattr(s, "vp_names_en", {}) or {}).items()
                 },
-                # 进阶字段
+                # Advanced fields
                 "impassable": bool(getattr(s, "impassable", False)),
                 "controller_tag": getattr(s, "controller_tag", "") or "",
                 "local_supplies": float(getattr(s, "local_supplies", 0.0) or 0.0),
@@ -81,7 +79,7 @@ def save_project(
             }
         zf.writestr("states.json", json.dumps(states_data, ensure_ascii=False, indent=2))
 
-        # 保存国家数据
+        # Save country data
         countries_data = {}
         for tag, c in country_mgr.countries.items():
             countries_data[tag] = {
@@ -92,7 +90,7 @@ def save_project(
                 "ruling_party": c.ruling_party,
                 "popularities": c.popularities,
             }
-        # 保存 state_owner 映射
+        # Save state_owner mapping
         state_owners = {str(k): v for k, v in country_mgr._state_owner.items()}
 
         zf.writestr("countries.json", json.dumps({
@@ -100,14 +98,14 @@ def save_project(
             "state_owners": state_owners,
         }, ensure_ascii=False, indent=2))
 
-        # 保存大陆数据 (可选, 旧项目没有)
+        # Save continent data (optional, not available in old projects)
         if continent_mgr is not None:
             zf.writestr(
                 "continents.json",
                 json.dumps(continent_mgr.to_dict(), ensure_ascii=False, indent=2),
             )
 
-        # 保存后勤数据 (Phase 1)
+        # Save logistics data (Phase 1)
         if adjacency_mgr is not None:
             zf.writestr(
                 "adjacencies.json",
@@ -134,7 +132,7 @@ def save_project(
                 json.dumps(strategic_region_mgr.to_dict(), ensure_ascii=False, indent=2),
             )
 
-        # 省份级地形 (Feature A: 独立于 graphical terrain_map)
+        # Province-level terrain (Feature A: independent of graphical terrain_map)
         if provincial_terrain:
             zf.writestr(
                 "provincial_terrain.json",
@@ -156,30 +154,28 @@ def load_project(
     adjacency_rule_mgr=None,
     strategic_region_mgr=None,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray | None, dict[int, str], np.ndarray | None]:
-    """
-    加载项目文件。
+    """Load project files.
 
-    返回 (tile_map, province_map, terrain_map, height_map, river_map)
-    同时填充 state_mgr 和 country_mgr
-    river_map 可能为 None（旧版项目文件没有）
-    """
+    Return (tile_map, province_map, terrain_map, height_map, river_map)
+    Populate both state_mgr and country_mgr
+    river_map may be None (older project files don't have it)"""
     with ZipFile(path, "r") as zf:
-        # 加载 numpy 数组
+        # Load numpy array
         tile_map = np.load(BytesIO(zf.read("tile_map.npy")))
         province_map = np.load(BytesIO(zf.read("province_map.npy")))
         terrain_map = np.load(BytesIO(zf.read("terrain_map.npy")))
         height_map = np.load(BytesIO(zf.read("height_map.npy")))
 
-        # 河流数据（兼容旧版本）
+        # River data (compatible with older versions)
         river_map = None
         if "river_map.npy" in zf.namelist():
             river_map = np.load(BytesIO(zf.read("river_map.npy")))
-            # 修复旧版 bug：river_map 全 0 表示旧版初始化错误（0=源头=绿色）
-            # 正确的空白背景是 255
+            # Fixed old version bug: river_map all 0 means old version initialization error (0=source=green)
+            # The correct blank background is 255
             if river_map is not None and int(river_map.max()) == 0:
                 river_map[:] = 255
 
-        # 加载 State 数据
+        # Load State data
         state_mgr.clear()
         states_raw = json.loads(zf.read("states.json"))
         from domain.managers.state import StateData
@@ -218,7 +214,7 @@ def load_project(
                 state_mgr._province_to_state[pid] = sid
             state_mgr._next_id = max(state_mgr._next_id, sid + 1)
 
-        # 加载国家数据
+        # Load country data
         country_mgr.clear()
         countries_raw = json.loads(zf.read("countries.json"))
         from domain.managers.country import CountryData
@@ -238,12 +234,12 @@ def load_project(
         for sid_str, tag in countries_raw.get("state_owners", {}).items():
             country_mgr._state_owner[int(sid_str)] = tag
 
-        # 加载大陆数据 (旧项目没有, 保持默认)
+        # Load continent data (old project does not have it, keep the default)
         if continent_mgr is not None and "continents.json" in zf.namelist():
             continent_mgr.clear()
             continent_mgr.from_dict(json.loads(zf.read("continents.json")))
 
-        # 后勤数据 (Phase 1, 旧项目没有)
+        # Logistics data (Phase 1, not available in old projects)
         if adjacency_mgr is not None and "adjacencies.json" in zf.namelist():
             adjacency_mgr.clear()
             adjacency_mgr.from_dict(json.loads(zf.read("adjacencies.json")))
@@ -260,12 +256,12 @@ def load_project(
             strategic_region_mgr.clear()
             strategic_region_mgr.from_dict(json.loads(zf.read("strategic_regions.json")))
 
-        # tile_snapshot（省份生成时的 tile_map 快照，旧项目没有）
+        # tile_snapshot (tile_map snapshot when the province is generated, old projects do not have it)
         tile_snapshot = None
         if "tile_snapshot.npy" in zf.namelist():
             tile_snapshot = np.load(BytesIO(zf.read("tile_snapshot.npy")))
 
-        # 省份级地形 (Feature A)
+        # Provincial level terrain (Feature A)
         provincial_terrain: dict[int, str] = {}
         if "provincial_terrain.json" in zf.namelist():
             raw_pt = json.loads(zf.read("provincial_terrain.json"))

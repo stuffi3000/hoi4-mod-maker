@@ -1,15 +1,13 @@
-"""
-map/terrain/colormap_rgb_cityemissivemask_a.dds 生成.
+"""map/terrain/colormap_rgb_cityemissivemask_a.dds generated.
 
-HOI4 zoom out 到战略视角时, 引擎用这张 2816x1024 的 DDS 作为"全球总览"背景纹理.
-vanilla 文件画的是地球大陆 (北美/欧洲/非洲), 架空 MOD 不覆盖 → 用户缩远就看到地球.
+When HOI4 zooms out to the strategic perspective, the engine uses this 2816x1024 DDS as the "Global Overview" background texture.
+The vanilla file depicts the Earth's continents (North America/Europe/Africa), which are not covered by the overhead MOD → the user can see the Earth when zooming out.
 
-格式: DDS, 2816x1024, 无压缩 BGRA8, 128 字节头.
-RGB channel 存颜色, Alpha channel 存城市夜间灯光 mask (0 = 无灯, 255 = 亮城市).
-灯光 mask 从 urban 地形自动点亮 (+光晕), 无 urban 地形时 alpha 全 0.
+Format: DDS, 2816x1024, uncompressed BGRA8, 128 byte header.
+RGB channel stores color, Alpha channel stores city night light mask (0 = no lights, 255 = bright city).
+The light mask is automatically lit from urban terrain (+ halo), and the alpha is all 0 when there is no urban terrain.
 
-生成逻辑: 把 tile_map 从 5632x2048 降采样到 2816x1024, 陆地涂土色 / 海洋涂深蓝.
-"""
+Generation logic: downsample the tile_map from 5632x2048 to 2816x1024, and paint the land with earth color / the ocean with dark blue."""
 
 from __future__ import annotations
 
@@ -20,33 +18,33 @@ import numpy as np
 
 from data.constants import TILE_LAND, TILE_SEA, TILE_LAKE
 
-# 不在模块顶部固化 _DDS_WIDTH/_DDS_HEIGHT — 那样会绑定到 import 时的 MAP_WIDTH
-# (5632), set_map_size 后不会更新, 导致 DDS 文件头与实际像素尺寸不符 → 损坏文件.
-# 所有尺寸一律在函数内从 tile_map.shape 取.
+# Do not solidify _DDS_WIDTH/_DDS_HEIGHT at the top of the module - that will bind to MAP_WIDTH at import time
+# (5632), set_map_size will not be updated, causing the DDS file header to be inconsistent with the actual pixel size → corrupting the file.
+# All dimensions are taken from tile_map.shape within the function.
 
-# 默认颜色 (B, G, R, A) — DDS 字节顺序. 用户通过 ColormapSettings 覆盖.
+# Default colors (B, G, R, A) — DDS byte order. Overridable by user via ColormapSettings.
 _DEFAULT_COLOR_LAND = (60, 90, 95, 0)
 _DEFAULT_COLOR_SEA  = (90, 55, 30, 0)
 _DEFAULT_COLOR_LAKE = (140, 110, 70, 0)
 
-# 按 terrain type 的战略视图着色 (B, G, R, A) — 提高饱和度让色块明显
+# Strategic view colorization by terrain type (B, G, R, A) — Increase saturation to make patches of color more visible
 _TERRAIN_TYPE_COLORS: dict[str, tuple[int, int, int, int]] = {
-    "plains":   (60, 140, 110, 0),   # 鲜亮草绿
-    "forest":   (40, 95, 50, 0),     # 深森林绿
-    "hills":    (75, 130, 150, 0),   # 黄褐 (饱和度提高)
-    "mountain": (110, 115, 120, 0),  # 灰褐 (亮一点, 山顶配雪)
-    "desert":   (80, 175, 215, 0),   # 沙黄 (饱和度提高)
-    "marsh":    (60, 100, 70, 0),    # 沼泽暗绿
-    "jungle":   (30, 90, 45, 0),     # 丛林深绿
-    "urban":    (90, 100, 110, 0),   # 城市灰
+    "plains":   (60, 140, 110, 0),   # Bright grass green
+    "forest":   (40, 95, 50, 0),     # deep forest green
+    "hills":    (75, 130, 150, 0),   # Yellowish brown (increased saturation)
+    "mountain": (110, 115, 120, 0),  # Taupe (brighter, with snow on the top of the mountain)
+    "desert":   (80, 175, 215, 0),   # Sand yellow (increased saturation)
+    "marsh":    (60, 100, 70, 0),    # Swamp dark green
+    "jungle":   (30, 90, 45, 0),     # Jungle dark green
+    "urban":    (90, 100, 110, 0),   # urban gray
     "ocean":    (90, 55, 30, 0),
     "lakes":    (180, 130, 80, 0),
 }
 
 
 def _build_dds_header(width: int, height: int) -> bytes:
-    """构造 128 字节 DDS 文件头 (无压缩 BGRA8, 单 mipmap)."""
-    # 匹配 vanilla 参数: flags=0x100f, pitch=width*4, pf_flags=0x41 (ALPHAPIXELS|RGB)
+    """Construct 128-byte DDS file header (uncompressed BGRA8, single mipmap)."""
+    # Matches vanilla parameters: flags=0x100f, pitch=width*4, pf_flags=0x41 (ALPHAPIXELS|RGB)
     header = bytearray(128)
     header[0:4] = b"DDS "
     struct.pack_into("<I", header, 4, 124)           # dwSize
@@ -56,7 +54,7 @@ def _build_dds_header(width: int, height: int) -> bytes:
     struct.pack_into("<I", header, 20, width * 4)    # dwPitchOrLinearSize
     struct.pack_into("<I", header, 24, 0)            # dwDepth
     struct.pack_into("<I", header, 28, 1)            # dwMipMapCount
-    # dwReserved1[11] — 44 字节 0
+    # dwReserved1[11] — 44 bytes 0
     # ddspf at offset 76
     struct.pack_into("<I", header, 76, 32)           # dwSize
     struct.pack_into("<I", header, 80, 0x41)         # dwFlags (ALPHAPIXELS | RGB)
@@ -74,16 +72,15 @@ def write_water_colormap_dds(
     tile_map: np.ndarray,
     output_dir: str,
 ) -> None:
-    """生成 map/terrain/colormap_water_0/1/2.dds — 海洋颜色, 三个 MIP 级别.
+    """Generate map/terrain/colormap_water_0/1/2.dds — ocean colors, three MIP levels.
 
-    渐变公式在 domain/water_colormap (预览海面同款):
-    距陆地 < 80px 青绿 → 深蓝, 远海纯深蓝.
-    """
+    The gradient formula is in domain/water_colormap (same as previewing the sea surface):
+    < 80px from land, green → dark blue, pure dark blue in the far sea."""
     try:
         from domain.water_colormap import water_color_rgb
         rgb = water_color_rgb(tile_map)
     except ImportError:
-        # 没 scipy 退回纯色
+        # No scipy returns solid color
         return _write_water_colormap_solid(tile_map, output_dir)
 
     rgb = np.clip(rgb, 0, 255).astype(np.uint8)
@@ -110,7 +107,7 @@ def write_water_colormap_dds(
 
 
 def _write_water_colormap_solid(tile_map, output_dir):
-    """scipy 不可用时的 fallback (纯色)."""
+    """Fallback (solid color) when scipy is not available."""
     water_color = np.array([110, 70, 30, 255], dtype=np.uint8)
     out_dir = os.path.join(output_dir, "map", "terrain")
     os.makedirs(out_dir, exist_ok=True)
@@ -133,14 +130,13 @@ def write_fow_dds(
     output_dir: str,
     height_map: np.ndarray | None = None,
 ) -> None:
-    """生成 map/terrain/fow_rgb_waterspec_a.dds — 战争迷雾明暗 + 水面反射.
+    """Generate map/terrain/fow_rgb_waterspec_a.dds — fog of war shading + water reflection.
 
-    通道语义 (2026-07-10 解码 vanilla 实测, wiki 无文档):
-    - RGB: 迷雾下的灰度明暗, 陆地亮 (~150, 随高度增亮) / 海洋暗 (~64)
-    - A:   水面反射强度, 海 ~46 / 陆 ~21
-    尺寸为 provinces.bmp 的一半. 不覆盖会回退 vanilla 的地球形状贴图,
-    自定义地图上反光和迷雾底纹按地球海陆分布走 → 错位.
-    """
+    Channel semantics (2026-07-10 decoding vanilla actual test, wiki no documentation):
+    - RGB: Grayscale light and dark under fog, land bright (~150, getting brighter with height) / ocean dark (~64)
+    - A: Water surface reflection intensity, sea ~46 / land ~21
+    The size is half the size of provinces.bmp. Not overwriting will fall back to the vanilla earth shape map,
+    The reflection and fog textures on the custom map follow the distribution of land and sea on the earth → misaligned."""
     ds = tile_map[::2, ::2]
     h, w = ds.shape
     sea = (ds == TILE_SEA) | (ds == 0)
@@ -151,13 +147,13 @@ def write_fow_dds(
     gray[lake] = 80.0
     if height_map is not None and height_map.shape == tile_map.shape:
         ds_height = height_map[::2, ::2].astype(np.float32)
-        # 海平面 (~95) 附近 ~130, 高山 ~185 — 对齐 vanilla 陆地 140~170 区间
+        # Sea level (~95) near ~130, alpine ~185 — aligns with vanilla land 140~170 zone
         gray[land] = np.clip(130.0 + (ds_height[land] - 95.0) * 0.4, 120.0, 185.0)
     else:
         gray[land] = 150.0
     alpha = np.where(land, 21.0, 46.0).astype(np.float32)
 
-    # 轻度模糊: 海岸过渡自然 (vanilla 低分辨率手绘无硬边)
+    # Mild blur: natural transition to the coast (vanilla low-resolution hand-drawn without hard edges)
     try:
         from scipy.ndimage import gaussian_filter
         gray = gaussian_filter(gray, sigma=1.5)
@@ -184,17 +180,16 @@ def write_colormap_dds(
     terrain_map: np.ndarray | None = None,
     height_map: np.ndarray | None = None,
 ) -> None:
-    """从 tile_map + terrain_map 生成 map/terrain/colormap_rgb_cityemissivemask_a.dds.
+    """Generate map/terrain/colormap_rgb_cityemissivemask_a.dds from tile_map + terrain_map.
 
     - tile_map: (MAP_HEIGHT, MAP_WIDTH) uint8, TILE_LAND/SEA/LAKE
-    - terrain_map: (MAP_HEIGHT, MAP_WIDTH) uint8, 可选, 有则按地形着色
-    - settings: ColormapSettings 实例, None 用默认色
-    - 输出: 降采样 BGRA8 DDS
-    """
-    # 不再校验与全局 MAP_WIDTH/HEIGHT 一致 — 以 tile_map.shape 为权威，
-    # HOI4 只要求 256 倍数, 不限定预设尺寸.
+    - terrain_map: (MAP_HEIGHT, MAP_WIDTH) uint8, optional, if available, color according to terrain
+    - settings: ColormapSettings instance, None uses default color
+    - Output: Downsampled BGRA8 DDS"""
+    # No longer checks for consistency with global MAP_WIDTH/HEIGHT — use tile_map.shape as authoritative,
+    # HOI4 only requires multiples of 256 and does not limit the default size.
 
-    # 决定三色
+    # Decide on three colors
     if settings is not None:
         color_land = settings.land.to_bgra()
         color_sea = settings.sea.to_bgra()
@@ -210,15 +205,15 @@ def write_colormap_dds(
     pixels[:] = color_sea
     land_mask = downsampled == TILE_LAND
     lake_mask = downsampled == TILE_LAKE
-    urban_mask = np.zeros((h, w), dtype=bool)  # 城市灯光 (alpha 通道) 用
+    urban_mask = np.zeros((h, w), dtype=bool)  # For city lights (alpha channel)
 
     if terrain_map is not None and terrain_map.shape == tile_map.shape:
-        # 按地形类型着色陆地
+        # Color land by terrain type
         from data.terrain_types import PALETTE_TO_TYPE
         ds_terrain = terrain_map[::2, ::2]
-        # 先填默认陆地色
+        # Fill in the default land color first
         pixels[land_mask] = color_land
-        # 再按地形类型覆盖
+        # Then cover by terrain type
         for idx in np.unique(ds_terrain[land_mask]):
             ttype = PALETTE_TO_TYPE.get(int(idx))
             if ttype and ttype in _TERRAIN_TYPE_COLORS:
@@ -231,30 +226,30 @@ def write_colormap_dds(
 
     pixels[lake_mask] = color_lake
 
-    # ── 高度调制 + 雪山 + 海岸沙滩 (有 heightmap 才做) ──
+    # ── Height modulation + snow mountain + coastal beach (only done with heightmap) ──
     if height_map is not None and height_map.shape == tile_map.shape:
         ds_height = height_map[::2, ::2].astype(np.float32)
-        # 1. 雪山: 高度 > 200 → 渐进白
+        # 1. Snow Mountain: Height > 200 → Gradual White
         snow_t = np.clip((ds_height - 200) / 40.0, 0, 1)  # 200→0, 240→1
         snow_color = np.array([240, 240, 250], dtype=np.float32)
-        # 2. 高度调亮: 100 (海岸)=1.0, 200=1.25, 50=0.8 (深谷暗)
+        # 2. High brightness: 100 (coast)=1.0, 200=1.25, 50=0.8 (dark valley)
         brightness = np.clip(0.7 + (ds_height - 95) / 200.0, 0.65, 1.35)
         rgb = pixels[..., :3].astype(np.float32)
         rgb = rgb * brightness[..., None]
-        # 雪混入
+        # snow mixed in
         rgb[land_mask] = (
             rgb[land_mask] * (1 - snow_t[land_mask, None])
             + snow_color * snow_t[land_mask, None]
         )
         pixels[..., :3] = np.clip(rgb, 0, 255).astype(np.uint8)
-        # 3. 海岸沙滩: 距海 < 4px 的陆地 → 浅黄
+        # 3. Coastal beach: land < 4px from the sea → light yellow
         try:
             from scipy.ndimage import distance_transform_edt
             sea_full = (tile_map == TILE_SEA) | (tile_map == 0)
             dist_to_sea_full = distance_transform_edt(~sea_full).astype(np.float32)
             ds_dist = dist_to_sea_full[::2, ::2]
-            beach_t = np.clip(1 - ds_dist / 4.0, 0, 1) * 0.6  # 4px 内 60% 沙色
-            beach = np.array([130, 200, 235], dtype=np.float32)  # BGR 浅沙色
+            beach_t = np.clip(1 - ds_dist / 4.0, 0, 1) * 0.6  # 60% sand within 4px
+            beach = np.array([130, 200, 235], dtype=np.float32)  # BGR light sand color
             rgb = pixels[..., :3].astype(np.float32)
             mix = land_mask & (ds_dist < 4)
             rgb[mix] = rgb[mix] * (1 - beach_t[mix, None]) + beach * beach_t[mix, None]
@@ -262,14 +257,14 @@ def write_colormap_dds(
         except ImportError:
             pass
 
-    # ── 消除"拼贴"硬边：给陆地加噪声 + gaussian 模糊 ──
-    # 为什么：vanilla colormap 是画家手绘 + 噪声，几千种颜色；
-    # 我们按地形类型填纯色只有 7 种颜色，atlas 材质叠上去就是硬边块。
-    # 加噪声 + 轻度模糊后，相邻地形之间有渐变带，肉眼看不到"拼贴"。
+    # ── Eliminate "collage" hard edges: add noise + gaussian blur to land ──
+    # Why: vanilla colormap is hand-painted by an artist + noise, with thousands of colors;
+    # We only have 7 solid colors according to the terrain type, and the atlas material is stacked on top of it to form a hard-edged block.
+    # After adding noise + mild blur, there are gradient bands between adjacent terrains, and the "collage" is invisible to the naked eye.
     try:
         from scipy.ndimage import gaussian_filter
         rng = np.random.default_rng(42)
-        # 只对陆地 BGR 三通道做抖动 + 模糊（alpha 保持 0）
+        # Only dither + blur the three channels of land BGR (alpha remains 0)
         rgb = pixels[..., :3].astype(np.float32)
         noise = rng.integers(-12, 13, size=rgb.shape, dtype=np.int16).astype(np.float32)
         rgb = rgb + noise
@@ -277,33 +272,33 @@ def write_colormap_dds(
             rgb[..., c] = gaussian_filter(rgb[..., c], sigma=2.5)
         rgb = np.clip(rgb, 0, 255).astype(np.uint8)
         pixels[..., :3] = rgb
-        # 模糊会让颜色渗进海洋/湖泊，重新覆盖回纯海色/湖色（海面另有 colormap_water 渲染）
+        # Blurring will cause the color to seep into the ocean/lake and cover it back to pure sea/lake color (the sea surface is also rendered by colormap_water)
         pixels[downsampled == TILE_SEA] = color_sea
         pixels[lake_mask] = color_lake
     except ImportError:
-        pass  # scipy 不在时退回硬边版本
+        pass  # Fallback to hard-edged version when scipy is not available
 
-    # ── 城市夜间灯光: alpha 通道, urban 地形处发光 + 模糊光晕 ──
-    # (wiki: "more opacity means stronger night lights"; 平铺灯光纹理
-    #  citylights_rgb_snowmask_a 用 vanilla 的即可, 位置全由这个 mask 定)
+    # ── City night lights: alpha channel, urban terrain glow + blur halo ──
+    # (wiki: "more opacity means stronger night lights"; Tile light texture
+    # citylights_rgb_snowmask_a can use vanilla, the position is determined by this mask)
     alpha = np.zeros((h, w), dtype=np.float32)
     alpha[urban_mask] = 200.0
     if urban_mask.any():
         try:
             from scipy.ndimage import gaussian_filter
-            # 城市本体保持全亮, 光晕取模糊结果的最大值 (小城不被模糊削暗)
+            # The city itself remains fully bright, and the halo takes the maximum value of the blur result (the small city is not dimmed by the blur)
             alpha = np.maximum(alpha, gaussian_filter(alpha, sigma=2.0))
         except ImportError:
             pass
-    # 灯光只留在陆地上 (模糊会渗进海面)
+    # Light stays only on land (blur will seep into the sea)
     alpha[~land_mask] = 0.0
     pixels[..., 3] = np.clip(alpha, 0, 255).astype(np.uint8)
 
-    # 写文件
+    # write file
     out_dir = os.path.join(output_dir, "map", "terrain")
     os.makedirs(out_dir, exist_ok=True)
     out_path = os.path.join(out_dir, "colormap_rgb_cityemissivemask_a.dds")
-    # 用动态尺寸 — 与 pixels (= downsampled.shape) 一致
+    # Use dynamic dimensions — same as pixels (= downsampled.shape)
     header = _build_dds_header(w, h)
     with open(out_path, "wb") as f:
         f.write(header)

@@ -1,8 +1,4 @@
-"""
-TransformCommand — 区域变换（移动/旋转/缩放等）。
-
-存储受影响区域的 bbox + 旧/新数据快照。
-"""
+"""Undoable commands for transforming rectangular regions of the tile map."""
 
 from __future__ import annotations
 
@@ -13,9 +9,9 @@ from domain.map_data import MapData
 
 
 class TransformCommand(Command):
-    """区域变换 tile_map。"""
+    """Apply a rectangular map transformation and support undo."""
 
-    label = "变换区域"
+    label = "Transform region"
 
     def __init__(
         self,
@@ -23,30 +19,25 @@ class TransformCommand(Command):
         old_region: tuple[tuple[int, int, int, int], np.ndarray],
         new_region: tuple[tuple[int, int, int, int], np.ndarray],
     ) -> None:
-        """
-        参数:
-            map_data: 地图数据对象
-            old_region: ((y_min, x_min, y_max, x_max), data) 变换前的区域数据
-            new_region: ((y_min, x_min, y_max, x_max), data) 变换后的区域数据
-        """
+        """Capture the original and transformed rectangular map regions."""
         self._map_data = map_data
         self._old_bbox, self._old_data = old_region
         self._new_bbox, self._new_data = new_region
-        # 防御性复制
+        # Copy both snapshots so later canvas edits cannot mutate command history.
         self._old_data = self._old_data.copy()
         self._new_data = self._new_data.copy()
 
     def _apply_region(
         self, bbox: tuple[int, int, int, int], data: np.ndarray
     ) -> None:
-        """将数据写入 tile_map 的指定 bbox 区域。"""
+        """Write a saved rectangular region back to the tile map."""
         y_min, x_min, y_max, x_max = bbox
         self._map_data.tile_map[y_min:y_max, x_min:x_max] = data
 
     def execute(self) -> None:
-        """应用新区域数据。"""
+        """Apply the transformed region."""
         self._apply_region(self._new_bbox, self._new_data)
 
     def undo(self) -> None:
-        """恢复旧区域数据。"""
+        """Restore the region that existed before the transformation."""
         self._apply_region(self._old_bbox, self._old_data)

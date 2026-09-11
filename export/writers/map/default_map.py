@@ -1,14 +1,12 @@
-"""
-map/default.map 写入器.
+"""map/default.map writer.
 
-HOI4 引擎用这个文件加载所有地图配置. 参考 参考/Map modding.txt 行 56-83.
+The HOI4 engine uses this file to load all map configurations. See reference/Map modding.txt lines 56-83.
 
-格式 (无引号字段不需要 quotes, 但 vanilla 用 quotes 安全):
+Format (unquoted fields don't require quotes, but are vanilla safe with quotes):
     definitions = "definition.csv"
     provinces = "provinces.bmp"
     ...
-    tree = { 3 4 7 10 }     # palette indices considered trees
-"""
+    tree = { 3 4 7 10 } # palette indices considered trees"""
 
 from __future__ import annotations
 
@@ -20,11 +18,10 @@ def write_default_map(
     settings=None,
     province_count: int | None = None,
 ) -> None:
-    """生成 map/default.map.
+    """Generate map/default.map.
 
-    settings: DefaultMapSettings 实例 (None 用默认)
-    province_count: 总省份数 (None 跳过 max_provinces 字段)
-    """
+    settings: DefaultMapSettings instance (None uses default)
+    province_count: total number of provinces (None skips max_provinces field)"""
     if settings is None:
         from domain.managers.default_map_settings import DefaultMapSettings
         settings = DefaultMapSettings.default()
@@ -47,7 +44,7 @@ def write_default_map(
     lines.append(f'ambient_object = "{settings.ambient_object}"')
     lines.append(f'seasons = "{settings.seasons}"')
 
-    # 树木调色板索引
+    # Tree palette index
     tree_indices = " ".join(str(i) for i in settings.tree_palette_indices)
     lines.append(f"tree = {{ {tree_indices} }}")
 

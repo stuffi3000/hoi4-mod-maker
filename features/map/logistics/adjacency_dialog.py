@@ -1,15 +1,13 @@
-"""
-相邻关系 (adjacency) 编辑器对话框.
+"""Adjacency editor dialog.
 
-非模态, 用户流程:
-1. 打开对话框 → 列表显示已有 adjacency
-2. 点"新建" 填起点/终点/类型
-3. 点"拾取起点省份" → 进入 pick 模式, 主窗拦截画布点击填入省份 ID
-4. 再点"拾取终点省份" → 第二次拦截
-5. 点"保存" 加入列表
+Non-modal, user flow:
+1. Open the dialog box → list shows existing adjacencies
+2. Click "New" and fill in the starting point/end point/type
+3. Click "Pick starting province" → enter pick mode, click on the intercept canvas in the main window to fill in the province ID
+4. Click "Pick up the destination province" again → intercept for the second time
+5. Click "Save" to add to the list
 
-主窗口用 `pick_mode_changed` 信号切换画布拦截, 用 `province_picked` 回调填字段.
-"""
+The main window uses the `pick_mode_changed` signal to switch the canvas interception, and uses the `province_picked` callback to fill in the fields."""
 
 from __future__ import annotations
 
@@ -30,38 +28,37 @@ def _auto_strait_params(
     from_id: int, to_id: int,
     province_map: np.ndarray, tile_map: np.ndarray,
 ) -> tuple[int, int, int, int, int, int]:
-    """自动计算海峡的 start/stop 坐标和 through 海省.
+    """Automatically calculate start/stop coordinates of straits and through provinces.
 
-    返回 (start_x, start_y, stop_x, stop_y, through_id, hoi4_start_y).
-    坐标是 HOI4 坐标系 (x=pixel_x, y=MAP_HEIGHT - pixel_y).
-    """
+    Return (start_x, start_y, stop_x, stop_y, through_id, hoi4_start_y).
+    The coordinates are HOI4 coordinate system (x=pixel_x, y=MAP_HEIGHT - pixel_y)."""
     from data.constants import TILE_SEA, TILE_LAKE
     h, w = province_map.shape
 
-    # 找两省的边界像素
+    # Find the boundary pixels between two provinces
     from_ys, from_xs = np.where(province_map == from_id)
     to_ys, to_xs = np.where(province_map == to_id)
     if len(from_ys) == 0 or len(to_ys) == 0:
         return -1, -1, -1, -1, -1, -1
 
-    # 两省质心
+    # Center of mass of two provinces
     from_cy, from_cx = int(from_ys.mean()), int(from_xs.mean())
     to_cy, to_cx = int(to_ys.mean()), int(to_xs.mean())
 
-    # from 省最靠近 to 质心的像素
+    # from saves the pixel closest to the centroid of to
     dist_from = (from_xs - to_cx) ** 2 + (from_ys - to_cy) ** 2
     best_from = int(np.argmin(dist_from))
     sx, sy = int(from_xs[best_from]), int(from_ys[best_from])
 
-    # to 省最靠近 from 质心的像素
+    # to saves the pixel closest to the centroid of from
     dist_to = (to_xs - from_cx) ** 2 + (to_ys - from_cy) ** 2
     best_to = int(np.argmin(dist_to))
     ex, ey = int(to_xs[best_to]), int(to_ys[best_to])
 
-    # 找中间线段上的海省（through）
+    # Find the sea province (through) on the middle line segment
     through_id = -1
     mid_x, mid_y = (sx + ex) // 2, (sy + ey) // 2
-    # 在中点附近 5x5 搜索海省
+    # Search sea provinces 5x5 near midpoint
     for dy in range(-2, 3):
         for dx in range(-2, 3):
             ny, nx = mid_y + dy, mid_x + dx
@@ -74,17 +71,17 @@ def _auto_strait_params(
         if through_id > 0:
             break
 
-    # 转 HOI4 坐标系（y 翻转）
+    # Convert to HOI4 coordinate system (y flip)
     return sx, h - sy, ex, h - ey, through_id, through_id
 
 
 class AdjacencyDialog(QDialog):
 
     changed = pyqtSignal()
-    """相邻关系编辑器.
+    """Editor for province adjacency rules.
 
-    pick_mode_changed 信号参数: (开关, 目标字段名) — 字段名 'from' / 'to' / 'through'
-    主窗口收到 True 时开始拦截画布点击, 下次 click 调 receive_picked_province.
+    ``pick_mode_changed`` carries ``(enabled, target_field)``. The main window
+    intercepts the next canvas click and sends it to the picker callback.
     """
 
     pick_mode_changed = pyqtSignal(bool, str)
@@ -116,7 +113,7 @@ class AdjacencyDialog(QDialog):
         tip.setStyleSheet("color: #888; font-size: 11px;")
         root.addWidget(tip)
 
-        # 列表
+        # list
         self._list = QListWidget()
         self._list.setMaximumHeight(150)
         self._list.itemClicked.connect(self._on_item_clicked)
@@ -126,12 +123,12 @@ class AdjacencyDialog(QDialog):
         del_btn.clicked.connect(self._on_delete)
         root.addWidget(del_btn)
 
-        # 编辑区
+        # Editing area
         edit_box = QGroupBox(tr("adj_dlg_edit_group"))
         form = QFormLayout(edit_box)
         form.setSpacing(6)
 
-        # 起点
+        # starting point
         from_row = QHBoxLayout()
         self._from_edit = QLineEdit()
         self._from_edit.setPlaceholderText(tr("adj_dlg_from_placeholder"))
@@ -141,7 +138,7 @@ class AdjacencyDialog(QDialog):
         from_row.addWidget(from_pick)
         form.addRow(tr("adj_dlg_from_label"), from_row)
 
-        # 终点
+        # end point
         to_row = QHBoxLayout()
         self._to_edit = QLineEdit()
         self._to_edit.setPlaceholderText(tr("adj_dlg_to_placeholder"))
@@ -151,13 +148,13 @@ class AdjacencyDialog(QDialog):
         to_row.addWidget(to_pick)
         form.addRow(tr("adj_dlg_to_label"), to_row)
 
-        # 类型
+        # Type
         self._type_combo = QComboBox()
         self._type_combo.addItem(tr("adj_dlg_type_sea"), "sea")
         self._type_combo.addItem(tr("adj_dlg_type_impassable"), "impassable")
         form.addRow(tr("adj_dlg_type_label"), self._type_combo)
 
-        # through (仅 sea)
+        # through (sea only)
         through_row = QHBoxLayout()
         self._through_edit = QLineEdit()
         self._through_edit.setPlaceholderText(tr("adj_dlg_through_placeholder"))
@@ -174,7 +171,7 @@ class AdjacencyDialog(QDialog):
 
         root.addWidget(edit_box)
 
-        # 状态 + 保存/清空
+        # Status + Save/Clear
         self._status = QLabel("")
         self._status.setStyleSheet("color: #4a9; font-size: 11px;")
         root.addWidget(self._status)
@@ -189,7 +186,7 @@ class AdjacencyDialog(QDialog):
         btn_row.addWidget(save_btn)
         root.addLayout(btn_row)
 
-    # ─────────── 列表 ───────────
+    # ─────────── List ────────────
 
     def _refresh_list(self) -> None:
         self._list.clear()
@@ -203,7 +200,7 @@ class AdjacencyDialog(QDialog):
             self._list.addItem(item)
 
     def _on_item_clicked(self, item: QListWidgetItem) -> None:
-        """点列表项 → 回填到编辑区方便修改."""
+        """Click on the list item → backfill it into the editing area for easy modification."""
         row = self._list.row(item)
         entries = self._mgr.get_all()
         if 0 <= row < len(entries):
@@ -227,7 +224,7 @@ class AdjacencyDialog(QDialog):
             self._refresh_list()
             self.changed.emit()
 
-    # ─────────── 表单 ───────────
+    # ─────────── Form ────────────
 
     def _clear_form(self) -> None:
         self._from_edit.clear()
@@ -247,7 +244,7 @@ class AdjacencyDialog(QDialog):
         through_text = self._through_edit.text().strip()
         through_id = int(through_text) if through_text else -1
 
-        # 自动计算坐标和 through（sea 类型）
+        # Automatically calculate coordinates and through (sea type)
         start_x = start_y = stop_x = stop_y = -1
         if t == "sea" and self._province_map is not None and self._tile_map is not None:
             sx, sy, ex, ey, auto_through, _ = _auto_strait_params(
@@ -273,7 +270,7 @@ class AdjacencyDialog(QDialog):
         coord_info = f" ({start_x},{start_y})→({stop_x},{stop_y})" if start_x >= 0 else ""
         self._status.setText(tr("adj_dlg_saved_fmt", from_id, to_id, t, coord_info))
 
-    # ─────────── 拾取模式 ───────────
+    # ─────────── Pickup mode ────────────
 
     def _start_pick(self, target: str) -> None:
         """target ∈ {'from','to','through'}"""
@@ -282,7 +279,7 @@ class AdjacencyDialog(QDialog):
         self.pick_mode_changed.emit(True, target)
 
     def receive_picked_province(self, pid: int) -> None:
-        """主窗口拦截到画布点击后回调此方法."""
+        """The main window calls this method after intercepting a click on the canvas."""
         if self._pick_target == "from":
             self._from_edit.setText(str(pid))
         elif self._pick_target == "to":

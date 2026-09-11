@@ -1,8 +1,7 @@
-"""LandController — 大陆编辑模式控制器。
+"""LandController — Land edit mode controller.
 
-处理画笔/橡皮/填充工具绘制 tile_map（陆地/海洋/湖泊）。
-支持密度画笔子模式：在 density_map 上涂抹省份密度。
-"""
+Handles brush/eraser/fill tools for drawing tile_map (land/ocean/lake).
+Supports density brush submode: paint province density on density_map."""
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
@@ -19,7 +18,7 @@ if TYPE_CHECKING:
 
 
 class LandController(BaseController):
-    """大陆编辑模式：画笔/橡皮/填充/变换 + 密度画笔。"""
+    """Continental editing modes: Brush/Eraser/Fill/Transform + Density Brush."""
 
     def __init__(self, project: "Project", command_history: "CommandHistory") -> None:
         super().__init__(project, command_history)
@@ -28,44 +27,41 @@ class LandController(BaseController):
         self.brush_size: int = 5
         self._stroke_changes: dict[tuple[int, int], int] = {}
         self._is_painting: bool = False
-        # 密度画笔子模式
+        # Density brush submode
         self.density_mode: bool = False
         self.density_value: float = 1.0  # 0.0~1.0
-        # 新大陆画笔：记录画了哪些像素
+        # New World Brush: Record which pixels were painted
         h, w = project.map_data.tile_map.shape
         self.new_land_mask: np.ndarray = np.zeros((h, w), dtype=bool)
 
     def reset_mask_size(self) -> None:
-        """地图尺寸变化后重置 mask。"""
+        """Reset the mask after the map size changes."""
         h, w = self.project.map_data.tile_map.shape
         self.new_land_mask = np.zeros((h, w), dtype=bool)
 
     def activate(self) -> None:
-        """进入大陆模式，默认画笔工具。有省份时提醒。"""
+        """Enter continental mode, default brush tool. Alert when there are provinces."""
         self.current_tool = "brush"
         self._stroke_changes.clear()
         self._is_painting = False
         has_provinces = int(self.project.map_data.province_map.max()) > 0
         if has_provinces:
-            self._emit_status(
-                "⚠ 已有省份 — 画新陆地后切到「省份」模式点生成，选「Yes」= 只给新区域生成",
-                "⚠ Provinces already exist — after drawing new land, switch to Province mode and click Generate; choose Yes to generate only in new areas",
-            )
+            self._emit_status("⚠ Provinces already exist — after drawing new land, switch to Province mode and click Generate; choose Yes to generate only in new areas")
         else:
-            self._emit_status("大陆编辑模式", "Land editing mode")
+            self._emit_status("Land editing mode")
 
     def deactivate(self) -> None:
-        """离开大陆模式，结束未完成笔触。"""
+        """Exit continent mode and end unfinished strokes."""
         if self._is_painting:
             self._commit_stroke()
         self.density_mode = False
 
     def on_press(self, x: int, y: int, pid: int, button: str, modifiers: set) -> bool:
-        """鼠标按下开始画笔或填充。"""
+        """Mouse press starts brush or fill."""
         if button != "left":
             return False
 
-        # 密度画笔模式
+        # Density brush mode
         if self.density_mode:
             self._is_painting = True
             self._apply_density_brush(x, y)
@@ -84,7 +80,7 @@ class LandController(BaseController):
         return False
 
     def on_drag(self, x: int, y: int) -> bool:
-        """鼠标拖拽继续画笔。"""
+        """Drag the mouse to continue the brush."""
         if not self._is_painting:
             return False
         if self.density_mode:
@@ -94,7 +90,7 @@ class LandController(BaseController):
         return True
 
     def on_release(self, x: int, y: int) -> bool:
-        """鼠标释放结束画笔笔触。"""
+        """Mouse release ends the brush stroke."""
         if not self._is_painting:
             return False
         if self.density_mode:
@@ -104,20 +100,20 @@ class LandController(BaseController):
             self._commit_stroke()
         return True
 
-    # ── 新大陆画笔 ──
+    # ── New World Paintbrush ──
 
     @property
     def new_land_pixel_count(self) -> int:
         return int(self.new_land_mask.sum())
 
     def clear_new_land_mask(self) -> None:
-        """生成省份后清空 mask，新大陆变旧大陆。"""
+        """After generating provinces, clear the mask and the new continent becomes the old continent."""
         self.new_land_mask[:] = False
 
-    # ── 密度画笔 ──
+    # ── Density Brush ──
 
     def _apply_density_brush(self, x: int, y: int) -> None:
-        """在密度图上涂抹。"""
+        """Paint on the density map."""
         map_data = self.project.map_data
         if map_data.density_map is None:
             from data.constants import MAP_WIDTH, MAP_HEIGHT
@@ -134,10 +130,10 @@ class LandController(BaseController):
         circle = (yy - y) ** 2 + (xx - x) ** 2 <= r * r
         dm[y0:y1, x0:x1][circle] = self.density_value
 
-    # ── 普通画笔 ──
+    # ── Ordinary brush ──
 
     def _apply_brush(self, x: int, y: int) -> None:
-        """在 (x, y) 处应用圆形画笔/橡皮/新大陆画笔。"""
+        """Apply the Circle Brush/Eraser/New World Brush at (x, y)."""
         from data.constants import TILE_SEA, TILE_LAND
         map_data = self.project.map_data
         tile_map = map_data.tile_map
@@ -160,19 +156,19 @@ class LandController(BaseController):
                 if 0 <= ny < h and 0 <= nx < w:
                     if int(tile_map[ny, nx]) != tile_value:
                         self._stroke_changes[(ny, nx)] = tile_value
-                        # 新大陆画笔：只记录真正从海/湖变陆地的像素，旧陆地不记
+                        # New World Brush: Only record pixels that actually changed from sea/lake to land, old land will not be recorded
                         if self.current_tool == "new_land":
                             self.new_land_mask[ny, nx] = True
 
     def _commit_stroke(self) -> None:
-        """提交笔触为一个 Command。"""
+        """Submit the stroke as a Command."""
         self._is_painting = False
         if self._stroke_changes:
             cmd = PaintTileCommand(self.project.map_data, self._stroke_changes)
             self.history.execute(cmd)
             self._stroke_changes = {}
             self.project.mark_dirty()
-            # 陆海划分变了 → colormap / fow / world_normal / cities 需要重生
+            # The division of land and sea has changed → colormap / fow / world_normal / cities need to be reborn
             self._invalidate_art_assets(
                 "map/terrain/colormap_rgb_cityemissivemask_a.dds",
                 "map/terrain/colormap_water_0.dds",
@@ -184,7 +180,7 @@ class LandController(BaseController):
             self._emit_render(full=True)
 
     def _do_fill(self, x: int, y: int) -> None:
-        """洪水填充。"""
+        """Flood fill."""
         from scipy.ndimage import label
 
         map_data = self.project.map_data

@@ -1,4 +1,4 @@
-"""country feature 页面 — 独立 QWidget, 不依赖 ToolPanel."""
+"""country feature page — independent QWidget, does not depend on ToolPanel."""
 
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtWidgets import (
@@ -22,9 +22,9 @@ from ui.styles import (
 
 
 class CountryPage(QWidget):
-    """国家编辑页面."""
+    """Country edit page."""
 
-    # 输出信号
+    # Output signal
     create_country_requested = pyqtSignal()
     quick_create_country_requested = pyqtSignal(str, str, str)
     country_selected = pyqtSignal(str)
@@ -37,7 +37,7 @@ class CountryPage(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._quick_create_color = (100, 100, 200)
-        # 搜索缓存
+        # search cache
         self._country_items_cache: list[tuple[str, str, tuple]] = []
         self._search_text: str = ""
         self._init_ui()
@@ -47,14 +47,14 @@ class CountryPage(QWidget):
         lay.setContentsMargins(8, 8, 8, 8)
         lay.setSpacing(10)
 
-        # ★ 推荐：一键创建国家（单对话框）— 放在最显眼位置
+        # ★ Recommendation: Create a country with one click (single dialog box) - place it in the most conspicuous position
         quick_btn = QPushButton(tr("country_quick_create_btn"))
         quick_btn.setStyleSheet(_PRIMARY_BTN_STYLE)
         quick_btn.setToolTip(tr("country_quick_create_tip"))
         quick_btn.clicked.connect(self._show_quick_create_dialog)
         lay.addWidget(quick_btn)
 
-        # 分步创建（备选）
+        # Create step by step (optional)
         create_btn = QPushButton(tr("country_create_btn"))
         create_btn.setStyleSheet(_SECONDARY_BTN_STYLE)
         create_btn.setToolTip(tr("country_create_tip"))
@@ -66,7 +66,7 @@ class CountryPage(QWidget):
         self._show_names_chk.toggled.connect(self.show_names_toggled.emit)
         lay.addWidget(self._show_names_chk)
 
-        # 分配领土模式开关: 关(默认)=点击地图只查看国家信息; 开=点击州改归属
+        # Assign territory mode switch: Off (default) = click on the map to view only country information; On = click on the state to change ownership
         self._assign_mode_btn = QPushButton(tr("country_assign_mode_btn"))
         self._assign_mode_btn.setCheckable(True)
         self._assign_mode_btn.setToolTip(tr("country_assign_mode_tip"))
@@ -79,7 +79,7 @@ class CountryPage(QWidget):
         self._assign_mode_btn.toggled.connect(self.assign_mode_toggled.emit)
         lay.addWidget(self._assign_mode_btn)
 
-        # 国家列表（含搜索）
+        # Country list (with search)
         list_box = _make_section(tr("country_list_section"))
 
         self._country_search = QLineEdit()
@@ -95,7 +95,7 @@ class CountryPage(QWidget):
         list_box.layout().addWidget(self._country_list)
         lay.addWidget(list_box)
 
-        # 国家属性面板
+        # Country Properties Panel
         info_box = _make_section(tr("country_props_section"))
         il = info_box.layout()
 
@@ -110,7 +110,7 @@ class CountryPage(QWidget):
         tag_row.addWidget(self._country_tag_label)
         il.addLayout(tag_row)
 
-        # 名称
+        # Name
         cname_row = QHBoxLayout()
         cname_lbl = QLabel(tr("country_name_label"))
         cname_lbl.setStyleSheet(_LABEL_STYLE)
@@ -121,7 +121,7 @@ class CountryPage(QWidget):
         cname_row.addWidget(self._country_name_edit)
         il.addLayout(cname_row)
 
-        # 执政党
+        # ruling party
         party_row = QHBoxLayout()
         party_lbl = QLabel(tr("country_party_label"))
         party_lbl.setStyleSheet(_LABEL_STYLE)
@@ -133,7 +133,7 @@ class CountryPage(QWidget):
         party_row.addWidget(self._country_party_combo)
         il.addLayout(party_row)
 
-        # 颜色显示（可点击修改）
+        # Color display (click to modify)
         color_row = QHBoxLayout()
         color_lbl = QLabel(tr("country_color_label"))
         color_lbl.setStyleSheet(_LABEL_STYLE)
@@ -149,7 +149,7 @@ class CountryPage(QWidget):
         color_row.addWidget(self._country_color_btn)
         il.addLayout(color_row)
 
-        # 首都
+        # capital
         cap_row = QHBoxLayout()
         cap_lbl = QLabel(tr("country_capital_label"))
         cap_lbl.setStyleSheet(_LABEL_STYLE)
@@ -160,7 +160,7 @@ class CountryPage(QWidget):
         cap_row.addWidget(self._country_capital_label)
         il.addLayout(cap_row)
 
-        # 删除当前国家按钮 (危险操作, 红色 + 二次确认)
+        # Delete current country button (dangerous operation, red + second confirmation)
         delete_btn = QPushButton(tr("country_delete_btn"))
         delete_btn.setStyleSheet(
             "QPushButton { background: #b91c1c; color: white; padding: 6px;"
@@ -173,7 +173,7 @@ class CountryPage(QWidget):
 
         lay.addWidget(info_box)
 
-        # 提示
+        # Tips
         hint = QLabel(tr("country_hint"))
         hint.setStyleSheet(f"color: {_DIM}; font-size: 11px; padding: 8px;")
         hint.setWordWrap(True)
@@ -181,7 +181,7 @@ class CountryPage(QWidget):
 
         lay.addStretch()
 
-    # ── 槽函数 ──
+    # ── Slot function ──
     def _on_country_list_clicked(self, row: int) -> None:
         item = self._country_list.item(row)
         if item is not None:
@@ -220,7 +220,7 @@ class CountryPage(QWidget):
             self.country_color_change_requested.emit(tag)
 
     def _show_quick_create_dialog(self) -> None:
-        """弹出快速创建国家对话框"""
+        """Quickly create a country dialog box pops up"""
         from PyQt5.QtWidgets import QDialog, QFormLayout, QDialogButtonBox, QColorDialog
 
         dlg = QDialog(self)
@@ -286,12 +286,12 @@ class CountryPage(QWidget):
                 QMessageBox.warning(dlg, tr("dlg_error"), tr("country_tag_invalid"))
 
     def _on_search_changed(self, text: str) -> None:
-        """搜索框输入 → 持久化 + 重建可见列表。"""
+        """Search box input → Persistence + Rebuild visible list."""
         self._search_text = text.strip().lower()
         self._rebuild_country_list()
 
     def _rebuild_country_list(self) -> None:
-        """根据 cache + search_text 重建可见列表项（保留选中）。"""
+        """Rebuild visible list items based on cache + search_text (leave selected)."""
         self._country_list.blockSignals(True)
         prev_tag = self._country_tag_label.text() if hasattr(self, "_country_tag_label") else ""
         self._country_list.clear()
@@ -309,19 +309,19 @@ class CountryPage(QWidget):
                 self._country_list.setCurrentItem(item)
         self._country_list.blockSignals(False)
 
-    # ── 公共更新方法 ──
+    # ── Public update method ──
     def reset_assign_mode(self) -> None:
-        """切出国家模式时退回信息模式（不触发信号, controller 已自行重置）。"""
+        """Return to information mode when switching out of country mode (no signal is triggered, the controller has reset itself)."""
         self._assign_mode_btn.blockSignals(True)
         self._assign_mode_btn.setChecked(False)
         self._assign_mode_btn.blockSignals(False)
 
     def set_assign_mode(self, on: bool) -> None:
-        """程序化切换分配模式按钮（触发 assign_mode_toggled 信号）。"""
+        """Programmatically toggle the assign mode button (triggers the assign_mode_toggled signal)."""
         self._assign_mode_btn.setChecked(on)
 
     def select_country_in_list(self, tag: str) -> None:
-        """地图点击选国后同步列表高亮（不触发 country_selected 信号）。"""
+        """After clicking on the map to select a country, the synchronization list is highlighted (the country_selected signal is not triggered)."""
         self._country_list.blockSignals(True)
         for i in range(self._country_list.count()):
             it = self._country_list.item(i)
@@ -331,14 +331,14 @@ class CountryPage(QWidget):
         self._country_list.blockSignals(False)
 
     def update_country_list(self, countries: list[tuple[str, str, tuple]]) -> None:
-        """刷新国家列表，items 为 (tag, name, color)"""
+        """Refresh the country list, items are (tag, name, color)"""
         self._country_items_cache = list(countries)
         self._rebuild_country_list()
 
     def update_country_info(
         self, tag: str, name: str, party: str, color: tuple, capital_name: str
     ) -> None:
-        """填充国家属性字段"""
+        """Populate country attribute fields"""
         self._country_tag_label.setText(tag)
 
         self._country_name_edit.blockSignals(True)

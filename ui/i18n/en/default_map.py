@@ -1,8 +1,4 @@
-"""
-default_map — en 翻译
-
-本文件由 tools/migrate_i18n.py 生成。后续手动维护。
-"""
+"""English strings for default map settings and map metadata."""
 
 STRINGS: dict[str, str] = {
     "default_map_reset_confirm_title": "Reset Tree Settings",

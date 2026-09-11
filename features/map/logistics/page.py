@@ -1,9 +1,8 @@
-"""后勤 feature 侧边栏页面 — 独立 QWidget, 不依赖 ToolPanel.
+"""Logistics feature sidebar page - independent QWidget, does not depend on ToolPanel.
 
-三个 section:
-1. 相邻关系 (adjacencies) — 海峡/运河/不可通行
-2. 铁路 + 补给 — 统一色块/图标选择 + 点击省份
-"""
+Three sections:
+1. Adjacencies — straits/canals/impassable
+2. Railway + Supply - unified color block/icon selection + click on the province"""
 
 from PyQt5.QtCore import pyqtSignal
 from PyQt5.QtWidgets import (
@@ -18,26 +17,26 @@ from ui.styles import (
     _PRIMARY_BTN_STYLE, _SECONDARY_BTN_STYLE,
 )
 
-# 铁路等级对应颜色 (与 renderer 一致)
+# Corresponding color of railway grade (consistent with renderer)
 _RAIL_COLORS = {
-    0: "#323232",   # 擦除
-    1: "#646478",   # 灰蓝
-    2: "#508C50",   # 绿
-    3: "#C8AA32",   # 金黄
-    4: "#D27832",   # 橙
-    5: "#D23232",   # 红
+    0: "#323232",   # Erase
+    1: "#646478",   # gray blue
+    2: "#508C50",   # green
+    3: "#C8AA32",   # golden
+    4: "#D27832",   # Orange
+    5: "#D23232",   # red
 }
 
 
-# 按钮 ID 约定: 0-5 = 铁路等级, 10 = 补给节点, 11 = 擦除补给
+# Button ID Convention: 0-5 = Rail Level, 10 = Supply Node, 11 = Erase Supply
 _ID_SUPPLY = 10
 _ID_SUPPLY_ERASE = 11
 
 
 class LogisticsPage(QWidget):
-    """后勤系统页面."""
+    """Logistics system page."""
 
-    # 输出信号
+    # Output signal
     open_adjacency_dialog_requested = pyqtSignal()
     open_railway_list_requested = pyqtSignal()
     generate_logistics_requested = pyqtSignal()
@@ -58,7 +57,7 @@ class LogisticsPage(QWidget):
         tip.setWordWrap(True)
         lay.addWidget(tip)
 
-        # ── 相邻关系 ──
+        # ── Adjacent relationship ──
         adj_box = _make_section(tr("logistics_adj_section"))
         adj_lay = adj_box.layout()
 
@@ -73,7 +72,7 @@ class LogisticsPage(QWidget):
 
         lay.addWidget(adj_box)
 
-        # ── 铁路 + 补给 ──
+        # ── Railroad + Supplies ──
         tool_box = _make_section(tr("logistics_rail_supply_section"))
         tool_lay = tool_box.layout()
 
@@ -89,10 +88,10 @@ class LogisticsPage(QWidget):
         lbl.setStyleSheet(_DIM_LABEL_STYLE)
         tool_lay.addWidget(lbl)
 
-        # 统一按钮组
+        # Unify button group
         self._tool_btn_group = QButtonGroup(self)
 
-        # 铁路色块行
+        # Railway color block row
         rail_row = QHBoxLayout()
         rail_row.setSpacing(4)
         rail_lbl = QLabel(tr("logistics_rail_label"))
@@ -108,7 +107,7 @@ class LogisticsPage(QWidget):
             "QPushButton:hover {{ border: 2px solid #AAA; }}"
         )
 
-        for level in range(6):  # 0=擦除, 1-5
+        for level in range(6):  # 0=erase, 1-5
             btn = QPushButton()
             btn.setCheckable(True)
             btn.setFixedSize(34, 34)
@@ -125,7 +124,7 @@ class LogisticsPage(QWidget):
 
         tool_lay.addLayout(rail_row)
 
-        # 补给图标行
+        # supply icon row
         sup_row = QHBoxLayout()
         sup_row.setSpacing(4)
         sup_lbl = QLabel(tr("logistics_supply_label"))
@@ -164,7 +163,7 @@ class LogisticsPage(QWidget):
         sup_row.addStretch()
         tool_lay.addLayout(sup_row)
 
-        # 默认选中铁路等级 3
+        # Railway class 3 is selected by default
         self._tool_btn_group.button(3).setChecked(True)
         self._tool_btn_group.idClicked.connect(self._on_tool_clicked)
 
@@ -184,7 +183,7 @@ class LogisticsPage(QWidget):
 
     def _on_tool_clicked(self, btn_id: int) -> None:
         if btn_id <= 5:
-            # 铁路模式 — 关闭补给
+            # Railroad Mode - Supply Off
             self.logistics_supply_pick_toggled.emit(False, False)
             self.logistics_railway_level_changed.emit(btn_id)
         elif btn_id == _ID_SUPPLY:

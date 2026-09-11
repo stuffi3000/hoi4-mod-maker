@@ -1,9 +1,7 @@
-"""
-渲染 5.hoi4proj 的当前地形 + 高度 + 海陆, 画一张带坐标格子的 PNG。
-用户看了之后能告诉我每个国家在哪个像素范围。
+"""Render 5.hoi4proj’s current terrain + height + sea and land, and draw a PNG with a coordinate grid.
+After users read it, they can tell me which pixel range each country is in.
 
-输出: Desktop/5_preview_grid.png
-"""
+Output: Desktop/5_preview_grid.png"""
 from __future__ import annotations
 
 import os
@@ -17,10 +15,10 @@ from PIL import Image, ImageDraw, ImageFont
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 HOME = os.path.expanduser("~")
-PROJECT_PATH = os.path.join(HOME, "Desktop", "欧若拉", "5.hoi4proj")
+PROJECT_PATH = os.path.join(HOME, "Desktop", "Aurora", "5.hoi4proj")
 OUT_PATH = os.path.join(HOME, "Desktop", "5_preview_grid.png")
 
-GRID_STEP = 500  # 每 500 像素画一条格线
+GRID_STEP = 500  # Draw a grid every 500 pixels
 
 
 def main() -> None:
@@ -31,23 +29,23 @@ def main() -> None:
     h, w = tile.shape
     print(f"Source: {w}x{h}")
 
-    # —— 合成 RGB 图 ——
-    # 陆地 = 按高度灰阶 + 地形类型着色
+    # ——Synthetic RGB image——
+    # Land = colored by height grayscale + terrain type
     rgb = np.zeros((h, w, 3), dtype=np.uint8)
 
-    # 海洋 = 深蓝
+    # Ocean = deep blue
     sea_mask = tile == 2
     rgb[sea_mask] = [40, 70, 140]
-    # 湖泊 = 浅蓝
+    # lake = light blue
     lake_mask = tile == 3
     rgb[lake_mask] = [100, 140, 200]
-    # 陆地 = 按高度 + 地形色
+    # Land = by height + terrain color
     land_mask = tile == 1
 
-    # 平原：绿
-    # 丘陵：黄绿
-    # 山地：棕
-    # 雪山：白
+    # plain: green
+    # Hills: yellow-green
+    # Mountain: Brown
+    # Snow Mountain: White
     plains_mask = land_mask & (hm < 130)
     hills_mask = land_mask & (hm >= 130) & (hm < 165)
     mountain_mask = land_mask & (hm >= 165) & (hm < 210)
@@ -58,12 +56,12 @@ def main() -> None:
     rgb[mountain_mask] = [130, 110, 90]
     rgb[snow_mask] = [230, 230, 240]
 
-    # 缩小到 1/4（5632x2048 → 1408x512）方便查看
+    # Shrink to 1/4 (5632x2048 → 1408x512) for easy viewing
     scale = 4
     img = Image.fromarray(rgb).resize((w // scale, h // scale), Image.LANCZOS)
     draw = ImageDraw.Draw(img)
 
-    # 画坐标格子
+    # Draw coordinate grid
     nw, nh = img.size
     for x in range(0, w, GRID_STEP):
         xi = x // scale

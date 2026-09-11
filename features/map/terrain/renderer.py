@@ -1,4 +1,4 @@
-"""Terrain 模式渲染: terrain_map → 颜色 LUT."""
+"""Terrain mode rendering: terrain_map → color LUT."""
 
 
 def render(canvas) -> None:

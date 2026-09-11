@@ -1,6 +1,4 @@
-"""
-ApplyGeneratorCommand 测试 — 全图/掩码写入与撤销, 原地修改保持别名。
-"""
+"""ApplyGeneratorCommand test - full image/mask writing and undoing, in-place modification to maintain aliases."""
 
 from types import SimpleNamespace
 
@@ -16,17 +14,17 @@ def _md():
 
 def test_full_apply_and_undo():
     md = _md()
-    alias = md.height_map                       # 模拟画布持有的别名
+    alias = md.height_map                       # Simulate the alias held by the canvas
     new = np.full((8, 8), 200, dtype=np.uint8)
 
-    cmd = ApplyGeneratorCommand(md, "height_map", new, label="测试生成")
+    cmd = ApplyGeneratorCommand(md, "height_map", new, label="Test generation")
     cmd.execute()
     assert np.all(md.height_map == 200)
-    assert alias is md.height_map               # 原地写入, 别名不断
+    assert alias is md.height_map               # Write in place, aliases continue
 
     cmd.undo()
     assert np.all(md.height_map == 50)
-    assert cmd.label == "测试生成"
+    assert cmd.label == "Test generation"
 
 
 def test_masked_apply_and_undo():
@@ -45,7 +43,7 @@ def test_masked_apply_and_undo():
 
 
 def test_wrong_layer_name_fails_loudly():
-    """图层名写错必须当场炸, 不能悄悄没生效。"""
+    """If the layer name is written incorrectly, it must be exploded on the spot, and cannot take effect quietly."""
     with pytest.raises(AttributeError):
         ApplyGeneratorCommand(_md(), "hieght_map",
                               np.zeros((8, 8), dtype=np.uint8))

@@ -1,6 +1,4 @@
-"""
-新手引导对话框 — 新建项目后展示 6 步工作流概览。
-"""
+"""Onboarding Dialog - Shows a 6-step workflow overview after creating a new project."""
 from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QCheckBox, QWidget, QSizePolicy,
@@ -19,29 +17,29 @@ _ACCENT = "#4f8cff"
 
 _SETTINGS_KEY = "GuideDialog/dont_show"
 
-# 6 个步骤: (icon, title_key, desc_key)
+# 6 steps: (icon, title_key, desc_key)
 _STEPS = [
-    ("\U0001F3D6", "guide_step1_title", "guide_step1_desc"),   # 🏖 画大陆
-    ("\U0001F9E9", "guide_step2_title", "guide_step2_desc"),   # 🧩 生成省份
-    ("\U000026F0", "guide_step3_title", "guide_step3_desc"),   # ⛰ 地形高度
-    ("\U0001F3F3", "guide_step4_title", "guide_step4_desc"),   # 🏳 建州国家
-    ("\U0001F6E4", "guide_step5_title", "guide_step5_desc"),   # 🛤 后勤
-    ("\U0001F680", "guide_step6_title", "guide_step6_desc"),   # 🚀 导出
+    ("\U0001F3D6", "guide_step1_title", "guide_step1_desc"),   # 🏖 Draw the continent
+    ("\U0001F9E9", "guide_step2_title", "guide_step2_desc"),   # 🧩 Generate provinces
+    ("\U000026F0", "guide_step3_title", "guide_step3_desc"),   # ⛰ Terrain height
+    ("\U0001F3F3", "guide_step4_title", "guide_step4_desc"),   # 🏳Statehood
+    ("\U0001F6E4", "guide_step5_title", "guide_step5_desc"),   # 🛤 Logistics
+    ("\U0001F680", "guide_step6_title", "guide_step6_desc"),   # 🚀 Export
 ]
 
 
 def should_show_guide() -> bool:
-    """检查是否需要显示引导。"""
+    """Check whether display boot is required."""
     return not QSettings("HOI4MapMaker", "Guide").value(_SETTINGS_KEY, False, type=bool)
 
 
 class GuideDialog(QDialog):
-    """分步工作流引导对话框。"""
+    """Step-by-step workflow guidance dialog."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle(tr("guide_title"))
-        # 长翻译可能撑大对话框, 允许扩展 + 用户拖动调整
+        # Long translations may stretch the dialog box, allowing expansion + user dragging to adjust
         self.setMinimumSize(520, 400)
         self.resize(520, 400)
         self.setStyleSheet(f"""
@@ -59,10 +57,10 @@ class GuideDialog(QDialog):
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
 
-        # 标题栏
+        # title bar
         header = QLabel(tr("guide_title"))
         _hf = QFont("Segoe UI", 16, QFont.Weight.Bold)
-        _hf.setFamilies(["Segoe UI", "Microsoft YaHei", "Noto Sans SC"])
+        _hf.setFamilies(["Segoe UI", "Arial", "sans-serif"])
         header.setFont(_hf)
         header.setAlignment(Qt.AlignmentFlag.AlignCenter)
         header.setStyleSheet(f"""
@@ -73,12 +71,12 @@ class GuideDialog(QDialog):
         """)
         root.addWidget(header)
 
-        # 内容区: 左侧步骤列表 + 右侧详情
+        # Content area: Step list on the left + details on the right
         body = QHBoxLayout()
         body.setContentsMargins(0, 0, 0, 0)
         body.setSpacing(0)
 
-        # 左侧步骤导航
+        # Left step navigation
         self._step_labels: list[QLabel] = []
         left = QWidget()
         left.setMinimumWidth(160)
@@ -96,7 +94,7 @@ class GuideDialog(QDialog):
         left_lay.addStretch()
         body.addWidget(left)
 
-        # 右侧详情
+        # Details on the right
         right = QWidget()
         right_lay = QVBoxLayout(right)
         right_lay.setContentsMargins(24, 24, 24, 16)
@@ -104,14 +102,14 @@ class GuideDialog(QDialog):
 
         self._step_num = QLabel()
         _nf = QFont("Segoe UI", 12, QFont.Weight.Bold)
-        _nf.setFamilies(["Segoe UI", "Microsoft YaHei", "Noto Sans SC"])
+        _nf.setFamilies(["Segoe UI", "Arial", "sans-serif"])
         self._step_num.setFont(_nf)
         self._step_num.setStyleSheet(f"color: {_ACCENT};")
         right_lay.addWidget(self._step_num)
 
         self._step_title = QLabel()
         _tf = QFont("Segoe UI", 15, QFont.Weight.Bold)
-        _tf.setFamilies(["Segoe UI", "Microsoft YaHei", "Noto Sans SC"])
+        _tf.setFamilies(["Segoe UI", "Arial", "sans-serif"])
         self._step_title.setFont(_tf)
         self._step_title.setStyleSheet(f"color: {_TEXT};")
         self._step_title.setWordWrap(True)
@@ -127,7 +125,7 @@ class GuideDialog(QDialog):
         body.addWidget(right, 1)
         root.addLayout(body, 1)
 
-        # 底部按钮栏
+        # bottom button bar
         footer = QWidget()
         footer.setStyleSheet(f"background: {_INPUT_BG}; border-top: 1px solid {_BORDER};")
         footer_lay = QHBoxLayout(footer)
@@ -189,14 +187,14 @@ class GuideDialog(QDialog):
         root.addWidget(footer)
 
     def _refresh(self) -> None:
-        """刷新当前步骤显示。"""
+        """Refresh the current step display."""
         icon, title_key, desc_key = _STEPS[self._current]
 
         self._step_num.setText(tr("guide_step_n", self._current + 1, len(_STEPS)))
         self._step_title.setText(f"{icon}  {tr(title_key)}")
         self._step_desc.setText(tr(desc_key))
 
-        # 高亮当前步骤
+        # Highlight current step
         for i, lbl in enumerate(self._step_labels):
             if i == self._current:
                 lbl.setStyleSheet(

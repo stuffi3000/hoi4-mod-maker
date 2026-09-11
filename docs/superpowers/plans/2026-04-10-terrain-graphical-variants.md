@@ -1,10 +1,10 @@
-# 地形系统完善 Implementation Plan
+# Improve the terrain system Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 支持全部 vanilla graphical terrain 变体（22 种），改地形时联动高度，海洋/湖泊省份不可改地形，definition.csv 写入正确的 provincial terrain。
+**Goal:** Supports all vanilla graphical terrain variants (22 types). When changing the terrain, the height is linked. Ocean/lake provinces cannot change the terrain. The definition.csv is written to the correct provincial terrain.
 
-**Architecture:** 扩展 `data/terrain_types.py` 加入 `GRAPHICAL_TERRAINS` 全表（从 vanilla `00_terrain.txt` 的 `terrain = {}` 块映射），UI 按 provincial terrain type 分组显示所有变体，canvas 点击时同步更新 terrain_map + height_map，导出时 definition.csv 从 terrain_map 反查 provincial terrain type。
+**Architecture:** Extends `data/terrain_types.py` to add the `GRAPHICAL_TERRAINS` full table (map from the `terrain = {}` block of vanilla `00_terrain.txt`), the UI displays all variants grouped by provincial terrain type, terrain_map + height_map is updated synchronously when canvas is clicked, and definition.csv checks provincial terrain type from terrain_map when exporting.
 
 **Tech Stack:** Python 3.10+, PyQt5, NumPy
 
@@ -12,130 +12,130 @@
 
 ## File Structure
 
-| 文件 | 职责 | 改动 |
+| Documentation | Responsibilities | Changes |
 |------|------|------|
-| `data/terrain_types.py` | 地形数据定义 | 新增 `GraphicalTerrain` + `GRAPHICAL_TERRAINS` 全表 + `PALETTE_TO_TYPE` 反查表 |
-| `features/map/terrain/page.py` | 地形编辑器 UI | 重写：按 type 分组显示全部变体按钮 |
-| `ui/canvas_widget.py` | 画布交互 | 地形点击加海洋保护 + 联动高度；LUT 扩展到全部索引 |
-| `export/csv_writer.py` | definition.csv 导出 | `_default_terrain()` 改为从 terrain_map 查实际 type |
-| `services/terrain_service.py` | 自动生成服务 | 无改动 |
-| `export/bmp_writer.py` | terrain.bmp 导出 | 无改动（已按调色板索引直接写入） |
+| `data/terrain_types.py` | Terrain data definition| New`GraphicalTerrain` + `GRAPHICAL_TERRAINS` Full table+ `PALETTE_TO_TYPE` Lookup table|
+| `features/map/terrain/page.py` | Terrain Editor UI | Override: Show all variant buttons grouped by type |
+| `ui/canvas_widget.py` | Canvas interaction| Terrain click plus ocean protection+ linkage height;LUT Expand to all indexes|
+| `export/csv_writer.py` | definition.csv export | `_default_terrain()` Change to check the actual type from terrain_map |
+| `services/terrain_service.py` | Automatically generate service | No changes |
+| `export/bmp_writer.py` | terrain.bmp export | No changes (written directly by palette index) |
 
 ---
 
-### Task 1: 扩展 terrain 数据定义
+### Task 1: Extend terrain data definition
 
 **Files:**
 - Modify: `data/terrain_types.py`
 
-- [ ] **Step 1: 在 `data/terrain_types.py` 末尾新增 `GraphicalTerrain` 和全表**
+- [ ] **Step 1: Add `GraphicalTerrain` and the full table at the end of `data/terrain_types.py`**
 
 ```python
 class GraphicalTerrain(NamedTuple):
-    """terrain.bmp 的 graphical terrain 条目 (来自 00_terrain.txt terrain={} 块)"""
-    id: str                # 原版条目名: "terrain_0", "desert_mountain" 等
-    type: str              # provincial terrain 类型: plains/forest/mountain 等
-    palette_index: int     # terrain.bmp 调色板索引
-    texture: int           # atlas0.dds 贴图编号 (0-15)
-    name_cn: str           # 中文显示名
-    perm_snow: bool        # 永雪覆盖
-    spawn_city: bool       # 自动生成城市模型
+    """terrain.bmp ofgraphical terrain entry(from00_terrain.txt terrain={} block)"""
+    id: str                # Original entry name: "terrain_0", "desert_mountain" Wait
+    type: str              # provincial terrain Type: plains/forest/mountain Wait
+    palette_index: int     # terrain.bmp palette index
+    texture: int           # atlas0.dds Texture number(0-15)
+    name_en: str           # English display name
+    perm_snow: bool        # forever covered in snow
+    spawn_city: bool       # Automatically generate city models
 
 
-# 原版 00_terrain.txt terrain={} 块全部条目
-# 每条对应 terrain.bmp 一个调色板索引 → 一种游戏内外观
+# Original00_terrain.txt terrain={} block all entries
+# Each item corresponds toterrain.bmp a palette index→ an in-game appearance
 GRAPHICAL_TERRAINS: list[GraphicalTerrain] = [
-    GraphicalTerrain("terrain_0",             "plains",   0,  1,  "平原",           False, False),
-    GraphicalTerrain("terrain_1",             "forest",   1,  4,  "森林",           False, False),
-    GraphicalTerrain("desert_mountain",       "hills",    2,  3,  "沙漠丘陵",       False, False),
-    GraphicalTerrain("desert",                "desert",   3,  9,  "沙漠",           False, False),
-    GraphicalTerrain("terrain_4",             "forest",   4,  5,  "森林(变体)",     False, False),
-    GraphicalTerrain("terrain_5",             "plains",   5,  0,  "平原(变体)",     False, False),
-    GraphicalTerrain("terrain_6",             "mountain", 6,  11, "山地",           False, False),
-    GraphicalTerrain("terrain_7",             "desert",   7,  12, "沙漠(变体)",     False, False),
-    GraphicalTerrain("desert_hills",          "desert",   8,  14, "沙漠丘陵",       False, False),
-    GraphicalTerrain("terrain_9",             "marsh",    9,  6,  "沼泽",           False, False),
-    GraphicalTerrain("terrain_10",            "mountain", 10, 13, "山地(变体)",     False, False),
-    GraphicalTerrain("desert_mountain_11",    "mountain", 11, 11, "沙漠山地",       False, False),
-    GraphicalTerrain("desert_12",             "desert",   12, 8,  "沙漠(岩地)",     False, False),
-    GraphicalTerrain("forest_13",             "urban",    13, 10, "城市",           False, True),
-    GraphicalTerrain("forest_14",             "lakes",    14, 255, "湖泊",          False, False),
-    GraphicalTerrain("ocean_15",              "ocean",    15, 9,  "海洋",           False, False),
-    GraphicalTerrain("snow_16",               "mountain", 16, 11, "雪山",           True,  False),
-    GraphicalTerrain("hills_blend",           "hills",    17, 2,  "丘陵",           False, False),
-    GraphicalTerrain("mountain_variation_sand","mountain", 18, 7,  "沙色山地",      False, False),
-    GraphicalTerrain("plains_snow",           "plains",   19, 0,  "雪原",           True,  False),
-    GraphicalTerrain("mountain_variation_grass","mountain",20, 7,  "草地山地",      False, False),
-    GraphicalTerrain("jungle_18",             "jungle",   21, 4,  "丛林",           False, False),
-    GraphicalTerrain("jungle_blend_18",       "jungle",   22, 5,  "丛林(变体)",     False, False),
-    GraphicalTerrain("jungle_mountain",       "mountain", 27, 7,  "丛林山地",       False, False),
-    GraphicalTerrain("desert_mountain_tops",  "mountain", 31, 15, "沙漠山顶",       False, False),
+    GraphicalTerrain("terrain_0",             "plains",   0,  1,  "plain",           False, False),
+    GraphicalTerrain("terrain_1",             "forest",   1,  4,  "forest",           False, False),
+    GraphicalTerrain("desert_mountain",       "hills",    2,  3,  "desert hills",       False, False),
+    GraphicalTerrain("desert",                "desert",   3,  9,  "desert",           False, False),
+    GraphicalTerrain("terrain_4",             "forest",   4,  5,  "forest(Variants)",     False, False),
+    GraphicalTerrain("terrain_5",             "plains",   5,  0,  "plain(Variants)",     False, False),
+    GraphicalTerrain("terrain_6",             "mountain", 6,  11, "Mountain",           False, False),
+    GraphicalTerrain("terrain_7",             "desert",   7,  12, "desert(Variants)",     False, False),
+    GraphicalTerrain("desert_hills",          "desert",   8,  14, "desert hills",       False, False),
+    GraphicalTerrain("terrain_9",             "marsh",    9,  6,  "swamp",           False, False),
+    GraphicalTerrain("terrain_10",            "mountain", 10, 13, "Mountain(Variants)",     False, False),
+    GraphicalTerrain("desert_mountain_11",    "mountain", 11, 11, "desert mountains",       False, False),
+    GraphicalTerrain("desert_12",             "desert",   12, 8,  "desert(rocky ground)",     False, False),
+    GraphicalTerrain("forest_13",             "urban",    13, 10, "city",           False, True),
+    GraphicalTerrain("forest_14",             "lakes",    14, 255, "lake",          False, False),
+    GraphicalTerrain("ocean_15",              "ocean",    15, 9,  "ocean",           False, False),
+    GraphicalTerrain("snow_16",               "mountain", 16, 11, "snow mountain",           True,  False),
+    GraphicalTerrain("hills_blend",           "hills",    17, 2,  "hills",           False, False),
+    GraphicalTerrain("mountain_variation_sand","mountain", 18, 7,  "sandy mountains",      False, False),
+    GraphicalTerrain("plains_snow",           "plains",   19, 0,  "snowfield",           True,  False),
+    GraphicalTerrain("mountain_variation_grass","mountain",20, 7,  "grassy mountains",      False, False),
+    GraphicalTerrain("jungle_18",             "jungle",   21, 4,  "jungle",           False, False),
+    GraphicalTerrain("jungle_blend_18",       "jungle",   22, 5,  "jungle(Variants)",     False, False),
+    GraphicalTerrain("jungle_mountain",       "mountain", 27, 7,  "jungle mountains",       False, False),
+    GraphicalTerrain("desert_mountain_tops",  "mountain", 31, 15, "desert mountaintop",       False, False),
 ]
 
-# 调色板索引 → GraphicalTerrain 快速查找
+# palette index→ GraphicalTerrain Quick search
 GRAPHICAL_TERRAIN_BY_INDEX: dict[int, GraphicalTerrain] = {
     gt.palette_index: gt for gt in GRAPHICAL_TERRAINS
 }
 
-# 调色板索引 → provincial terrain type 名称 (用于 definition.csv)
+# palette index→ provincial terrain type Name(used fordefinition.csv)
 PALETTE_TO_TYPE: dict[int, str] = {
     gt.palette_index: gt.type for gt in GRAPHICAL_TERRAINS
 }
 
-# 按 provincial terrain type 分组的可画变体 (排除 ocean/lakes)
+# pressprovincial terrain type Grouped drawable variants(excludeocean/lakes)
 PAINTABLE_GROUPS: dict[str, list[GraphicalTerrain]] = {}
 for _gt in GRAPHICAL_TERRAINS:
     if _gt.type not in ("ocean", "lakes"):
         PAINTABLE_GROUPS.setdefault(_gt.type, []).append(_gt)
 ```
 
-- [ ] **Step 2: 验证数据无重复索引**
+- [ ] **Step 2: Verify that the data has no duplicate indexes**
 
-运行 Python 交互检查：
+Run the Python interactive check:
 ```bash
 cd C:/Users/Administrator.SKY-20180310BMB/Desktop/MOD/hoi4_map_maker && python -c "
 from data.terrain_types import GRAPHICAL_TERRAINS
 indices = [gt.palette_index for gt in GRAPHICAL_TERRAINS]
-assert len(indices) == len(set(indices)), f'重复索引: {[i for i in indices if indices.count(i) > 1]}'
-print(f'OK: {len(GRAPHICAL_TERRAINS)} 种 graphical terrain, 索引无重复')
+assert len(indices) == len(set(indices)), f'Duplicate index: {[i for i in indices if indices.count(i) > 1]}'
+print(f'OK: {len(GRAPHICAL_TERRAINS)} speciesgraphical terrain, No duplication in index')
 "
 ```
-Expected: `OK: 25 种 graphical terrain, 索引无重复`
+Expected: `OK: 25 speciesgraphical terrain, No duplication in index`
 
 - [ ] **Step 3: Commit**
 
 ```bash
 git add data/terrain_types.py
-git commit -m "feat: 扩展 graphical terrain 全表 (25 种 vanilla 变体)"
+git commit -m "feat: Expandgraphical terrain Full table(25 speciesvanilla Variants)"
 ```
 
 ---
 
-### Task 2: 扩展 canvas 颜色 LUT
+### Task 2: Extend canvas color LUT
 
 **Files:**
 - Modify: `ui/canvas_widget.py:37-46`
 
-- [ ] **Step 1: 替换 LUT 构建代码**
+- [ ] **Step 1: Replace LUT build code**
 
-将 `canvas_widget.py` 第 37-46 行的 LUT 构建从旧的 `TERRAIN_PALETTE_INDEX` 改为新的 `GRAPHICAL_TERRAINS`：
+Change the LUT build of `canvas_widget.py` lines 37-46 from the old `TERRAIN_PALETTE_INDEX` to the new `GRAPHICAL_TERRAINS`:
 
 ```python
-# 构建 terrain 索引 → BGRA 颜色查找表 (覆盖全部 graphical terrain)
+# buildterrain Index→ BGRA color lookup table(Cover allgraphical terrain)
 from data.terrain_types import GRAPHICAL_TERRAINS, TERRAIN_TYPES
 
-# 构建 terrain 颜色 LUT (numpy数组, 256 entries, BGRA)
+# buildterrain colorLUT (numpyarray, 256 entries, BGRA)
 _TERRAIN_COLOR_LUT = np.zeros((256, 4), dtype=np.uint8)
 for _gt in GRAPHICAL_TERRAINS:
-    # 用 provincial terrain type 的颜色作为基色
+    # useprovincial terrain type color as base color
     _base = TERRAIN_TYPES[_gt.type].color  # (R, G, B)
     _r, _g, _b = _base
-    # 变体用亮度微调区分 (palette_index 的低位偏移)
+    # Variants differentiated with brightness tweaks(palette_index low offset of)
     _shift = ((_gt.palette_index * 7) % 30) - 15  # -15 ~ +14
     _r = max(0, min(255, _r + _shift))
     _g = max(0, min(255, _g + _shift))
     _b = max(0, min(255, _b + _shift))
-    # 永雪变体叠加蓝白色调
+    # Yongxue variant superimposed with blue and white tones
     if _gt.perm_snow:
         _r = min(255, _r + 40)
         _g = min(255, _g + 40)
@@ -143,14 +143,14 @@ for _gt in GRAPHICAL_TERRAINS:
     _TERRAIN_COLOR_LUT[_gt.palette_index] = (_b, _g, _r, 255)
 ```
 
-- [ ] **Step 2: 删除旧的 import**
+- [ ] **Step 2: Delete old import**
 
-移除不再需要的 `TERRAIN_PALETTE_INDEX` import（第 23 行），改为：
+Remove the no longer needed `TERRAIN_PALETTE_INDEX` import (line 23) and replace it with:
 ```python
 from data.terrain_types import TERRAIN_TYPES, GRAPHICAL_TERRAINS
 ```
 
-- [ ] **Step 3: 验证渲染不崩**
+- [ ] **Step 3: Verify that rendering does not crash**
 
 ```bash
 cd C:/Users/Administrator.SKY-20180310BMB/Desktop/MOD/hoi4_map_maker && python -c "
@@ -158,29 +158,29 @@ from ui.canvas_widget import _TERRAIN_COLOR_LUT
 import numpy as np
 assert _TERRAIN_COLOR_LUT.shape == (256, 4)
 non_zero = np.any(_TERRAIN_COLOR_LUT != 0, axis=1).sum()
-print(f'OK: LUT 有 {non_zero} 个非零条目')
+print(f'OK: LUT Yes{non_zero} non-zero entries')
 "
 ```
-Expected: `OK: LUT 有 25 个非零条目`
+Expected: `OK: LUT Yes25 non-zero entries`
 
 - [ ] **Step 4: Commit**
 
 ```bash
 git add ui/canvas_widget.py
-git commit -m "feat: terrain LUT 扩展到全部 25 种 graphical terrain"
+git commit -m "feat: terrain LUT Expand to all25 speciesgraphical terrain"
 ```
 
 ---
 
-### Task 3: 重写 terrain UI page
+### Task 3: Rewrite the terrain UI page
 
 **Files:**
 - Modify: `features/map/terrain/page.py`
 
-- [ ] **Step 1: 重写 `build_page()` — 按 type 分组显示全部变体**
+- [ ] **Step 1: Rewrite `build_page()` — Show all variants grouped by type**
 
 ```python
-"""terrain feature 页面 — 按 provincial terrain type 分组显示全部 graphical terrain 变体."""
+"""terrain feature Page— pressprovincial terrain type Show all in groupsgraphical terrain Variants."""
 
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import (
@@ -197,30 +197,30 @@ from ui.styles import (
 )
 
 
-# 分组显示顺序
+# Group display order
 _GROUP_ORDER = ["plains", "forest", "hills", "mountain", "desert", "marsh", "jungle", "urban"]
 
-# 分组中文名
+# Group display name
 _GROUP_CN = {
-    "plains": "平原", "forest": "森林", "hills": "丘陵", "mountain": "山地",
-    "desert": "沙漠", "marsh": "沼泽", "jungle": "丛林", "urban": "城市",
+    "plains": "plain", "forest": "forest", "hills": "hills", "mountain": "Mountain",
+    "desert": "desert", "marsh": "swamp", "jungle": "jungle", "urban": "city",
 }
 
 
 def build_page(panel) -> QWidget:
-    """构建 terrain 页. panel 是 ToolPanel 实例."""
+    """buildterrain page. panel YesToolPanel Example."""
     page = QWidget()
     outer = QVBoxLayout(page)
     outer.setContentsMargins(0, 0, 0, 0)
     outer.setSpacing(4)
 
-    # 提示
-    hint = QLabel("选择地形变体，然后点击省份分配")
+    # Tips
+    hint = QLabel("Select the terrain variant and click Province Allocation")
     hint.setStyleSheet(f"color: {_DIM}; font-size: 12px; padding: 8px;")
     hint.setWordWrap(True)
     outer.addWidget(hint)
 
-    # 可滚动区域
+    # scrollable area
     scroll = QScrollArea()
     scroll.setWidgetResizable(True)
     scroll.setStyleSheet("QScrollArea { border: none; }")
@@ -241,17 +241,17 @@ def build_page(panel) -> QWidget:
         grid.setSpacing(3)
 
         for i, gt in enumerate(variants):
-            label = gt.name_cn
+            label = gt.name_en
             if gt.perm_snow:
                 label += " *"
             btn = QPushButton(label)
             btn.setToolTip(
-                f"索引: {gt.palette_index}  贴图: {gt.texture}\n"
-                f"类型: {gt.type}  ID: {gt.id}"
+                f"Index: {gt.palette_index}  stickers: {gt.texture}\n"
+                f"Type: {gt.type}  ID: {gt.id}"
             )
 
             r, g, b = tt.color
-            # 变体微调亮度以区分
+            # Variants fine-tune brightness to differentiate
             shift = ((gt.palette_index * 7) % 30) - 15
             r = max(0, min(255, r + shift))
             g = max(0, min(255, g + shift))
@@ -290,8 +290,8 @@ def build_page(panel) -> QWidget:
     scroll.setWidget(scroll_content)
     outer.addWidget(scroll)
 
-    # 自动生成
-    auto_btn = QPushButton("从陆地自动生成")
+    # Automatically generated
+    auto_btn = QPushButton("Automatically generated from land")
     auto_btn.setStyleSheet(_PRIMARY_BTN_STYLE)
     auto_btn.clicked.connect(panel.auto_terrain_requested.emit)
     outer.addWidget(auto_btn)
@@ -299,46 +299,46 @@ def build_page(panel) -> QWidget:
     return page
 ```
 
-- [ ] **Step 2: 启动工具验证 UI 不崩**
+- [ ] **Step 2: Start the tool to verify that the UI does not crash**
 
 ```bash
 cd C:/Users/Administrator.SKY-20180310BMB/Desktop/MOD/hoi4_map_maker && python main.py
 ```
 
-切到地形模式，确认：
-- 8 个分组都有标题
-- 每组内有对应数量的变体按钮（如山地组 7 个）
-- 点击按钮后状态栏无报错
+Switch to terrain mode and confirm:
+- 8 groups have titles
+- Each group has a corresponding number of variant buttons (e.g. 7 in the mountain group)
+- No error is reported in the status bar after clicking the button
 
 - [ ] **Step 3: Commit**
 
 ```bash
 git add features/map/terrain/page.py
-git commit -m "feat: terrain UI 按类型分组显示全部 25 种 graphical terrain 变体"
+git commit -m "feat: terrain UI Show all grouped by type25 speciesgraphical terrain Variants"
 ```
 
 ---
 
-### Task 4: 海洋保护 + 高度联动
+### Task 4: Marine protection + high degree of linkage
 
 **Files:**
 - Modify: `ui/canvas_widget.py:879-891`
 
-- [ ] **Step 1: 修改地形点击处理 — 加海洋/湖泊保护 + 高度联动**
+- [ ] **Step 1: Modify terrain click processing - add ocean/lake protection + high degree of linkage**
 
-将 `canvas_widget.py` 第 886-891 行替换为：
+Replace `canvas_widget.py` lines 886-891 with:
 
 ```python
-                        # 地形模式：点击省份 → 整个省份填充当前地形
+                        # Terrain Mode: Click on Province→ The entire province fills the current terrain
                         if self._display_mode == "terrain":
-                            # 海洋/湖泊省份不可改地形
+                            # ocean/The terrain of lake provinces cannot be changed
                             tile_val = self._tile_map[sy, sx]
                             if tile_val in (TILE_SEA, TILE_LAKE):
                                 event.accept()
                                 return
                             self.stroke_started.emit()
                             self._terrain_map[mask] = self._current_terrain_index
-                            # 联动高度：根据 graphical terrain 的 type 查 height_base
+                            # Linkage height: according tographical terrain oftype Checkheight_base
                             from data.terrain_types import PALETTE_TO_TYPE, TERRAIN_TYPES
                             ptype = PALETTE_TO_TYPE.get(self._current_terrain_index)
                             if ptype and ptype in TERRAIN_TYPES:
@@ -347,46 +347,46 @@ git commit -m "feat: terrain UI 按类型分组显示全部 25 种 graphical ter
                             self.stroke_ended.emit()
 ```
 
-- [ ] **Step 2: 确认 `TILE_SEA` 和 `TILE_LAKE` 已 import**
+- [ ] **Step 2: Confirm that `TILE_SEA` and `TILE_LAKE` have been imported**
 
-检查文件顶部 import，确认有：
+Check the import at the top of the file to make sure there is:
 ```python
 from data.constants import (
     ..., TILE_SEA, TILE_LAKE, ...
 )
 ```
-（已有，无需改动）
+(Existing, no need to change)
 
-- [ ] **Step 3: 手动测试**
+- [ ] **Step 3: Manual Test**
 
 ```bash
 cd C:/Users/Administrator.SKY-20180310BMB/Desktop/MOD/hoi4_map_maker && python main.py
 ```
 
-测试步骤：
-1. 切到地形模式
-2. 选"山地"变体，点一个陆地省份 → 应变成山地颜色
-3. 切到高度模式查看 → 该省份高度应自动变高 (220)
-4. 切回地形模式，点一个海洋省份 → 应无反应
-5. 点一个湖泊省份 → 应无反应
+Test steps:
+1. Switch to terrain mode
+2. Select the "Mountain" variant and click on a land province → it should turn into a mountain color
+3. Switch to altitude mode to view → the altitude of the province should automatically become higher (220)
+4. Switch back to terrain mode and click on a maritime province → there should be no response
+5. Click on a lake province → There should be no response
 
 - [ ] **Step 4: Commit**
 
 ```bash
 git add ui/canvas_widget.py
-git commit -m "feat: 地形编辑加海洋保护 + 高度联动"
+git commit -m "feat: Terrain editing plus ocean protection+ Highly linked"
 ```
 
 ---
 
-### Task 5: definition.csv 写入正确的 provincial terrain
+### Task 5: Write the correct provincial terrain to definition.csv
 
 **Files:**
-- Modify: `export/csv_writer.py:45-93` 和 `export/csv_writer.py:127-134`
+- Modify: `export/csv_writer.py:45-93` and `export/csv_writer.py:127-134`
 
-- [ ] **Step 1: 修改 `write_definition_csv` 签名 — 接收 terrain_map**
+- [ ] **Step 1: Modify `write_definition_csv` signature — receive terrain_map**
 
-在函数签名加 `terrain_map` 参数：
+Add `terrain_map` parameters to the function signature:
 
 ```python
 def write_definition_csv(
@@ -399,22 +399,22 @@ def write_definition_csv(
 ) -> None:
 ```
 
-- [ ] **Step 2: 修改地形字段逻辑 — 从 terrain_map 查**
+- [ ] **Step 2: Modify terrain field logic — check from terrain_map**
 
-将第 82-83 行的：
+Change lines 82-83 of:
 ```python
-            # 默认地形
+            # Default terrain
             terrain = _default_terrain(ptype)
 ```
-替换为：
+Replace with:
 ```python
-            # 地形：优先从 terrain_map 查实际 graphical terrain 的 type
+            # Terrain: Prioritize fromterrain_map Check the actual situationgraphical terrain oftype
             terrain = _resolve_terrain(ptype, pid, province_map, terrain_map)
 ```
 
-- [ ] **Step 3: 新增 `_resolve_terrain` 函数**
+- [ ] **Step 3: Add `_resolve_terrain` function**
 
-在 `_default_terrain` 下方添加：
+Below `_default_terrain` add:
 
 ```python
 def _resolve_terrain(
@@ -423,8 +423,8 @@ def _resolve_terrain(
     province_map: np.ndarray,
     terrain_map: np.ndarray | None,
 ) -> str:
-    """从 terrain_map 解析省份的 provincial terrain type."""
-    # 海/湖强制
+    """fromterrain_map Analyzing provincesprovincial terrain type."""
+    # sea/lake force
     if ptype == "sea":
         return "ocean"
     if ptype == "lake":
@@ -435,7 +435,7 @@ def _resolve_terrain(
 
     from data.terrain_types import PALETTE_TO_TYPE
 
-    # 取该省份区域内 terrain_map 的众数 (最多的那个索引)
+    # Take within the province areaterrain_map mode(The index with the most)
     mask = province_map == pid
     indices = terrain_map[mask]
     if indices.size == 0:
@@ -446,75 +446,75 @@ def _resolve_terrain(
     return PALETTE_TO_TYPE.get(dominant_index, "plains")
 ```
 
-确保文件顶部有 `import numpy as np`（已有）。
+Make sure you have `import numpy as np` (already) at the top of the file.
 
-- [ ] **Step 4: 找到 mod_exporter 调用 `write_definition_csv` 的位置，传入 terrain_map**
+- [ ] **Step 4: Find the location where mod_exporter calls `write_definition_csv` and pass in terrain_map**
 
-搜索 mod_exporter.py 中调用 `write_definition_csv` 的地方，加上 `terrain_map=` 参数：
+Search for the place where `write_definition_csv` is called in mod_exporter.py, and add the `terrain_map=` parameter:
 
 ```bash
 cd C:/Users/Administrator.SKY-20180310BMB/Desktop/MOD/hoi4_map_maker && grep -n "write_definition_csv" export/mod_exporter.py
 ```
 
-在调用处添加 `terrain_map=terrain_map` 参数。
+Add the `terrain_map=terrain_map` parameter at the call site.
 
-- [ ] **Step 5: 验证导出**
+- [ ] **Step 5: Verify export**
 
 ```bash
 cd C:/Users/Administrator.SKY-20180310BMB/Desktop/MOD/hoi4_map_maker && python -c "
-# 模拟检查 _resolve_terrain 逻辑
+# mock check_resolve_terrain logic
 import numpy as np
 from export.csv_writer import _resolve_terrain
 pm = np.array([[1,1,2,2],[1,1,2,2]])
-tm = np.array([[6,6,0,0],[6,6,0,0]])  # pid=1→索引6(mountain), pid=2→索引0(plains)
+tm = np.array([[6,6,0,0],[6,6,0,0]])  # pid=1→Index6(mountain), pid=2→Index0(plains)
 assert _resolve_terrain('land', 1, pm, tm) == 'mountain'
 assert _resolve_terrain('land', 2, pm, tm) == 'plains'
 assert _resolve_terrain('sea', 1, pm, tm) == 'ocean'
 assert _resolve_terrain('lake', 1, pm, tm) == 'lakes'
-print('OK: _resolve_terrain 逻辑正确')
+print('OK: _resolve_terrain logically correct')
 "
 ```
-Expected: `OK: _resolve_terrain 逻辑正确`
+Expected: `OK: _resolve_terrain logically correct`
 
 - [ ] **Step 6: Commit**
 
 ```bash
 git add export/csv_writer.py export/mod_exporter.py
-git commit -m "feat: definition.csv 从 terrain_map 写入正确的 provincial terrain"
+git commit -m "feat: definition.csv fromterrain_map Write the correctprovincial terrain"
 ```
 
 ---
 
-### Task 6: 端到端验证
+### Task 6: End-to-end verification
 
-- [ ] **Step 1: 启动工具完整流程测试**
+- [ ] **Step 1: Start tool complete process test**
 
 ```bash
 cd C:/Users/Administrator.SKY-20180310BMB/Desktop/MOD/hoi4_map_maker && python main.py
 ```
 
-操作步骤：
-1. 打开现有项目或新建
-2. 切到地形模式 → 确认 8 组变体按钮全部显示
-3. 选"雪山"(索引 16) → 点一个陆地省份 → 确认变色
-4. 选"丛林"(索引 21) → 点另一个陆地省份 → 确认变色
-5. 点海洋省份 → 确认无反应
-6. 切到高度模式 → 确认步骤 3 的省份高度为 220 (mountain)，步骤 4 的为 125 (jungle)
-7. 导出 MOD
-8. 检查 `definition.csv` → 步骤 3 的省份 terrain 列应为 `mountain`，步骤 4 应为 `jungle`
-9. 检查 `terrain.bmp` 可用 hex 编辑器确认像素值
+Operation steps:
+1. Open an existing project or create a new one
+2. Switch to terrain mode → Confirm that all 8 sets of variant buttons are displayed
+3. Select "Snow Mountain" (index 16) → click on a land province → confirm the color change
+4. Select "Jungle" (index 21) → click on another land province → confirm the color change
+5. Click on the maritime province → confirm that there is no response
+6. Switch to altitude mode → Confirm that the province height in step 3 is 220 (mountain) and that in step 4 is 125 (jungle)
+7. Export MOD
+8. Check `definition.csv` → The province terrain column in step 3 should be `mountain` and in step 4 it should be `jungle`
+9. Check `terrain.bmp` to confirm the pixel value using hex editor
 
-- [ ] **Step 2: 运行现有测试确认无回归**
+- [ ] **Step 2: Run existing tests to confirm there are no regressions**
 
 ```bash
 cd C:/Users/Administrator.SKY-20180310BMB/Desktop/MOD/hoi4_map_maker && pytest -v
 ```
 
-Expected: 全部通过
+Expected: All passed
 
-- [ ] **Step 3: 最终 Commit**
+- [ ] **Step 3: Final Commit**
 
 ```bash
 git add -A
-git commit -m "feat: 地形系统完善 — 全 vanilla graphical terrain + 高度联动 + 海洋保护"
+git commit -m "feat: Complete terrain system— fullvanilla graphical terrain + Highly linked+ marine protection"
 ```

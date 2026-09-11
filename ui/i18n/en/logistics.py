@@ -1,8 +1,4 @@
-"""
-logistics — en 翻译
-
-本文件由 tools/migrate_i18n.py 生成。后续手动维护。
-"""
+"""English strings for railways, supply nodes, and adjacencies."""
 
 STRINGS: dict[str, str] = {
     "adj_dlg_clear_fields": "Clear Fields",

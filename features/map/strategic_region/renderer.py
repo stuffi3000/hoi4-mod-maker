@@ -1,4 +1,4 @@
-"""Strategic Region 模式渲染: 每个战略区域不同颜色."""
+"""Strategic Region mode rendering: Each strategic region is colored differently."""
 
 
 def render(canvas) -> None:

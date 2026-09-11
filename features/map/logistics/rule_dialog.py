@@ -1,14 +1,12 @@
-"""
-Adjacency Rules 编辑器对话框.
+"""Adjacency Rules editor dialog.
 
-非模态. 左边列表展示已有 rule, 右边详情:
-- name (输入)
-- 4×4 表格 (contested/enemy/friend/neutral × army/navy/submarine/trade) checkbox
-- required_provinces 列表 (从画布拾取或手填)
-- icon_province (单个 sea 省份, 从画布拾取)
+Non-modal. The list on the left shows existing rules, and the details on the right:
+- name (input)
+- 4×4 table (contested/enemy/friend/neutral × army/navy/submarine/trade) checkbox
+- list of required_provinces (picked from canvas or filled in by hand)
+- icon_province (single sea province, picked from canvas)
 
-参考: features/map/logistics/adjacency_dialog.py 复用 pick_mode_changed 模式.
-"""
+Reference: features/map/logistics/adjacency_dialog.py reuses pick_mode_changed mode."""
 
 from __future__ import annotations
 
@@ -27,10 +25,9 @@ from ui.i18n import tr
 
 
 class AdjacencyRuleDialog(QDialog):
-    """Adjacency rules 编辑器.
+    """Adjacency rules editor.
 
-    pick_mode_changed: (开关, 字段名 'icon' / 'required_add')
-    """
+    pick_mode_changed: (switch, field name 'icon' / 'required_add')"""
 
     pick_mode_changed = pyqtSignal(bool, str)
 
@@ -53,7 +50,7 @@ class AdjacencyRuleDialog(QDialog):
         root.setContentsMargins(10, 10, 10, 10)
         root.setSpacing(10)
 
-        # ── 左: 列表 ──
+        # ── Left: List ──
         left = QVBoxLayout()
         left_label = QLabel(tr("rule_dlg_list_label"))
         left_label.setStyleSheet("color: #ccc; font-weight: bold;")
@@ -72,7 +69,7 @@ class AdjacencyRuleDialog(QDialog):
 
         root.addLayout(left, 1)
 
-        # ── 右: 详情 ──
+        # ── Right: Details ──
         right = QVBoxLayout()
 
         tip = QLabel(tr("rule_dlg_tip"))
@@ -89,19 +86,19 @@ class AdjacencyRuleDialog(QDialog):
         name_row.addWidget(self._name_edit)
         right.addLayout(name_row)
 
-        # 通行表 (4×4 checkbox)
+        # Access table (4×4 checkbox)
         table_box = QGroupBox(tr("rule_dlg_pass_group"))
         grid = QGridLayout(table_box)
         grid.setSpacing(6)
 
-        # 表头: 列 = 通行类型
+        # Header: column = pass type
         grid.addWidget(QLabel(""), 0, 0)
         for j, p in enumerate(ALL_PASS_TYPES):
             lbl = QLabel(f"<b>{tr('rule_dlg_pass_' + p)}</b>")
             lbl.setAlignment(Qt.AlignCenter)
             grid.addWidget(lbl, 0, j + 1)
 
-        # 行 = 关系
+        # row = relation
         self._checks: dict[tuple[str, str], QCheckBox] = {}
         for i, rel in enumerate(ALL_RELATIONS):
             grid.addWidget(QLabel(tr("rule_dlg_rel_" + rel) + ":"), i + 1, 0)
@@ -145,21 +142,21 @@ class AdjacencyRuleDialog(QDialog):
         icon_row.addWidget(icon_pick_btn)
         right.addLayout(icon_row)
 
-        # 状态
+        # Status
         self._status = QLabel("")
         self._status.setStyleSheet("color: #4a9; font-size: 11px;")
         right.addWidget(self._status)
 
         right.addStretch(1)
 
-        # 底部关闭
+        # Bottom closed
         close_btn = QPushButton(tr("rule_dlg_close"))
         close_btn.clicked.connect(self.accept)
         right.addWidget(close_btn)
 
         root.addLayout(right, 2)
 
-    # ─────────── 列表 ───────────
+    # ─────────── List ────────────
 
     def _refresh_list(self) -> None:
         self._list.clear()
@@ -184,7 +181,7 @@ class AdjacencyRuleDialog(QDialog):
         self._name_edit.setText(r.name)
         self._name_edit.blockSignals(False)
 
-        # 通行表
+        # traffic table
         for (rel, pt), cb in self._checks.items():
             cb.blockSignals(True)
             cb.setChecked(bool(r.get_relation(rel).get(pt, False)))
@@ -202,7 +199,7 @@ class AdjacencyRuleDialog(QDialog):
 
         self._status.setText(tr("rule_dlg_loaded_fmt", r.name))
 
-    # ─────────── 增删 ───────────
+    # ─────────── Additions and deletions ───────────
 
     def _on_new(self) -> None:
         name, ok = QInputDialog.getText(self, tr("rule_dlg_new_title"), tr("rule_dlg_new_prompt"))
@@ -216,7 +213,7 @@ class AdjacencyRuleDialog(QDialog):
             return
         self._mgr.add(AdjacencyRule(name=name))
         self._refresh_list()
-        # 选中新建的
+        # Select the new
         for i in range(self._list.count()):
             if self._list.item(i).data(Qt.UserRole) == name:
                 self._list.setCurrentRow(i)
@@ -236,7 +233,7 @@ class AdjacencyRuleDialog(QDialog):
         self._refresh_list()
         self._name_edit.clear()
 
-    # ─────────── 字段编辑回调 ───────────
+    # ─────────── Field editing callback ───────────
 
     def _on_name_changed(self) -> None:
         if self._current_rule is None:
@@ -248,7 +245,7 @@ class AdjacencyRuleDialog(QDialog):
             QMessageBox.warning(self, tr("dlg_error"), tr("rule_dlg_err_name_exists", new_name))
             self._name_edit.setText(self._current_rule.name)
             return
-        # 重命名 = 删旧加新
+        # Rename = delete old and add new
         old = self._current_rule.name
         self._mgr.remove(old)
         self._current_rule.name = new_name
@@ -288,7 +285,7 @@ class AdjacencyRuleDialog(QDialog):
             self._current_rule.required_provinces.pop(row)
             self._req_list.takeItem(row)
 
-    # ─────────── 拾取模式 ───────────
+    # ─────────── Pickup mode ────────────
 
     def _start_pick_required(self) -> None:
         if self._current_rule is None:

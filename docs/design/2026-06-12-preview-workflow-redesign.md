@@ -1,90 +1,90 @@
-# 设计文档：游戏级预览 + 操作流程重构
+# Design document: game-level preview + operation process reconstruction
 
-> 2026-06-12 用户批准。目标：让工具能公开发布给陌生用户——解决"地图是黑盒"和"步骤看不明白"两个核心问题。视觉风格（配色/排版）放在本设计完成之后单独做。
+> 2026-06-12 User Approval. Goal: To enable the tool to be released publicly to unfamiliar users - to solve the two core problems of "the map is a black box" and "the steps cannot be understood". The visual style (color matching/typesetting) will be done separately after the design is completed.
 
-## 病根诊断
+## Root cause diagnosis
 
-1. **黑盒**：地图效果必须导出 + 开游戏才能看到，"调参数→导出→开游戏→看效果"循环极慢。
-2. **看不明白**：12 个编辑模式平铺，没有任何界面元素回答新用户"我现在该干嘛、下一步干嘛"。
-3. 自动生成能力（省份/State/战略区/地形/高度）散落在各模式内部和导出预检里，新用户找不到。
+1. **Black Box**: The map effect must be exported + open the game to see it. The cycle of "Adjust parameters → Export → Open the game → View the effect" is extremely slow.
+2. **Can't understand**: 12 editing modes are tiled, and there are no interface elements to answer the new user's "What should I do now and what should I do next?"
+3. The automatic generation capabilities (province/state/strategic area/terrain/height) are scattered inside each mode and in the export pre-check, and new users cannot find them.
 
-## 三个改变
+## Three changes
 
-### 改变一：顶层按"制作阶段"重新组织
+### Change 1: The top level is reorganized by "production stage"
 
-12 个模式归 4 个阶段，顶部阶段条：
+12 modes divided into 4 stages, top stage bar:
 
 ```
-[① 绘制世界] → [② 划分省份] → [③ 建立国家] → [④ 生成成品]
- 陆地/高度图     省份/大陆      State(地区)    预览/检查
- 地形/河流       战略区         国家           导出
+[① Draw the world] → [② Divide provinces] → [③ build a nation] → [④ Generate finished product]
+ land/height map provinces/MainlandState(area)    Preview/Check
+ terrain/river strategic area country export
 ```
 
-- 点阶段只显示该阶段的模式入口，新用户每步面对 2~3 个选择而不是 12 个
-- **12 个模式内部代码一行不动**，纯组织层
-- 老用户不损失任何功能
+- Clicking on a stage only displays the mode entry for that stage. New users face 2~3 choices at each step instead of 12.
+- **The internal code of 12 modes does not change**, pure organizational layer
+- Old users will not lose any functionality
 
-### 改变二：常驻"制作进度"面板
+### Change 2: Permanent "Production Progress" panel
 
-侧边清单，状态从项目数据实时计算（复用 `views/export_dialog.py::check_project_readiness`，迁到 services 层）：
+Side list, status is calculated in real time from project data (reuse `views/export_dialog.py::check_project_readiness` and move to services layer):
 
-- 每行：状态图标 + 完整人话描述 + [自动生成] / [手动编辑] 直达按钮
-- 底部显示"距离可以导出还差 N 步"
-- 新用户主路径：画陆地轮廓 → 顺清单点自动生成 → 预览 → 导出
+- Each row: status icon + complete human description + [automatic generation] / [manual editing] direct button
+- The bottom shows "N steps to export"
+- Main path for new users: Draw land outline → Automatically generate list of points → Preview → Export
 
-### 改变三：游戏级预览
+### Change 3: Game-level preview
 
-用游戏自己的文件合成"游戏里看到的地图"（用户不需要提供文件，运行时读其 HOI4 安装目录）：
+Use the game's own files to synthesize the "map seen in the game" (the user does not need to provide files, its HOI4 installation directory is read during runtime):
 
-| 游戏文件 | 用途 | 已验证存在 |
+| Game files | Purpose | Verified existence |
 |---|---|---|
-| `common/terrain/00_terrain.txt` 的 `terrain={}` 块 | terrain.bmp 调色板索引 → atlas 瓦片号 | ✓ (323-347 行) |
-| `map/terrain/atlas0.dds` | 地形材质图集 4×4 网格×512px | ✓ |
-| `map/terrain/atlas_normal0.dds` | 法线（凹凸光影） | ✓ |
-| `map/terrain/colormap_water_*.dds` | 海洋色调 | ✓ |
+| `terrain={}` block of `common/terrain/00_terrain.txt` | terrain.bmp palette index → ​​atlas tile number | ✓ (lines 323-347) |
+| `map/terrain/atlas0.dds` | Terrain material atlas 4×4 grid×512px | ✓ |
+| `map/terrain/atlas_normal0.dds` | Normal (bump light and shadow) | ✓ |
+| `map/terrain/colormap_water_*.dds` | Ocean tone | ✓ |
 
-合成管线：地形贴图铺底 → 高度图光影 → 色调层（用本工具 colormap 功能自己的数据，尺寸才匹配）→ 海洋按深度着色 → 河流 → 可选国界。
+Compositing pipeline: Terrain map base → Height map light and shadow → Tone layer (use your own data with the colormap function of this tool, the size will match) → Oceans are colored by depth → Rivers → Optional borders.
 
-诚实边界：材质/颜色/映射 100% 游戏原版；光影是近似（游戏 shader 不公开）；不含 3D 山体侧影/树木模型。定位：消灭 95% 的"开游戏验证"。
+Honest boundaries: Materials/colors/mappings are 100% original to the game; light and shadow are approximate (the game shader is not public); 3D mountain silhouette/tree models are not included. Positioning: Eliminate 95% of "game opening verification".
 
-### 附带：术语说人话
+### Incidental: Terminology speaks human language
 
-界面文案全面检查：完整动宾短语 + 人话在前、原术语括号保留。
-**用户明确要求：文字描述必须完整清晰，禁止缩略——"建立国家"而不是"建国家"。**
-例：`State → 地区 (State)`、`战略区 → 天气区 (战略区)`、`VP → 胜利点 (城市价值)`。只改显示文案，不改数据结构和代码标识符。
+Comprehensive inspection of interface copywriting: complete verb-object phrase + human words first, original terminology brackets retained.
+**Explicit request from the user: The text description must be complete and clear, and abbreviations are prohibited - "build a country" rather than "build a country". **
+Example: `State → area(State)`, `strategic area→ weather zone(strategic area)`, `VP → victory point(city value)`. Only the display copy is changed, the data structure and code identifier are not changed.
 
-## 实施里程碑
+## Implementation Milestones
 
-| 里程碑 | 内容 | 验收方式 |
+| Milestone | Content | Acceptance Method |
 |---|---|---|
-| **M1 预览** | `services/game_assets.py`（读游戏资产）+ `domain/preview/compositor.py`（纯 numpy 合成）+ `features/map/preview/`（预览模式）| 打开欧若拉项目(5632×2048)切预览，与游戏内截图对比 |
-| **M2 流程层** | 阶段条 + 进度面板（`views/workflow_panel.py`）+ 自动生成按钮归位 | 模拟新用户：只跟着面板能否走到成功导出 |
-| **M3 入口与文案** | 欢迎页两条路（快速生成世界/从头绘制）+ 全量术语人话化 | 文案逐条过用户审 |
+| **M1 Preview** | `services/game_assets.py`（Read game assets)+ `domain/preview/compositor.py`（purenumpy Synthesis)+ `features/map/preview/`（preview mode)| Open the Aurora project(5632×2048)Cut preview and compare with in-game screenshots|
+| **M2 process layer** | Stage bar + progress panel (`views/workflow_panel.py`) + automatically generated button return | Simulate new user: can you get to successful export by just following the panel |
+| **M3 entrance and copywriting** | Two ways to welcome the page (quickly generate the world/draw it from scratch) + humanize all terminology | The copywriting must be reviewed by users one by one |
 
-### M1 技术要点
+### M1 Technical Points
 
-- 第一步先验证 Pillow 能否解码 atlas0.dds 的压缩格式；不能则引入解码库（如 texture2ddecoder）
-- 性能策略：进预览合成一次缓存，编辑后手动刷新；不做实时跟随
-- 游戏目录缺失：弹窗让用户选目录；文件缺失降级纯色渲染并提示，不崩
-- 测试：映射表解析用文本夹具；合成器用小尺寸假贴图；游戏文件不进 CI
+- The first step is to verify whether Pillow can decode the compressed format of atlas0.dds; if not, introduce a decoding library (such as texture2ddecoder)
+- Performance strategy: Preview and synthesize a cache, manually refresh after editing; no real-time follow-up
+- The game directory is missing: a pop-up window allows the user to select a directory; if the file is missing, it will be downgraded to solid color rendering and prompts without crashing.
+- Test: Use text fixtures for mapping table analysis; use small-size fake textures for the compositor; game files do not enter CI
 
-## 风险
+## Risk
 
-- 贴图解码格式（M1 第一步即验证，有备选库）✅ 已验证 Pillow 原生支持
-- M2 是唯一触碰存量主窗口布局的部分，保证 12 个模式功能零变化
-- 体量为项目最大单次改造，按里程碑独立验收，不一次性合并
+- Texture decoding format (the first step of M1 is verification, there are alternative libraries) ✅ Verified and natively supported by Pillow
+- M2 is the only part that touches the existing main window layout, ensuring zero changes in the 12 mode functions
+- The volume is the largest single transformation of the project, and it will be independently inspected and accepted according to milestones, and will not be merged at one time.
 
-## 最终执行顺序（2026-06-12 架构规划后用户批准）
+## Final execution sequence (2026-06-12 user approval after architecture planning)
 
-地形细化采用**路线 C**：自动生成打底（参数化/种子/可重新生成）+ 手动笔刷精修 + 可撤销。
+Terrain refinement follows **route C**: automatically generated base (parametric/seeded/regenerable) + manual brush refinement + undoable.
 
-| 步骤 | 内容 | 依赖 |
+| Steps | Content | Dependencies |
 |---|---|---|
-| ①基础 | P1 画布渲染派发注册化（删 `_render_X_mode` 硬编码 + 死代码 `merge_provinces`）；P2 `check_project_readiness`+`CheckItem` 迁至 `services/readiness_service.py` | 无 |
-| ②预览进软件 | `features/map/preview/`（page/renderer）+ container 注册 + 游戏目录选择 + 手动刷新缓存策略 | P1 |
-| ③路线C地形细化 | `domain/generators/base.py` Generator 协议 + `commands/map/apply_generator.py` 通用命令；terrain_detail 首个接入 | ②（看得见才能调） |
-| ④M2 流程层 | `views/workflow_panel.py` 进度面板（订阅 `PROJECT_READINESS_CHANGED`）+ 阶段条 | P2、③（自动按钮要有东西可按） |
-| ⑤M3 入口文案 | 欢迎页两条路 + 全量术语人话化 | ④（阶段名定稿） |
-| 独立 | `mod_exporter.py` 拆分 | 无关联，单独排期 |
+| ①Basics | P1 canvas rendering dispatch registration (delete `_render_X_mode` hard code + dead code `merge_provinces`); P2 `check_project_readiness`+`CheckItem` moved to `services/readiness_service.py` | None |
+| ② Preview into the software | `features/map/preview/` (page/renderer) + container registration + game directory selection + manual refresh cache policy | P1 |
+| ③routeCTerrain refinement| `domain/generators/base.py` Generator Agreement+ `commands/map/apply_generator.py` general commands;terrain_detail first access| ②（You can adjust it only if you can see it)|
+| ④M2 process layer| `views/workflow_panel.py` Progress panel (subscription`PROJECT_READINESS_CHANGED`）+ stage bar| P2、③（The automatic button must have something to press)|
+| ⑤M3 entrance copywriting | Two paths for the welcome page + humanized terminology | ④ (finalized stage name) |
+| Independent | `mod_exporter.py` Split | Unrelated, scheduled separately |
 
-技术拍板：生成器协议立刻建立（拖到第 4 个生成器再统一就是大迁移）；完成度检查用"粗粒度事件后重算"策略，实测慢再优化；预览无有意义的局部渲染，partial 一律走全量。
+Technical decision: The generator protocol is established immediately (drag it to the fourth generator and then unify it, which is a big migration); the completion check uses the "recalculation after coarse-grained events" strategy, and the actual measurement is slow and then optimized; the preview has no meaningful partial rendering, and the partial will be fully processed.

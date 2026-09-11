@@ -1,12 +1,10 @@
-"""
-大陆 feature - 陆海湖画笔 + Voronoi 省份生成.
-"""
+"""Continent feature - Land, sea and lake brush + Voronoi province generation."""
 
 from features.base import BaseFeature
 
 
 class LandFeature(BaseFeature):
     id = "map.land"
-    display_name = "大陆"
+    display_name = "Land"
     category = "map"
-    # 1.0 已实现, page/renderer 在同目录
+    # 1.0 has been implemented, page/renderer is in the same directory

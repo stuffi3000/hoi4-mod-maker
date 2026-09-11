@@ -1,6 +1,4 @@
-"""
-Phase 5 验收: 应用容器能创建 + Feature 全注册成功.
-"""
+"""Phase 5 acceptance: Application container can be created + Feature registration is successful."""
 
 import pytest
 

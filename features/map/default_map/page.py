@@ -1,7 +1,6 @@
-"""地图配置 (default.map) page — 独立 QWidget, 不依赖 ToolPanel.
+"""Map configuration (default.map) page — independent QWidget, does not depend on ToolPanel.
 
-可编辑: 树木调色板索引 / 河流最大等级.
-"""
+Editable: Tree Palette Index / River Max Level."""
 
 from PyQt5.QtCore import pyqtSignal
 from PyQt5.QtWidgets import (
@@ -18,9 +17,9 @@ from ui.styles import (
 
 
 class DefaultMapPage(QWidget):
-    """地图配置页面."""
+    """Map configuration page."""
 
-    # 输出信号
+    # Output signal
     default_map_river_changed = pyqtSignal(int)
     default_map_tree_add_requested = pyqtSignal()
     default_map_tree_del_requested = pyqtSignal()
@@ -45,7 +44,7 @@ class DefaultMapPage(QWidget):
         tip.setStyleSheet(_DIM_LABEL_STYLE)
         lay.addWidget(tip)
 
-        # ── 河流配置 ──
+        # ── River configuration ──
         river_box = _make_section(tr("defmap_section_river"))
         rl = river_box.layout()
 
@@ -64,7 +63,7 @@ class DefaultMapPage(QWidget):
         rl.addLayout(river_row)
         lay.addWidget(river_box)
 
-        # ── 树木调色板 ──
+        # ── Tree Palette ──
         tree_box = _make_section(tr("defmap_section_trees"))
         tl = tree_box.layout()
 

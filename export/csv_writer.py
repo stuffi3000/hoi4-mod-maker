@@ -1,6 +1,4 @@
-"""
-CSV / 文本文件写入器 — 生成 definition.csv 和其他地图配置文件
-"""
+"""CSV/Text file writer — generates definition.csv and other map configuration files"""
 import os
 import numpy as np
 
@@ -46,11 +44,9 @@ def write_definition_csv(
     continent_mgr=None,
     terrain_map: np.ndarray | None = None,
 ) -> None:
-    """
-    生成 definition.csv 文件。
+    """Generate definition.csv file.
 
-    格式: 省份ID;R;G;B;类型;沿海;地形;大陆ID
-    """
+    Format: Province ID; R; G; B; Type; Coastal; Terrain; Continent ID"""
     map_dir = os.path.join(output_dir, "map")
     os.makedirs(map_dir, exist_ok=True)
 
@@ -59,31 +55,31 @@ def write_definition_csv(
     if colors is None:
         colors = generate_province_colors(province_count)
 
-    # 获取沿海省份集合
+    # Get the collection of coastal provinces
     coastal_set = get_coastal_provinces(tile_map, province_map)
 
-    # 判断每个省份的类型
+    # Determine the type of each province
     province_types = _get_province_types(province_map, tile_map)
 
     file_path = os.path.join(map_dir, "definition.csv")
     with open(file_path, "w", encoding="utf-8") as f:
-        # 第一行：ID=0 特殊行（HOI4 要求，无表头）
+        # The first line: ID=0 special line (HOI4 requirement, no header)
         f.write("0;0;0;0;sea;false;ocean;0\n")
 
         for pid in range(1, province_count + 1):
             r, g, b = colors.get(pid, (1, 1, 1))
             ptype = province_types.get(pid, "land")
 
-            # 沿海状态
+            # coastal state
             is_coastal = "true" if pid in coastal_set else "false"
-            # 海洋和湖泊省份不标记为沿海
+            # Ocean and lake provinces are not marked as coastal
             if ptype in ("sea", "lake"):
                 is_coastal = "false"
 
-            # 地形：优先从 terrain_map 查实际 graphical terrain 的 type
+            # Terrain: First check the actual graphical terrain type from terrain_map
             terrain = _resolve_terrain(ptype, pid, province_map, terrain_map)
 
-            # 大陆ID：海洋/湖泊=0，陆地按 continent_mgr 指派（未指派则归 1 号大陆）
+            # Continent ID: ocean/lake=0, land is assigned according to continent_mgr (if not assigned, it returns to continent No. 1)
             is_land = ptype not in ("sea", "lake")
             if continent_mgr is not None:
                 continent = continent_mgr.get_province_continent_hoi4_id(pid, is_land)
@@ -97,10 +93,8 @@ def _get_province_types(
     province_map: np.ndarray,
     tile_map: np.ndarray,
 ) -> dict[int, str]:
-    """
-    判断每个省份的类型（land/sea/lake）。
-    基于省份内占多数的地块类型决定。
-    """
+    """Determine the type of each province (land/sea/lake).
+    Determined based on the majority of land types in the province."""
     province_count = int(province_map.max())
     types = {}
 
@@ -126,7 +120,7 @@ def _get_province_types(
 
 
 def _default_terrain(province_type: str) -> str:
-    """获取省份类型对应的默认地形"""
+    """Get the default terrain corresponding to the province type"""
     if province_type == "sea":
         return "ocean"
     elif province_type == "lake":
@@ -141,8 +135,8 @@ def _resolve_terrain(
     province_map: np.ndarray,
     terrain_map: np.ndarray | None,
 ) -> str:
-    """从 terrain_map 解析省份的 provincial terrain type."""
-    # 海/湖强制
+    """Parse the province's provincial terrain type from terrain_map."""
+    # Sea/Lake Mandatory
     if ptype == "sea":
         return "ocean"
     if ptype == "lake":
@@ -153,7 +147,7 @@ def _resolve_terrain(
 
     from data.terrain_types import PALETTE_TO_TYPE
 
-    # 取该省份区域内 terrain_map 的众数 (最多的那个索引)
+    # Get the mode of terrain_map in the province area (the index with the largest number)
     mask = province_map == pid
     indices = terrain_map[mask]
     if indices.size == 0:
@@ -165,7 +159,7 @@ def _resolve_terrain(
 
 
 def write_adjacencies_csv(output_dir: str) -> None:
-    """生成空的 adjacencies.csv（只有表头和结尾分号行）"""
+    """Generates an empty adjacencies.csv (only header and trailing semicolon lines)"""
     map_dir = os.path.join(output_dir, "map")
     os.makedirs(map_dir, exist_ok=True)
 
@@ -180,15 +174,13 @@ def write_default_map(
     province_map: np.ndarray,
     tile_map: np.ndarray,
 ) -> None:
-    """
-    生成 default.map 文件。
-    """
+    """Generate default.map file."""
     map_dir = os.path.join(output_dir, "map")
     os.makedirs(map_dir, exist_ok=True)
 
     province_count = int(province_map.max())
 
-    # 收集海洋省份ID
+    # Collect ocean province IDs
     sea_ids = []
     lake_ids = []
     province_types = _get_province_types(province_map, tile_map)
@@ -216,7 +208,7 @@ def write_default_map(
 
 
 def write_continent_txt(output_dir: str) -> None:
-    """生成 continent.txt"""
+    """Generate continent.txt"""
     map_dir = os.path.join(output_dir, "map")
     os.makedirs(map_dir, exist_ok=True)
 
@@ -228,21 +220,21 @@ def write_continent_txt(output_dir: str) -> None:
 
 
 def write_empty_files(output_dir: str) -> None:
-    """生成必须存在但可以为空的文件"""
+    """Generate a file that must exist but can be empty"""
     map_dir = os.path.join(output_dir, "map")
     os.makedirs(map_dir, exist_ok=True)
 
-    # positions.txt — 空文件
+    # positions.txt — empty file
     with open(os.path.join(map_dir, "positions.txt"), "w", encoding="utf-8") as f:
         pass
 
-    # adjacency_rules.txt — 空文件
+    # adjacency_rules.txt — empty file
     with open(os.path.join(map_dir, "adjacency_rules.txt"), "w", encoding="utf-8") as f:
         pass
 
-    # ambient_object.txt — 由 ambient_object writer 单独生成，这里不覆盖
+    # ambient_object.txt — generated separately by ambient_object writer, not covered here
 
-    # seasons.txt — 从原版复制，如果没有则写最小可用内容
+    # seasons.txt — copy from the original, or write the minimum available content if not available
     vanilla_seasons = os.path.join(
         "G:/SteamLibrary/steamapps/common/Hearts of Iron IV/map/seasons.txt"
     )
@@ -253,48 +245,44 @@ def write_empty_files(output_dir: str) -> None:
         with open(os.path.join(map_dir, "seasons.txt"), "w", encoding="utf-8") as f:
             f.write(_FALLBACK_SEASONS)
 
-    # weatherpositions.txt — 空文件
+    # weatherpositions.txt — empty file
     with open(os.path.join(map_dir, "weatherpositions.txt"), "w", encoding="utf-8") as f:
         pass
 
-    # unitstacks.txt — 空文件
+    # unitstacks.txt — empty file
     with open(os.path.join(map_dir, "unitstacks.txt"), "w", encoding="utf-8") as f:
         pass
 
-    # rocket_sites.txt — 空文件
+    # rocket_sites.txt — empty file
     with open(os.path.join(map_dir, "rocket_sites.txt"), "w", encoding="utf-8") as f:
         pass
 
 
 def write_supply_files(output_dir: str, first_land_province: int) -> None:
-    """
-    生成 supply_nodes.txt 和 railways.txt（最小可用版本）。
-    至少需要一个节点和一条铁路，否则游戏崩溃。
-    """
+    """Generate supply_nodes.txt and railways.txt (minimum usable version).
+    At least one node and one railway are required, otherwise the game crashes."""
     map_dir = os.path.join(output_dir, "map")
     os.makedirs(map_dir, exist_ok=True)
 
-    # supply_nodes.txt — 至少一个等级1节点
+    # supply_nodes.txt — at least one level 1 node
     with open(os.path.join(map_dir, "supply_nodes.txt"), "w", encoding="utf-8") as f:
         f.write(f"1 {first_land_province}\n")
 
-    # railways.txt — 至少一条等级1铁路
-    # 格式: 等级 省份数量 省份ID1 省份ID2 ...
-    # 需要至少两个省份，这里用同一个省份占位（最小可用）
+    # railways.txt — at least one class 1 railway
+    # Format: Level Number of provinces Province ID1 Province ID2...
+    # At least two provinces are required, and the same province is used here (minimum available)
     with open(os.path.join(map_dir, "railways.txt"), "w", encoding="utf-8") as f:
         f.write(f"1 2 {first_land_province} {first_land_province}\n")
 
 
 def write_buildings_txt(output_dir: str, first_land_province: int) -> None:
-    """
-    生成 buildings.txt（最小可用版本）。
-    """
+    """Generate buildings.txt (minimum usable version)."""
     map_dir = os.path.join(output_dir, "map")
     os.makedirs(map_dir, exist_ok=True)
 
     with open(os.path.join(map_dir, "buildings.txt"), "w", encoding="utf-8") as f:
-        # StateID;建筑类型;X;Y;Z;旋转;相邻海省ID
-        # 注意：infrastructure 不是 3D 建筑，不能出现在 buildings.txt 里；用 bunker 占位
+        # StateID;Building type;X;Y;Z;Rotation;Adjacent sea province ID
+        # Note: infrastructure is not a 3D building and cannot appear in buildings.txt; use bunker to occupy the space
         f.write(f"1;bunker;100.0;10.0;100.0;0.0;0\n")
 
 
@@ -302,7 +290,7 @@ def write_strategic_region(
     output_dir: str,
     province_ids: list[int],
 ) -> None:
-    """生成一个包含所有省份的战略区域"""
+    """Generate a strategic region containing all provinces"""
     sr_dir = os.path.join(output_dir, "map", "strategicregions")
     os.makedirs(sr_dir, exist_ok=True)
 
@@ -312,7 +300,7 @@ def write_strategic_region(
         f.write("    id = 1\n")
         f.write('    name = "STRATEGICREGION_WT_1"\n')
         f.write("    provinces = {\n")
-        # 每行最多 20 个ID
+        # Maximum 20 IDs per row
         for i in range(0, len(province_ids), 20):
             chunk = province_ids[i:i + 20]
             f.write("        " + " ".join(str(x) for x in chunk) + "\n")
@@ -340,7 +328,7 @@ def write_state_file(
     owner_tag: str = "AAA",
     manpower: int = 100000,
 ) -> None:
-    """生成一个 State 文件"""
+    """Generate a State file"""
     states_dir = os.path.join(output_dir, "history", "states")
     os.makedirs(states_dir, exist_ok=True)
 
@@ -369,15 +357,15 @@ def write_state_file(
 
 
 def write_country_files(output_dir: str, tag: str = "AAA") -> None:
-    """生成最小可用的国家定义文件"""
+    """Generate the smallest usable country definition file"""
     # country_tags
     tags_dir = os.path.join(output_dir, "common", "country_tags")
     os.makedirs(tags_dir, exist_ok=True)
-    # 用 02_worldtest_ 前缀避免覆盖 vanilla 00_countries.txt（country_tags 不再 replace）
+    # Use 02_worldtest_ prefix to avoid overwriting vanilla 00_countries.txt (country_tags no longer replaces)
     with open(os.path.join(tags_dir, "02_worldtest_countries.txt"), "w", encoding="utf-8") as f:
         f.write(f'{tag} = "countries/{tag}.txt"\n')
 
-    # country 文件
+    # country file
     countries_dir = os.path.join(output_dir, "common", "countries")
     os.makedirs(countries_dir, exist_ok=True)
     with open(os.path.join(countries_dir, f"{tag}.txt"), "w", encoding="utf-8") as f:
@@ -385,7 +373,7 @@ def write_country_files(output_dir: str, tag: str = "AAA") -> None:
         f.write("graphical_culture_2d = western_european_2d\n")
         f.write("color = { 100 100 200 }\n")
 
-    # history 文件
+    # history file
     history_dir = os.path.join(output_dir, "history", "countries")
     os.makedirs(history_dir, exist_ok=True)
     with open(os.path.join(history_dir, f"{tag} - FantasyCountry.txt"), "w", encoding="utf-8") as f:
@@ -404,7 +392,7 @@ def write_country_files(output_dir: str, tag: str = "AAA") -> None:
         f.write("    neutrality = 80\n")
         f.write("}\n")
 
-    # OOB（空的部队编制）
+    # OOB (empty organization of troops)
     oob_dir = os.path.join(output_dir, "history", "units")
     os.makedirs(oob_dir, exist_ok=True)
     with open(os.path.join(oob_dir, f"{tag}_1936.txt"), "w", encoding="utf-8") as f:
@@ -412,7 +400,7 @@ def write_country_files(output_dir: str, tag: str = "AAA") -> None:
 
 
 def write_descriptor_mod(output_dir: str, mod_name: str = DEFAULT_MOD_NAME) -> None:
-    """生成 descriptor.mod"""
+    """Generate descriptor.mod"""
     file_path = os.path.join(output_dir, "descriptor.mod")
     with open(file_path, "w", encoding="utf-8") as f:
         f.write(f'version="{DEFAULT_MOD_VERSION}"\n')

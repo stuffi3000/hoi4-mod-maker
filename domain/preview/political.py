@@ -1,19 +1,18 @@
-"""政治视图图层 — 在预览底图上叠加国家势力色 (原版政治地图模式).
+"""Political view layer — overlays national power colors on the preview basemap (original political map mode).
 
-效果: 有主陆地 = 底图光影 × 国家色混合, 国界压暗成深色细线,
-     无主陆地/海洋保持底图原样 — 和游戏内政治模式同配方。
-适用: 预览模式的"政治视图"开关。
-调用: apply_political_layer(base, country_rgb, owned_mask) → RGB uint8。
-配方标定: 用原版全图数据实测对照 (scratchpad political_sample), mix=0.62。
-"""
+Effect: Main land = base map light and shadow × national color mixture, national borders are darkened into dark thin lines,
+     Unclaimed Land/Sea keeps the base map as is - the same recipe as the in-game politics mode.
+Applies to: Preview mode "Political View" switch.
+Call: apply_political_layer(base, country_rgb, owned_mask) → RGB uint8.
+Formula calibration: Use the original full-image data for actual measurement control (scratchpad political_sample), mix=0.62."""
 
 from __future__ import annotations
 
 import numpy as np
 
-# 国家色混合权重 (0=纯底图, 1=纯色块); 0.62 实测最接近原版观感
+# National color mixing weight (0=pure base map, 1=pure color block); 0.62 is the closest to the original look and feel in actual measurements
 POLITICAL_MIX = 0.62
-# 国界压暗系数 (原版是深色细线)
+# National border darkening coefficient (the original version is a dark thin line)
 BORDER_DIM = 0.35
 
 
@@ -24,10 +23,9 @@ def apply_political_layer(
     mix: float = POLITICAL_MIX,
     border_dim: float = BORDER_DIM,
 ) -> np.ndarray:
-    """底图 (H, W, 3 RGB) + 国家色图/有主掩码 → 政治视图 RGB uint8.
+    """Basemap (H, W, 3 RGB) + country colormap/with master mask → political view RGB uint8.
 
-    country_rgb/owned_mask 为 None 时原样返回底图 (没有国家数据可叠)。
-    """
+    When country_rgb/owned_mask is None, the basemap is returned unchanged (no country data can be overlaid)."""
     if country_rgb is None or owned_mask is None or not owned_mask.any():
         return base
 
@@ -36,7 +34,7 @@ def apply_political_layer(
     blend = basef * (1.0 - mix) + country_rgb.astype(np.float32) * mix
     out[owned_mask] = blend[owned_mask]
 
-    # 国界: 相邻像素国家色不同且至少一侧有主 → 压暗
+    # National border: adjacent pixels have different national colors and at least one side has a dominant → darken
     oc = np.where(owned_mask[..., None], country_rgb, 0).astype(np.int32)
     border = np.zeros(owned_mask.shape, dtype=bool)
     diff_v = (oc[:-1] != oc[1:]).any(axis=2) & (owned_mask[:-1] | owned_mask[1:])

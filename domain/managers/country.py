@@ -1,27 +1,25 @@
-"""
-国家管理器 — 创建/编辑国家、分配领土、设首都
-"""
+"""Country Manager — create/edit countries, assign territories, set capital"""
 import numpy as np
 from dataclasses import dataclass, field
 
 
 @dataclass
 class NationalSpirit:
-    """民族精神 / 国家 idea"""
-    id: str                       # idea ID（建议 TAG_xxx 格式）
-    name: str                     # 显示名（本地化）
-    desc: str = ""                # 描述（本地化）
+    """national spirit / national idea"""
+    id: str                       # idea ID (TAG_xxx format recommended)
+    name: str                     # Display name (localized)
+    desc: str = ""                # Description (localized)
     modifiers: dict[str, float] = field(default_factory=dict)  # {modifier_key: value}
     picture: str = "generic_pp_unaligned"
 
 
 @dataclass
 class CountryData:
-    """一个国家的数据"""
-    tag: str                     # 3字母代码，如 KAR
-    name: str = ""               # 显示名称
-    color: tuple[int, int, int] = (100, 100, 200)  # RGB 颜色
-    capital: int = 0             # 首都省份 ID
+    """data for a country"""
+    tag: str                     # 3-letter code such as KAR
+    name: str = ""               # display name
+    color: tuple[int, int, int] = (100, 100, 200)  # RGB color
+    capital: int = 0             # Capital Province ID
     ruling_party: str = "neutrality"  # neutrality/democratic/fascism/communism
     popularities: dict[str, int] = field(default_factory=lambda: {
         "democratic": 10,
@@ -40,7 +38,7 @@ RULING_PARTIES = ["neutrality", "democratic", "fascism", "communism"]
 
 
 class CountryManager:
-    """管理所有国家"""
+    """Manage all countries"""
 
     def __init__(self):
         self._countries: dict[str, CountryData] = {}
@@ -54,25 +52,24 @@ class CountryManager:
         return self._countries.get(tag)
 
     def get_owner_of_state(self, state_id: int) -> str:
-        """获取 State 的所有者 TAG，空字符串=未分配"""
+        """Get the owner TAG of State, empty string = not assigned"""
         return self._state_owner.get(state_id, "")
 
     def create_country(
         self, tag: str, name: str = "", color: tuple[int, int, int] = (100, 100, 200),
         allow_vanilla_tag: bool = False,
     ) -> CountryData:
-        """创建国家。
+        """Create a country.
 
-        allow_vanilla_tag: 用户从零新建国家时必须为 False (vanilla TAG 撞车
-        会被游戏数据覆盖); 导入 vanilla/MOD 时为 True — 导入的国家本来就是
-        vanilla TAG, 拒绝它们会导致一个国家都建不出来。
-        """
+        allow_vanilla_tag: must be False when the user creates a new country from scratch (vanilla TAG crashes
+        will be overwritten by game data); True when importing vanilla/MOD — the imported country is already
+        vanilla TAG, rejecting them will result in no country being built."""
         tag = tag.upper()[:3]
         if len(tag) != 3:
             raise ValueError("TAG must contain exactly 3 characters")
         if not tag.isalnum():
             raise ValueError("TAG can contain letters and numbers only")
-        # BUG-6b: 拒绝 vanilla TAG (避免热那亚→Krakow 类撞车)
+        # BUG-6b: Reject vanilla TAG (avoiding Genoa→Krakow type crashes)
         if not allow_vanilla_tag:
             from data.constants import is_vanilla_tag
             if is_vanilla_tag(tag):
@@ -86,25 +83,24 @@ class CountryManager:
         return country
 
     def remove_country(self, tag: str) -> None:
-        """删除国家"""
+        """Delete country"""
         self._countries.pop(tag, None)
-        # 清除该国家的领土
+        # Clear the country's territory
         to_remove = [sid for sid, t in self._state_owner.items() if t == tag]
         for sid in to_remove:
             del self._state_owner[sid]
 
     def assign_state(self, state_id: int, tag: str) -> None:
-        """将 State 分配给国家"""
+        """Assign State to country"""
         if tag and tag in self._countries:
             self._state_owner[state_id] = tag
         elif not tag:
             self._state_owner.pop(state_id, None)
 
     def remap_state_ids(self, mapping: dict[int, int]) -> None:
-        """配合 StateManager.compact_ids: 把 _state_owner 里的 state ID 按 mapping 替换.
+        """Cooperate with StateManager.compact_ids: Replace the state ID in _state_owner by mapping.
 
-        old → new 映射里没出现的 state ID 视为已被删除, 一起从 _state_owner 移除.
-        """
+        State IDs that do not appear in the old → new mapping are considered to have been deleted and removed from _state_owner together."""
         if not mapping:
             return
         new_owner: dict[int, str] = {}
@@ -115,48 +111,47 @@ class CountryManager:
         self._state_owner = new_owner
 
     def set_capital(self, tag: str, province_id: int) -> None:
-        """设置首都"""
+        """Set capital"""
         if tag in self._countries:
             self._countries[tag].capital = province_id
 
     def set_ruling_party(self, tag: str, party: str) -> None:
-        """设置执政党"""
+        """Set up the ruling party"""
         if tag in self._countries and party in RULING_PARTIES:
             self._countries[tag].ruling_party = party
 
     def set_popularity(self, tag: str, party: str, value: int) -> None:
-        """设置某政党支持率"""
+        """Set the support rate of a political party"""
         if tag in self._countries:
             self._countries[tag].popularities[party] = max(0, min(100, value))
 
     def get_states_of_country(self, tag: str) -> list[int]:
-        """获取某国家的所有 State ID"""
+        """Get all State IDs of a country"""
         return [sid for sid, t in self._state_owner.items() if t == tag]
 
     def clear(self) -> None:
-        """清空所有数据"""
+        """Clear all data"""
         self._countries.clear()
         self._state_owner.clear()
 
     def build_country_color_map(
         self,
         province_map: np.ndarray,
-        state_manager,  # StateManager 实例
+        state_manager,  # StateManager instance
         tile_map: np.ndarray | None = None,
     ) -> np.ndarray:
-        """生成国家颜色图（用于显示）。
+        """Generates a country color map (for display).
 
-        未分配到国家的 state 使用 state 自己的颜色（**去饱和 + 变暗**），
-        避免和国家色混淆，同时让用户在国家模式下能看清 state 边界，
-        一眼知道还有哪些 state 需要分配。
-        """
+        state not assigned to a country uses the state's own color (**desaturate + darken**),
+        Avoid confusion with national colors, and allow users to see the state boundaries clearly in national mode.
+        Know at a glance which state still needs to be allocated."""
         from data.constants import TILE_LAND
 
         max_pid = int(province_map.max())
-        # 默认：海/未归 state 的省 = 深蓝（和大陆模式一致，避免跟灰色陆地混淆）
+        # Default: sea/unreturned state provinces = dark blue (consistent with the continent model, to avoid confusion with gray land)
         lut = np.full((max_pid + 1, 3), (30, 40, 70), dtype=np.uint8)
 
-        # 识别陆地省份（多数决，避免沾边像素误判）—— 只有陆地省才会被涂国家色/state 色
+        # Identify land provinces (majority rule to avoid misjudgment of adjacent pixels) - only land provinces will be painted with national colors/state colors
         is_land_arr: np.ndarray | None = None
         if tile_map is not None:
             pid_flat = province_map.ravel()
@@ -165,7 +160,7 @@ class CountryManager:
             total_count = np.bincount(pid_flat, minlength=max_pid + 1)
             is_land_arr = land_count * 2 > total_count
 
-        # 和 state manager 同种子，保证 state 颜色稳定
+        # The same seed as the state manager to ensure the state color is stable
         rng = np.random.RandomState(123)
         state_colors: dict[int, tuple[int, int, int]] = {}
         for sid in state_manager.states:
@@ -175,7 +170,7 @@ class CountryManager:
                 int(rng.randint(60, 220)),
             )
 
-        # 标记 pid 是否属于"已分配国家"的 land province (供 country renderer 画白边时过滤)
+        # Mark whether the pid belongs to the land province of "allocated country" (for country renderer to filter when drawing white borders)
         assigned_lut = np.zeros(max_pid + 1, dtype=bool)
         for sid, state in state_manager.states.items():
             tag = self._state_owner.get(sid, "")
@@ -193,7 +188,7 @@ class CountryManager:
                 )
             for pid in state.provinces:
                 if pid <= max_pid:
-                    # 只涂真陆地省; 海洋省误加进 state 也保持蓝
+                    # Only the land province is painted true; the ocean province is mistakenly added to state and remains blue
                     if is_land_arr is None or is_land_arr[pid]:
                         lut[pid] = color
                         if assigned:
@@ -202,14 +197,14 @@ class CountryManager:
         flat = province_map.ravel()
         flat_clipped = np.clip(flat, 0, max_pid)
         rgb = lut[flat_clipped].reshape(province_map.shape[0], province_map.shape[1], 3)
-        # 第二个返回: assigned mask (H, W) — True 表示该像素是"已分配国家"的 land
+        # The second one returns: assigned mask (H, W) — True indicating that the pixel is an "assigned country" land
         assigned_mask = assigned_lut[flat_clipped].reshape(rgb.shape[0], rgb.shape[1])
         return rgb, assigned_mask
 
     def build_country_index_map(
         self, province_map: np.ndarray, state_manager,
     ) -> tuple[np.ndarray, dict[int, str]]:
-        """省份图 → 国家序号图 (0=未分配) + {序号: 国家名}, 供名字标签排版用。"""
+        """Province map → Country serial number map (0=unallocated) + {serial number: country name}, for name tag layout."""
         tags = sorted(self._countries)
         tag_idx = {t: i + 1 for i, t in enumerate(tags)}
         names = {i + 1: (self._countries[t].name or t) for i, t in enumerate(tags)}
@@ -225,5 +220,5 @@ class CountryManager:
         return idx_map, names
 
     def get_country_list(self) -> list[tuple[str, str, tuple[int, int, int]]]:
-        """返回 [(tag, name, color), ...] 用于 UI 列表"""
+        """Returns [(tag, name, color), ...] for UI lists"""
         return [(c.tag, c.name, c.color) for c in self._countries.values()]

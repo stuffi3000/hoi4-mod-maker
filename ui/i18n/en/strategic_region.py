@@ -1,8 +1,4 @@
-"""
-strategic_region — en 翻译
-
-本文件由 tools/migrate_i18n.py 生成。后续手动维护。
-"""
+"""English strings for strategic-region creation and validation."""
 
 STRINGS: dict[str, str] = {
     "sr_assign_drag_label": "Drag-assign provinces (land+sea)",

@@ -1,6 +1,4 @@
-"""
-AssignStateToCountryCommand — 将 State 分配给国家。
-"""
+"""AssignStateToCountryCommand — Assigns a State to a country."""
 
 from __future__ import annotations
 
@@ -8,9 +6,9 @@ from commands.base import Command
 
 
 class AssignStateToCountryCommand(Command):
-    """将 State 的所有权从一个国家转移到另一个。"""
+    """Transfer ownership of a State from one country to another."""
 
-    label = "分配State到国家"
+    label = "Assign state to country"
 
     def __init__(
         self,
@@ -19,22 +17,20 @@ class AssignStateToCountryCommand(Command):
         old_tag: str,
         new_tag: str,
     ) -> None:
-        """
-        参数:
-            country_mgr: CountryManager 实例
+        """Parameters:
+            country_mgr: CountryManager instance
             state_id: State ID
-            old_tag: 原国家 TAG（空字符串=未分配）
-            new_tag: 新国家 TAG（空字符串=取消分配）
-        """
+            old_tag: original country TAG (empty string = not assigned)
+            new_tag: new country TAG (empty string = deallocated)"""
         self._country_mgr = country_mgr
         self._state_id = state_id
         self._old_tag = old_tag
         self._new_tag = new_tag
 
     def execute(self) -> None:
-        """分配 State 给新国家。"""
+        """Assign State to the new country."""
         self._country_mgr.assign_state(self._state_id, self._new_tag)
 
     def undo(self) -> None:
-        """恢复 State 到旧国家。"""
+        """Restore State to the old state."""
         self._country_mgr.assign_state(self._state_id, self._old_tag)

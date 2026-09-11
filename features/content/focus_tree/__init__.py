@@ -1,15 +1,13 @@
-"""
-国策树编辑器 (2.0 功能, 空壳).
+"""Focus tree editor (2.0 functionality, empty shell).
 
-未来用来编辑 common/national_focus/*.txt 的国策树.
-读 1.0 的 map 数据 (state_mgr / country_mgr 等), 实现时按 Feature 协议扩展.
-"""
+The national policy tree will be used to edit common/national_focus/*.txt in the future.
+Read 1.0 map data (state_mgr / country_mgr, etc.), and implement it according to the Feature protocol extension."""
 
 from features.base import BaseFeature
 
 
 class FocusTreeFeature(BaseFeature):
     id = "content.focus_tree"
-    display_name = "国策树"
+    display_name = "Focus tree"
     category = "content"
-    # 空壳: 暂无实现, 仅让 FeatureRegistry 列出可用 2.0 功能
+    # Empty shell: No implementation yet, just let FeatureRegistry list available 2.0 features

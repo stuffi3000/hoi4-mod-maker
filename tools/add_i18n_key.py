@@ -33,9 +33,7 @@ def _key_exists(source: str, key: str) -> bool:
 def _write_new_file(path: Path, file_stem: str, key: str, value: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
-        f'''"""
-{file_stem} — English translation
-"""
+        f'''"""English interface strings for the {file_stem} catalog."""
 
 STRINGS: dict[str, str] = {{
 {_format_key_line(key, value)}
@@ -102,9 +100,6 @@ def main() -> int:
     parser.add_argument(
         "--en", default=None, help="Explicit English translation (overrides text)"
     )
-    # Accept the old option for scripts that have not migrated yet, but never
-    # create or load a Russian catalog.
-    parser.add_argument("--ru", default=None, help=argparse.SUPPRESS)
     parser.add_argument("--force", action="store_true", help="Overwrite an existing key")
     args = parser.parse_args()
 

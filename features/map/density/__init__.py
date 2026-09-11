@@ -1,1 +1,1 @@
-"""省份密度编辑模式。"""
+"""Province density editing mode."""

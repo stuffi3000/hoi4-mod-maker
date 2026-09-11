@@ -1,6 +1,4 @@
-"""
-SupplyNodeManager 单元测试.
-"""
+"""SupplyNodeManager unit test."""
 
 import pytest
 
@@ -25,9 +23,9 @@ def test_add_duplicate_updates():
 
 def test_toggle():
     m = SupplyNodeManager()
-    assert m.toggle(100) is True   # 加
+    assert m.toggle(100) is True   # add
     assert m.contains(100)
-    assert m.toggle(100) is False  # 删
+    assert m.toggle(100) is False  # delete
     assert not m.contains(100)
     assert m.count() == 0
 
@@ -36,12 +34,12 @@ def test_remove():
     m = SupplyNodeManager()
     m.add(1)
     assert m.remove(1)
-    assert not m.remove(1)  # 第二次删不动
+    assert not m.remove(1)  # Cannot be deleted the second time
     assert m.count() == 0
 
 
 def test_line_format():
-    """参考 L530: Level Province."""
+    """Reference L530: Level Province."""
     node = SupplyNode(province_id=1234, level=1)
     assert node.to_line() == "1 1234"
 
@@ -76,7 +74,7 @@ def test_remap_drops_unmapped():
     m = SupplyNodeManager()
     m.add(1)
     m.add(2)
-    m.remap_provinces({1: 11})  # 2 不在映射
+    m.remap_provinces({1: 11})  # 2 not mapped
     assert m.count() == 1
     assert m.contains(11)
 

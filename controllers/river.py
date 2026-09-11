@@ -1,7 +1,6 @@
-"""RiverController — 河流编辑模式控制器。
+"""RiverController — River edit mode controller.
 
-处理河流画笔绘制。
-"""
+Handles river brush drawing."""
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
@@ -15,28 +14,28 @@ if TYPE_CHECKING:
 
 
 class RiverController(BaseController):
-    """河流编辑模式：画笔绘制河流。"""
+    """River editing mode: Brush draws rivers."""
 
     def __init__(self, project: "Project", command_history: "CommandHistory") -> None:
         super().__init__(project, command_history)
-        self.current_river_type: int = 3  # 默认河流类型
+        self.current_river_type: int = 3  # Default river type
         self.brush_size: int = 1
         self._stroke_changes: dict[tuple[int, int], int] = {}
         self._is_painting: bool = False
 
     def activate(self) -> None:
-        """进入河流模式。"""
+        """Enter river mode."""
         self._stroke_changes.clear()
         self._is_painting = False
-        self._emit_status("河流编辑模式", "River editing mode")
+        self._emit_status("River editing mode")
 
     def deactivate(self) -> None:
-        """离开河流模式，结束未完成笔触。"""
+        """Exit river mode and end unfinished strokes."""
         if self._is_painting:
             self._commit_stroke()
 
     def on_press(self, x: int, y: int, pid: int, button: str, modifiers: set) -> bool:
-        """鼠标按下开始绘制。"""
+        """Mouse pressed to start drawing."""
         if button != "left":
             return False
         self._is_painting = True
@@ -45,21 +44,21 @@ class RiverController(BaseController):
         return True
 
     def on_drag(self, x: int, y: int) -> bool:
-        """鼠标拖拽继续绘制。"""
+        """Drag the mouse to continue drawing."""
         if not self._is_painting:
             return False
         self._apply_brush(x, y)
         return True
 
     def on_release(self, x: int, y: int) -> bool:
-        """鼠标释放结束笔触。"""
+        """Mouse release ends the stroke."""
         if not self._is_painting:
             return False
         self._commit_stroke()
         return True
 
     def _apply_brush(self, x: int, y: int) -> None:
-        """在 (x, y) 处应用河流画笔。"""
+        """Apply the river brush at (x, y)."""
         river_map = self.project.map_data.river_map
         h, w = river_map.shape
         r = self.brush_size // 2
@@ -72,7 +71,7 @@ class RiverController(BaseController):
                         self._stroke_changes[(ny, nx)] = self.current_river_type
 
     def _commit_stroke(self) -> None:
-        """提交河流笔触。"""
+        """Submit river strokes."""
         self._is_painting = False
         if self._stroke_changes:
             cmd = PaintRiverCommand(self.project.map_data, self._stroke_changes)

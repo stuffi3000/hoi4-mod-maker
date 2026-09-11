@@ -1,66 +1,66 @@
-# UI 减负重构设计
+# UI burden reduction and reconstruction design
 
-## 问题
+## question
 
-界面臃肿：13 个模式导航太长、每页控件太多、面板固定占空间、工作流不清晰、误触清除省份。
+The interface is bloated: the 13 mode navigation is too long, there are too many controls on each page, the panel is fixed and takes up space, the workflow is unclear, and provinces are cleared by accident.
 
-## 方案：三刀减负
+## Plan: Three swords to reduce the burden
 
-### 第一刀：合并模式 13 → 7
+### First Cut: Merge Mode 13 → 7
 
-| 合并后 | 包含原模式 | 说明 |
+| After merge | Contains original schema | Description |
 |--------|-----------|------|
-| 画地图 | 陆地与海洋 + 省份密度 | 密度作为工具选项（画笔/填充/变换/密度） |
-| 省份 | 省份 | 不变 |
-| 地形 | 高度 + 地形 | 内部用标签页切换"高度"和"地形" |
-| 河流 | 河流 | 不变 |
-| 国家与区域 | 州 + 国家 + 大洲 | 内部用标签页切换 |
-| 后勤 | 战略区 + 后勤系统 | 内部用标签页切换 |
-| 设置 | 总览贴图 + 地图配置 | 不常用，放最后 |
+| Drawing Maps | Land and Sea + Province Density | Density as Tool Option (Brush/Fill/Transform/Density) |
+| Province | Province | Unchanged |
+| Terrain | Height + Terrain | Use internal tabs to switch between "Height" and "Terrain" |
+| river | river | unchanged |
+| Countries & Regions | State + Country + Continent | Switch internally using tabs |
+| Logistics | Strategic Area + Logistics System | Internal tab switching |
+| Settings | Overview map + map configuration | Not commonly used, put last |
 
-### 第二刀：每页只露核心控件
+### The second cut: only core controls are exposed on each page
 
-每个页面分两层：
-- **核心区**（直接可见）：最常用的 3-5 个按钮/控件
-- **折叠区**（点击展开）：高级参数、不常用选项
+Each page is divided into two layers:
+- **Core Area** (directly visible): 3-5 most commonly used buttons/controls
+- **Collapse area** (click to expand): advanced parameters, uncommon options
 
-具体：
-- 画地图：工具栏 + 画笔大小 + 地块类型 + 生成省份 + 一键初始化 → 直接显示。省份参数/参考图/海岸线平滑 → 折叠
-- 地形：自动生成高度 + 自动生成地形 → 直接显示。种子/山脉强度/阈值参数/山脉画线 → 折叠
-- 国家与区域：自动生成州 + 创建国家 → 直接显示。属性编辑/详细列表 → 折叠
+specific:
+- Draw a map: toolbar + brush size + plot type + generate province + one-click initialization → direct display. Province parameters/reference map/coastline smoothing → Collapse
+- Terrain: automatically generate height + automatically generate terrain → display directly. Seed/Mountain Strength/Threshold Parameters/Mountain Line Drawing → Collapse
+- Countries and regions: automatically generate states + create countries → display directly. Property editing/detailed list → Collapse
 
-### 第三刀：防误触保护
+### The third knife: protection against accidental touch
 
-**问题**：生成省份后切回陆地模式一画就清除全部省份。
+**Problem**: After generating provinces, switching back to land mode clears all provinces as soon as you draw them.
 
-**方案**：画陆地时如果已有省份，弹确认对话框「修改陆地将清除现有省份，是否继续？」而不是静默清除。给用户选择：
-- 继续（清除省份）
-- 取消
-- 只修改当前区域（不清除其他省份）← 后续可做
+**Plan**: If there are already provinces when drawing land, pop up the confirmation dialog box "Modifying the land will clear the existing provinces, do you want to continue?" instead of silently clearing it. Give users a choice:
+- Continue (clear province)
+- Cancel
+- Only modify the current area (do not clear other provinces) ← Can be done later
 
-### 不做的事
+### Things not to do
 
-- 不改主窗口布局结构（保持左面板+右画布）
-- 不改底层架构（controllers/commands/EventBus 不动）
-- 不改导出系统
-- 不加新功能，纯 UI 整理
+- Do not change the layout structure of the main window (keep left panel + right canvas)
+- Do not change the underlying architecture (controllers/commands/EventBus does not change)
+- Do not change the export system
+- No new features, pure UI organization
 
-## 改动文件
+## Change files
 
-| 文件 | 改动 |
+| Documentation | Changes |
 |------|------|
-| ui/tool_panel.py | 模式列表 13→7，创建合并页面 |
-| features/map/land/page.py | 加密度工具 + 折叠区 + 防误触 |
-| features/map/terrain/page.py + height/page.py | 合并为地形页（标签页） |
-| features/map/state/page.py + country/page.py + continent/page.py | 合并为国家与区域页（标签页） |
-| features/map/strategic_region/page.py + logistics/page.py | 合并为后勤页（标签页） |
-| features/map/colormap/page.py + default_map/page.py | 合并为设置页（标签页） |
-| views/canvas/widget.py | _stamp_brush 防误触确认 |
-| ui/i18n.py | 更新翻译 |
-| views/main_window.py | 更新信号连接 |
+| ui/tool_panel.py | Pattern list 13→7, create merge page |
+| features/map/land/page.py | Density tool + Folding area + Anti-accidental touch |
+| features/map/terrain/page.py + height/page.py | Merge into terrain page (tab page) |
+| features/map/state/page.py + country/page.py + continent/page.py | Combined into country and region pages (tab pages) |
+| features/map/strategic_region/page.py + logistics/page.py | Merge into logistics page (tab page) |
+| features/map/colormap/page.py + default_map/page.py | Merged into settings page (tab page) |
+| views/canvas/widget.py | _stamp_brush anti-accidental touch confirmation |
+| ui/i18n/en/*.py | Update English interface copy |
+| views/main_window.py | Update signal connection |
 
-## 风险
+## Risk
 
-- **中**：合并页面的标签页切换需要正确转发所有信号
-- **低**：折叠区可能初始状态不对（需要记住上次展开状态）
-- **低**：防误触对话框可能影响快速操作流程（但比静默清除好）
+- **Medium**: Tab switching of merged pages requires correct forwarding of all signals
+- **Low**: The folding area may be in an incorrect initial state (need to remember the last expanded state)
+- **Low**: Anti-accidental touch dialog box may affect the quick operation process (but better than silent clearing)

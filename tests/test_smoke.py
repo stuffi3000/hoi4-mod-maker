@@ -1,34 +1,32 @@
-"""
-冒烟测试 — 每次改代码后跑一遍，确保核心功能没炸。
+"""Smoke test - run it every time after changing the code to ensure that the core functions are not broken.
 
-覆盖:
-- 省份生成（含密度图）
-- State 管理 + VP 城市名
-- 战略区管理 + compact 同步
-- 河流验证
-- 导出本地化（VP 城市名）
-- 大洲分配（含 State 级别）
-- trees_bmp 自动生成
-"""
+Coverage:
+- Province generation (including density map)
+- State management + VP city name
+- Strategic area management + compact synchronization
+- River verification
+- Export localization (VP city name)
+- Continent allocation (including State level)
+- trees_bmp automatically generated"""
 
 import numpy as np
 import pytest
 
 
-# ═══════ 省份生成 + 密度图 ═══════
+# ═══════ Province generation + density map ═══════
 
 def test_province_generation_basic():
-    """基础省份生成不崩。"""
+    """Basic provinces are generated without collapse."""
     from domain.generators.province import generate_provinces
     tile_map = np.zeros((64, 128), dtype=np.uint8)
-    tile_map[10:54, 10:118] = 1  # 陆地
+    tile_map[10:54, 10:118] = 1  # land
     province_map, count = generate_provinces(tile_map, target_count=20)
     assert count >= 5
     assert province_map.shape == tile_map.shape
 
 
 def test_province_generation_with_density():
-    """带密度图的省份生成不崩。"""
+    """Provinces with density maps are generated without crashing."""
     from domain.generators.province import generate_provinces
     tile_map = np.zeros((64, 128), dtype=np.uint8)
     tile_map[10:54, 10:118] = 1
@@ -38,10 +36,10 @@ def test_province_generation_with_density():
     assert count >= 5
 
 
-# ═══════ State 管理 ═══════
+# ═══════ State Management ═══════
 
 def test_state_manager_basic():
-    """State 创建和省份分配。"""
+    """State creation and province assignment."""
     from domain.managers.state import StateManager
     mgr = StateManager()
     state = mgr.create_state()
@@ -55,7 +53,7 @@ def test_state_manager_basic():
 
 
 def test_state_vp_names():
-    """VP 城市名存取。"""
+    """VP city name access."""
     from domain.managers.state import StateManager
     mgr = StateManager()
     state = mgr.create_state()
@@ -67,10 +65,10 @@ def test_state_vp_names():
     assert s.vp_names[1] == "Beijing"
 
 
-# ═══════ 战略区 + compact 同步 ═══════
+# ═══════ strategic area + compact sync ═══════
 
 def test_strategic_region_compact():
-    """compact_with_references 同步战略区省份 ID。"""
+    """compact_with_references synchronizes strategic area province IDs."""
     from domain.map_data import MapData
     from domain.managers.strategic_region import StrategicRegionManager
     import data.constants as constants
@@ -96,45 +94,45 @@ def test_strategic_region_compact():
         new_ids = sorted(r.province_ids)
         assert new_ids == [1, 2, 3]
     finally:
-        # 全局尺寸是共享状态, 必须还原, 否则污染后续测试
+        # The global size is a shared state and must be restored, otherwise it will pollute subsequent tests.
         set_map_size(old_w, old_h)
 
 
-# ═══════ 河流验证 ═══════
+# ═══════ River Verification ═══════
 
 def test_river_validate_multi_source_ok():
-    """多源头河流网络不应报警告。"""
+    """Multi-source river networks should not report warnings."""
     from domain.managers.river import validate_rivers, RIVER_SOURCE
     width_idx = 6
     h, w = 10, 20
     river_map = np.full((h, w), 254, dtype=np.uint8)
-    # 主干
+    # trunk
     river_map[5, 3:15] = width_idx
     river_map[5, 3] = RIVER_SOURCE
-    # 支流
+    # tributary
     river_map[3, 10] = RIVER_SOURCE
     river_map[4, 10] = width_idx
 
     warnings = validate_rivers(river_map)
     for w_text in warnings:
         assert "sources" not in w_text.lower()
-        assert "源头" not in w_text or "缺少" in w_text
+        assert "missing source" not in w_text.lower() or "missing" in w_text.lower()
 
 
 def test_river_validate_no_source_warns():
-    """无源头的河流应报警告。"""
+    """A warning should be reported for rivers without sources."""
     from domain.managers.river import validate_rivers
     h, w = 10, 20
     river_map = np.full((h, w), 254, dtype=np.uint8)
     river_map[5, 3:15] = 6
     warnings = validate_rivers(river_map)
-    assert any("source" in w.lower() or "源头" in w for w in warnings)
+    assert any("source" in w.lower() for w in warnings)
 
 
-# ═══════ 本地化导出 ═══════
+# ═══════ Localized export ═══════
 
 def test_localisation_vp_names(tmp_path):
-    """导出本地化时 VP 用自定义城市名。"""
+    """VP uses custom city names when exporting localizations."""
     from domain.managers.state import StateManager
     from export.writers.localisation.yml import write_localisation_full
 
@@ -147,14 +145,14 @@ def test_localisation_vp_names(tmp_path):
 
     write_localisation_full("TestMod", mgr, None, [sid], str(tmp_path))
 
-    # localisation 拆分后 VP 写在 states 文件
+    # After localization is split, VP is written in the states file
     yml_path = tmp_path / "localisation" / "zz_TestMod_states_l_english.yml"
     content = yml_path.read_text(encoding="utf-8-sig")
     assert 'VICTORY_POINTS_100:0 "MyCity"' in content
 
 
 def test_localisation_vp_fallback(tmp_path):
-    """VP 没自定义名时用 State 名。"""
+    """If the VP does not have a custom name, the State name is used."""
     from domain.managers.state import StateManager
     from export.writers.localisation.yml import write_localisation_full
 
@@ -175,17 +173,17 @@ def test_localisation_vp_fallback(tmp_path):
 # ═══════ trees_bmp ═══════
 
 def test_trees_bmp_dynamic_size():
-    """trees_bmp 处理非标准地图尺寸不崩。"""
+    """trees_bmp handles non-standard map sizes without crashing."""
     from export.writers.map.trees_bmp import auto_generate_tree_map
     terrain = np.zeros((1024, 2048), dtype=np.uint8)
     tree_map = auto_generate_tree_map(terrain)
     assert tree_map.shape == (256, 512)
 
 
-# ═══════ 大洲分配 ═══════
+# ═══════ Continent Allocation ═══════
 
 def test_continent_assign_by_state():
-    """大洲按 State 批量分配。"""
+    """Continents are allocated in batches by State."""
     from domain.managers.continent import ContinentManager
     from domain.managers.state import StateManager
 
@@ -207,10 +205,10 @@ def test_continent_assign_by_state():
     assert cm.get_province_continent(3) == 0
 
 
-# ═══════ MOD 空目录 ═══════
+# ═══════ MOD empty directory ═══════
 
 def test_create_mod_skeleton(tmp_path):
-    """新项目创建空目录结构。"""
+    """New projects create an empty directory structure."""
     from services.project_service import create_mod_skeleton
     out = str(tmp_path / "test_mod")
     create_mod_skeleton(out)

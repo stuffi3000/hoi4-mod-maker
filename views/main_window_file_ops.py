@@ -1,7 +1,5 @@
-"""
-主窗口文件操作 — 新建/打开/保存/导入/导出。
-从 views/main_window_actions.py 拆分，作为 mixin 使用。
-"""
+"""Main window file operations - New/Open/Save/Import/Export.
+Split from views/main_window_actions.py and used as a mixin."""
 from __future__ import annotations
 
 import numpy as np
@@ -10,7 +8,7 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtGui import QColor
 
-from ui.i18n import tr, tr_pair
+from ui.i18n import tr
 from data.constants import (
     TILE_SEA, TILE_LAND,
     DEFAULT_MOD_OUTPUT_PATH,
@@ -37,10 +35,10 @@ def _find_vanilla_reference(game_dir: str | None) -> str | None:
 
 
 def _populate_imported_data(project, result: dict) -> None:
-    """把导入的 states 和 strategic regions 数据填充到 project 的 manager 里。"""
+    """Populate the imported states and strategic regions data into the project manager."""
     from domain.managers.state import StateData
 
-    # 填充 states
+    # populate states
     for sd in result.get("states", []):
         state = StateData(
             id=sd["id"],
@@ -55,11 +53,11 @@ def _populate_imported_data(project, result: dict) -> None:
         project.state_mgr.states[sd["id"]] = state
         for pid in state.provinces:
             project.state_mgr._province_to_state[pid] = sd["id"]
-    # 更新 _next_id
+    # update_next_id
     if project.state_mgr.states:
         project.state_mgr._next_id = max(project.state_mgr.states.keys()) + 1
 
-    # 填充 strategic regions — 直接构造对象，不走 create_region（auto_id 会冲突）
+    # Populate strategic regions — construct the object directly without using create_region (auto_id will conflict)
     from domain.managers.strategic_region import StrategicRegion
     sr_mgr = project.strategic_region_mgr
     for rd in result.get("strategic_regions", []):
@@ -74,10 +72,10 @@ def _populate_imported_data(project, result: dict) -> None:
     if sr_mgr._regions:
         sr_mgr._next_id = max(sr_mgr._regions.keys()) + 1
 
-    # 填充 country（从 states 的 owner 提取）
-    # 颜色来自 colors.txt; 国名查本地化 (GER → "德意志国"/"German Reich");
-    # 首都/政体来自 history/countries/ (注意原版 capital 是 State ID,
-    # 我们的 CountryData.capital 是省份 ID, 这里换算)
+    # Populate country (extracted from owner of states)
+    # Colors come from colors.txt; Country name search localization (GER → "Germany"/"German Reich");
+    # Capital/Government comes from history/countries/ (note that the original capital is State ID,
+    # Our CountryData.capital is the province ID, converted here)
     country_colors = result.get("country_colors", {})
     country_history = result.get("country_history", {})
     loc_map = result.get("localisation", {})
@@ -85,7 +83,7 @@ def _populate_imported_data(project, result: dict) -> None:
     owners = set(sd.get("owner", "") for sd in result.get("states", []))
     owners.discard("")
     for tag in sorted(owners):
-        # 跳过非法 TAG（中文注释、过长、特殊字符等）
+        # Skip invalid tags (localized text, excessive length, special characters, and similar input).
         if len(tag) != 3 or not tag.isascii():
             continue
         if tag not in project.country_mgr.countries:
@@ -99,43 +97,43 @@ def _populate_imported_data(project, result: dict) -> None:
                     max(60, min(220, h & 0xFF)),
                 )
             try:
-                # 导入的国家本来就是 vanilla/MOD 的 TAG, 必须放行
+                # The imported country is originally a vanilla/MOD TAG and must be allowed.
                 project.country_mgr.create_country(
                     tag, name=loc_map.get(tag, tag), color=color,
                     allow_vanilla_tag=True)
             except ValueError:
-                continue  # 非法 TAG 直接跳过
+                continue  # Illegal TAG is skipped directly
             ch = country_history.get(tag)
             if ch:
                 if ch.get("ruling_party") in (
                         "democratic", "fascism", "communism", "neutrality"):
                     project.country_mgr.set_ruling_party(tag, ch["ruling_party"])
-                # 首都: State ID → 该 State 内的省份 (优先最高分 VP, 它就是首都城市)
+                # Capital: State ID → Province within the State (priority is given to the VP with the highest score, which is the capital city)
                 cap_state = states_by_id.get(ch.get("capital_state", 0))
                 if cap_state and cap_state.get("provinces"):
                     vps = cap_state.get("victory_points", {})
                     cap_pid = max(vps, key=vps.get) if vps else cap_state["provinces"][0]
                     project.country_mgr.set_capital(tag, int(cap_pid))
-        # 分配 state 到国家
+        # Assign state to country
         for sd in result.get("states", []):
             if sd.get("owner") == tag:
                 project.country_mgr.assign_state(sd["id"], tag)
 
-    # 填充 railways
+    # Fill railways
     for rd in result.get("railways", []):
         try:
             project.railway_mgr.add(rd["level"], rd["province_ids"])
         except (ValueError, KeyError):
-            pass  # 跳过格式不合法的铁路
+            pass  # Skip rails with illegal formats
 
-    # 填充 supply_nodes
+    # Populate supply_nodes
     for sd in result.get("supply_nodes", []):
         try:
             project.supply_mgr.add(sd["province_id"], sd["level"])
         except (ValueError, KeyError):
             pass
 
-    # 填充 adjacencies
+    # Fill in adjacencies
     from domain.managers.adjacency import AdjacencyEntry
     for ad in result.get("adjacencies", []):
         entry = AdjacencyEntry(
@@ -154,19 +152,19 @@ def _populate_imported_data(project, result: dict) -> None:
 
 
 class MainWindowFileOpsMixin:
-    """文件/导入/导出/测试导出操作，混入 MainWindow。"""
+    """File/Import/Export/Test export operations, mixed into MainWindow."""
 
-    # 当前项目文件路径; None = 还没存过 (新建/导入的项目) → 保存走另存为
+    # Current project file path; None = Not saved yet (new/imported project) → Save and save as
     _current_project_path: str | None = None
 
-    # ═══════════════════════ 导出 ═══════════════════════════
+    # ═══════════════════════ Export ═══════════════════════════
 
     def _on_export_mod(self) -> None:
         from views.export_dialog import ExportDialog
         dlg = ExportDialog(self._project, self._canvas, parent=self)
         dlg.exec_()
 
-    # ═══════════════════════ 新建/打开/保存 ═══════════════
+    # ═══════════════════════ New/Open/Save ═══════════════
 
     def _on_new_project(self) -> None:
         reply = QMessageBox.question(
@@ -178,10 +176,10 @@ class MainWindowFileOpsMixin:
 
         from data.constants import set_map_size
         preset_items = [
-            (tr_pair("小 (2048×1024)", "Small (2048×1024)"), (2048, 1024)),
-            (tr_pair("中 (3072×1536)", "Medium (3072×1536)"), (3072, 1536)),
-            (tr_pair("大 (4096×2048)", "Large (4096×2048)"), (4096, 2048)),
-            (tr_pair("原版 (5632×2048)", "Vanilla (5632×2048)"), (5632, 2048)),
+            ("Small (2048×1024)", (2048, 1024)),
+            ("Medium (3072×1536)", (3072, 1536)),
+            ("Large (4096×2048)", (4096, 2048)),
+            ("Vanilla (5632×2048)", (5632, 2048)),
         ]
         presets = [label for label, _ in preset_items]
         default_idx = len(presets) - 1
@@ -203,11 +201,11 @@ class MainWindowFileOpsMixin:
         md.province_map = np.zeros((new_h, new_w), dtype=np.int32)
         md.terrain_map = np.zeros((new_h, new_w), dtype=np.uint8)
         md.height_map = np.full((new_h, new_w), 40, dtype=np.uint8)
-        md.river_map = np.full((new_h, new_w), 255, dtype=np.uint8)  # 255=陆地背景，0 是源头标记不能当空白
+        md.river_map = np.full((new_h, new_w), 255, dtype=np.uint8)  # 255=land background, 0 is the source mark and cannot be used as blank
         self._project.map_data = md
         self._canvas.set_map_data(md)
         self._canvas._scene.setSceneRect(0, 0, new_w, new_h)
-        # 重置 LandController 的 mask
+        # Reset LandController's mask
         land_ctrl = self._controllers.get("land")
         if land_ctrl:
             land_ctrl.reset_mask_size()
@@ -221,13 +219,13 @@ class MainWindowFileOpsMixin:
         self._refresh_logistics_counts()
         self._update_province_count()
         self._canvas.refresh_display()
-        self._current_project_path = None  # 新项目还没有文件, 保存时另存为
+        self._current_project_path = None  # The new project has no files yet. When saving, save it as
         self._status_info.setText(tr("file_ops_new_created", new_w, new_h))
         if hasattr(self, '_show_editor'):
             self._show_editor()
 
     def _on_save_project(self) -> None:
-        """保存: 已有项目文件直接覆盖; 新建/导入的项目第一次保存走另存为。"""
+        """Save: Existing project files are directly overwritten; the first time a new/imported project is saved, save it as."""
         import os
         path = self._current_project_path
         if path and os.path.isfile(path):
@@ -236,7 +234,7 @@ class MainWindowFileOpsMixin:
             self._on_save_project_as()
 
     def _on_save_project_as(self) -> None:
-        """另存为: 弹窗选路径。"""
+        """Save as: Pop-up window to select path."""
         path, _ = QFileDialog.getSaveFileName(
             self, tr("file_ops_save_title"), "", tr("file_ops_proj_filter")
         )
@@ -245,7 +243,7 @@ class MainWindowFileOpsMixin:
         self._save_project_to(path)
 
     def _save_project_to(self, path: str) -> None:
-        """写项目文件到指定路径, 成功后记住路径供下次直接覆盖。"""
+        """Write the project file to the specified path. After success, the path will be remembered for direct overwriting next time."""
         try:
             from services.project_service import save_project
             save_project(
@@ -259,7 +257,7 @@ class MainWindowFileOpsMixin:
             )
             self._current_project_path = path
             self._status_info.setText(tr("file_ops_saved", path))
-            # 记录到最近项目
+            # Record recent projects
             from views.welcome_page import save_recent_project
             save_recent_project(path)
         except Exception as e:
@@ -274,7 +272,7 @@ class MainWindowFileOpsMixin:
         self._load_project_file(path)
 
     def _load_project_file(self, path: str) -> None:
-        """加载指定路径的项目文件。"""
+        """Load the project file from the specified path."""
         try:
             from services.project_service import load_project
             load_project(
@@ -287,7 +285,7 @@ class MainWindowFileOpsMixin:
                 strategic_region_mgr=self._project.strategic_region_mgr,
             )
             self._cmd_history.clear()
-            # 加载后检测省份 ID 空洞并提示
+            # After loading, detect province ID holes and prompt
             import numpy as np
             pm = self._canvas.province_map
             max_id = int(pm.max())
@@ -308,7 +306,7 @@ class MainWindowFileOpsMixin:
                 )
             else:
                 self._status_info.setText(tr("file_ops_loaded", path))
-            # 记住路径 (之后"保存"直接覆盖) + 记录到最近项目 + 切换到编辑器
+            # Remember path (overwrite directly with "Save" later) + record to recent project + switch to editor
             self._current_project_path = path
             from views.welcome_page import save_recent_project
             save_recent_project(path)
@@ -317,7 +315,7 @@ class MainWindowFileOpsMixin:
         except Exception as e:
             QMessageBox.critical(self, tr("file_ops_load_fail"), str(e))
 
-    # ═══════════════════════ 参考图/导入 ═══════════════════════
+    # ═══════════════════════ Reference Picture/Import ═══════════════════════
 
     def _choose_hoi4_install_dir(self) -> str | None:
         """Prompt for and persist a valid Hearts of Iron IV installation."""
@@ -389,7 +387,7 @@ class MainWindowFileOpsMixin:
                 QMessageBox.warning(self, tr("dlg_error"), tr("file_ops_ref_fail"))
 
     def _on_import_landmask(self) -> None:
-        """从真实地图提取陆海"""
+        """Extract land and sea from real maps"""
         from PIL import Image
 
         file_path, _ = QFileDialog.getOpenFileName(
@@ -424,7 +422,7 @@ class MainWindowFileOpsMixin:
             QMessageBox.warning(self, tr("dlg_error"), tr("file_ops_img_read_fail", e))
             return
 
-        # 通过 BrushStrokeCommand 记录快照（统一走 CommandHistory）
+        # Record snapshots through BrushStrokeCommand (unify CommandHistory)
         from commands.land.brush_stroke import BrushStrokeCommand
         before = BrushStrokeCommand.snapshot_arrays({"tile_map": self._canvas.tile_map})
 
@@ -433,9 +431,9 @@ class MainWindowFileOpsMixin:
         from domain.generators.province import auto_classify_water
         auto_classify_water(self._canvas.tile_map)
 
-        # 提交撤销命令
+        # Submit a revocation order
         after = BrushStrokeCommand.snapshot_arrays({"tile_map": self._canvas.tile_map})
-        cmd = BrushStrokeCommand(tr_pair("从图片提取陆海", "Extract land and sea from image"), before, after)
+        cmd = BrushStrokeCommand("Extract land and sea from image", before, after)
         cmd.set_target_arrays({"tile_map": self._canvas.tile_map})
         self._cmd_history._undo_stack.append(cmd)
         self._cmd_history._redo_stack.clear()
@@ -453,7 +451,7 @@ class MainWindowFileOpsMixin:
         )
 
     def _on_import_mod_map(self) -> None:
-        """从 HOI4 mod/vanilla 目录导入地图图层"""
+        """Import map layers from the HOI4 mod/vanilla directory"""
         reply = QMessageBox.question(
             self, tr("dlg_confirm"),
             tr("file_ops_import_confirm"),
@@ -486,14 +484,14 @@ class MainWindowFileOpsMixin:
 
         new_w, new_h = result["width"], result["height"]
 
-        # 更新全局地图尺寸
+        # Update global map dimensions
         from data.constants import set_map_size
         set_map_size(new_w, new_h)
 
-        # 通过 Project 统一更新（保持 canvas 和 project 的 map_data 同步）
+        # Unified updates through Project (keeping the map_data of canvas and project synchronized)
         from domain.map_data import MapData
         md = MapData()
-        # 直接替换数组引用（尺寸可能不同，不能用 [:] 原地写入）
+        # Replace array reference directly (dimensions may be different, cannot be written in place using [:] )
         md.tile_map = result["tile_map"]
         md.province_map = result["province_map"]
         md.terrain_map = result["terrain_map"]
@@ -512,20 +510,20 @@ class MainWindowFileOpsMixin:
         self._project.adjacency_mgr.clear()
         self._cmd_history.clear()
 
-        # 保留导入的美术资产（colormap/world_normal 等），导出时不会覆盖
+        # Imported art assets (colormap/world_normal, etc.) are retained and will not be overwritten when exporting
         imported_assets = result.get("assets", {})
         self._project.assets = dict(imported_assets)
         self._project.dirty_assets = set()
 
-        # 填充 states 数据
+        # Populate states data
         _populate_imported_data(self._project, result)
 
-        # 让 canvas 使用同一个 map_data
+        # Let canvas use the same map_data
         self._canvas.set_map_data(md)
         self._canvas._scene.setSceneRect(0, 0, new_w, new_h)
         self._canvas.refresh_display()
         self._update_province_count()
-        # 刷新 State/Country 着色（导入后切模式才能看到颜色）
+        # Refresh State/Country coloring (the color can only be seen after importing the cut mode)
         self._app._refresh_state_colors()
         self._app._refresh_country_colors()
         self._app._refresh_country_list()
@@ -548,7 +546,7 @@ class MainWindowFileOpsMixin:
             self, tr("file_ops_import_done"), info_text + warnings_text
         )
 
-    # ═══════════════════════ 测试导出 ═══════════════════════
+    # ═══════════════════════ Test export ═══════════════════════
 
     @staticmethod
     def _get_test_levels():

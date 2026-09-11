@@ -1,6 +1,4 @@
-"""
-SetStatePropertyCommand — 修改 State 的任意属性。
-"""
+"""SetStatePropertyCommand — Modify any property of State."""
 
 from __future__ import annotations
 
@@ -10,9 +8,9 @@ from commands.base import Command
 
 
 class SetStatePropertyCommand(Command):
-    """修改 State 的某个属性值。"""
+    """Modify a property value of State."""
 
-    label = "修改State属性"
+    label = "Change state property"
 
     def __init__(
         self,
@@ -22,14 +20,12 @@ class SetStatePropertyCommand(Command):
         old_value: Any,
         new_value: Any,
     ) -> None:
-        """
-        参数:
-            state_mgr: StateManager 实例
+        """Parameters:
+            state_mgr: StateManager instance
             state_id: State ID
-            prop_name: 属性名（如 'name', 'manpower', 'category'）
-            old_value: 旧值
-            new_value: 新值
-        """
+            prop_name: attribute name (such as 'name', 'manpower', 'category')
+            old_value: old value
+            new_value: new value"""
         self._state_mgr = state_mgr
         self._state_id = state_id
         self._prop_name = prop_name
@@ -37,15 +33,15 @@ class SetStatePropertyCommand(Command):
         self._new_value = new_value
 
     def _set_value(self, value: Any) -> None:
-        """设置 State 属性值。"""
+        """Set the State property value."""
         state = self._state_mgr.get_state(self._state_id)
         if state is not None:
             setattr(state, self._prop_name, value)
 
     def execute(self) -> None:
-        """设置新值。"""
+        """Set new value."""
         self._set_value(self._new_value)
 
     def undo(self) -> None:
-        """恢复旧值。"""
+        """Restore old value."""
         self._set_value(self._old_value)

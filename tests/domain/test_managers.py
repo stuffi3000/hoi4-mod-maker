@@ -1,6 +1,4 @@
-"""
-domain manager 单元测试 — 增删改基本操作.
-"""
+"""Domain manager unit test - basic operations of addition, deletion and modification."""
 
 import pytest
 
@@ -41,11 +39,11 @@ def test_continent_assign_province_and_hoi4_id():
     m = ContinentManager()
     m.add_continent("asia")  # index 1
     m.assign_province(5, 1)
-    # HOI4 id 是 1-based
+    # HOI4 id is 1-based
     assert m.get_province_continent_hoi4_id(5, True) == 2
-    # 海省永远 0
+    # Hai Province Forever 0
     assert m.get_province_continent_hoi4_id(5, False) == 0
-    # 未指派陆地默认 1
+    # No land assigned Default 1
     assert m.get_province_continent_hoi4_id(999, True) == 1
 
 
@@ -77,7 +75,7 @@ def test_state_manager_add_state():
 
 
 def test_state_data_has_advanced_fields():
-    """Phase 2 加的进阶字段必须有默认值."""
+    """Advanced fields added in Phase 2 must have default values."""
     from domain.managers.state import StateData
     s = StateData(id=1)
     assert s.impassable is False

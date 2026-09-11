@@ -1,14 +1,14 @@
-"""EventBus 单元测试。"""
+"""EventBus unit tests."""
 import pytest
 
 from model.events import EventBus, Event
 
 
 class TestEventBus:
-    """EventBus 基本功能。"""
+    """EventBus basic functionality."""
 
     def test_subscribe_and_emit(self) -> None:
-        """订阅后 emit 能收到事件。"""
+        """After subscribing, emit can receive events."""
         bus = EventBus()
         received: list[Event] = []
         bus.subscribe("test", received.append)
@@ -18,7 +18,7 @@ class TestEventBus:
         assert received[0].value == 42
 
     def test_multiple_subscribers(self) -> None:
-        """同一事件多个订阅者都能收到。"""
+        """Multiple subscribers can receive the same event."""
         bus = EventBus()
         results_a: list[Event] = []
         results_b: list[Event] = []
@@ -29,7 +29,7 @@ class TestEventBus:
         assert len(results_b) == 1
 
     def test_unsubscribe(self) -> None:
-        """取消订阅后不再收到事件。"""
+        """You will no longer receive events after unsubscribing."""
         bus = EventBus()
         received: list[Event] = []
         bus.subscribe("test", received.append)
@@ -38,7 +38,7 @@ class TestEventBus:
         assert len(received) == 0
 
     def test_unsubscribe_all(self) -> None:
-        """unsubscribe_all 清除所有事件类型的订阅。"""
+        """unsubscribe_all clears subscriptions for all event types."""
         bus = EventBus()
         received: list[Event] = []
         bus.subscribe("a", received.append)
@@ -49,12 +49,12 @@ class TestEventBus:
         assert len(received) == 0
 
     def test_emit_no_subscribers(self) -> None:
-        """没有订阅者时 emit 不崩溃。"""
+        """emit does not crash when there are no subscribers."""
         bus = EventBus()
-        bus.emit("nonexistent", x=1)  # 不应抛异常
+        bus.emit("nonexistent", x=1)  # No exception should be thrown
 
     def test_duplicate_subscribe_ignored(self) -> None:
-        """同一个 callback 重复订阅只注册一次。"""
+        """Repeated subscriptions to the same callback are only registered once."""
         bus = EventBus()
         received: list[Event] = []
         bus.subscribe("test", received.append)
@@ -63,7 +63,7 @@ class TestEventBus:
         assert len(received) == 1
 
     def test_clear(self) -> None:
-        """clear 清除所有订阅。"""
+        """clear clears all subscriptions."""
         bus = EventBus()
         received: list[Event] = []
         bus.subscribe("test", received.append)
@@ -73,21 +73,21 @@ class TestEventBus:
 
 
 class TestEvent:
-    """Event 数据访问。"""
+    """Event data access."""
 
     def test_attribute_access(self) -> None:
-        """通过属性访问 data 字典的值。"""
+        """Access the values of the data dictionary through properties."""
         event = Event("test", {"name": "hello", "count": 3})
         assert event.name == "hello"
         assert event.count == 3
 
     def test_missing_attribute_raises(self) -> None:
-        """访问不存在的属性抛 AttributeError。"""
+        """Accessing a non-existent attribute throws AttributeError."""
         event = Event("test", {})
         with pytest.raises(AttributeError, match="has no attribute 'missing'"):
             _ = event.missing
 
     def test_type_field(self) -> None:
-        """type 字段正常访问。"""
+        """The type field is accessed normally."""
         event = Event("my_event", {})
         assert event.type == "my_event"

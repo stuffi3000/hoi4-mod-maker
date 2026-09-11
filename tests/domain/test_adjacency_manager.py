@@ -1,6 +1,4 @@
-"""
-AdjacencyManager 单元测试.
-"""
+"""AdjacencyManager unit tests."""
 
 import pytest
 
@@ -35,7 +33,7 @@ def test_remove_by_pair():
 def test_remove_bidirectional():
     m = AdjacencyManager()
     m.add(AdjacencyEntry(1, 2, "sea"))
-    # 删除 (2,1) 也应该删到 (1,2) (HOI4 认为方向不重要)
+    # Delete (2,1) should also be deleted to (1,2) (HOI4 thinks the direction is not important)
     ok = m.remove(2, 1)
     assert ok
     assert m.count() == 0
@@ -60,10 +58,10 @@ def test_to_csv_line_sea():
 
 
 def test_to_csv_line_impassable_forces_defaults():
-    """impassable 必须把 through/坐标/rule 全置 -1 空."""
+    """impassable must set all through/coordinates/rule to -1 and empty."""
     e = AdjacencyEntry(
         from_id=10910, to_id=12807, type="impassable",
-        through_id=999, rule_name="bogus_rule",  # 应被忽略
+        through_id=999, rule_name="bogus_rule",  # should be ignored
         comment="Himalayas",
     )
     line = e.to_csv_line()
@@ -91,7 +89,7 @@ def test_remap_provinces():
 def test_remap_drops_entries_with_deleted_endpoint():
     m = AdjacencyManager()
     m.add(AdjacencyEntry(1, 2, "sea"))
-    m.remap_provinces({1: 11})  # 省份 2 被删除
+    m.remap_provinces({1: 11})  # Province 2 was deleted
     assert m.count() == 0
 
 

@@ -1,49 +1,48 @@
-"""名字标签叠加层 Mixin — state/country 模式在地图上显示名字 (HOI4 风格).
+"""Name Tag Overlay Mixin — State/country mode displays names on the map (HOI4 style).
 
-效果: 文字沿区域主轴倾斜, 区域越大字越大, 矢量文字随画布缩放不发糊.
-适用: state 模式显示州名, country 模式显示国家名.
-调用: app_controller 推 provider → set_name_label_data(mode, provider);
-     _full_render 里调 _update_name_labels_visibility() 控制显隐.
-排版惰性执行: id 图构建 + 排版都推迟到"叠加层可见且 400ms 防抖到期",
-编辑归属的每一笔只付一个 lambda 的成本, 不做全图计算.
-"""
+Effect: The text is tilted along the main axis of the area. The larger the area, the larger the text. The vector text scales with the canvas without blurring.
+Applicable: state mode displays the state name, country mode displays the country name.
+Call: app_controller push provider → set_name_label_data(mode, provider);
+     _update_name_labels_visibility() is called in _full_render to control visibility.
+Lazy execution of typesetting: ID map construction + typesetting are postponed until "the overlay is visible and the 400ms anti-shake expires",
+Each transaction attributable to editing only pays the cost of one lambda, and does not perform full graph calculations."""
 from PyQt5.QtCore import QTimer
 from PyQt5.QtGui import QColor, QPen, QBrush, QFont
 from PyQt5.QtWidgets import QGraphicsItem, QGraphicsSimpleTextItem
 
-# 有名字标签的显示模式
+# Display mode with name tag
 _LABEL_MODES = ("state", "country")
-# 缩放后文字高度小于该像素数就不显示(反正读不出来, 还添乱)
+# After scaling, if the text height is less than this number of pixels, it will not be displayed (it cannot be read anyway, and it will cause confusion)
 _MIN_TEXT_HEIGHT = 4.0
 
 
 class NameLabelsMixin:
-    """假设 self 拥有: _scene, _display_mode"""
+    """Assume self owns: _scene, _display_mode"""
 
     def _init_name_labels(self) -> None:
         self._name_label_data: dict = {}    # mode → provider() → (id_map, {id: name})
         self._name_label_dirty: dict = {}   # mode → bool
         self._name_label_items: dict = {}   # mode → list[QGraphicsSimpleTextItem]
-        self._name_labels_enabled: dict = {m: True for m in _LABEL_MODES}  # 页面开关
+        self._name_labels_enabled: dict = {m: True for m in _LABEL_MODES}  # Page switch
         self._name_label_timer = QTimer(self)
         self._name_label_timer.setSingleShot(True)
         self._name_label_timer.setInterval(400)
         self._name_label_timer.timeout.connect(self._update_name_labels_visibility)
 
     def set_name_label_data(self, mode: str, provider) -> None:
-        """接收数据源 provider() → (id_map, names), 标脏并启动防抖重排。
-        provider 只在防抖到期且模式可见时才被调用, 保证编辑时不卡。"""
+        """Receive data source provider() → (id_map, names), mark dirty and start anti-shake rearrangement.
+        The provider is only called when the anti-shake expires and the mode is visible, ensuring no lag during editing."""
         self._name_label_data[mode] = provider
         self._name_label_dirty[mode] = True
         self._name_label_timer.start()
 
     def set_name_labels_enabled(self, mode: str, on: bool) -> None:
-        """页面"显示名字"开关。关掉只隐藏, 数据和排版缓存保留。"""
+        """Page "Show Name" switch. Turning off only hides, data and layout cache are retained."""
         self._name_labels_enabled[mode] = bool(on)
         self._update_name_labels_visibility()
 
     def clear_name_labels(self) -> None:
-        """换地图数据时清空所有标签(旧坐标已无意义)。"""
+        """Clear all labels when changing map data (old coordinates are meaningless)."""
         for items in self._name_label_items.values():
             for it in items:
                 self._scene.removeItem(it)
@@ -52,7 +51,7 @@ class NameLabelsMixin:
         self._name_label_dirty.clear()
 
     def _update_name_labels_visibility(self) -> None:
-        """当前模式匹配才显示; 脏数据且防抖到期才重排。"""
+        """It will only be displayed when the current pattern matches; it will be rearranged only when dirty data and anti-shake expires."""
         for mode in _LABEL_MODES:
             visible = (
                 self._display_mode == mode
@@ -60,7 +59,7 @@ class NameLabelsMixin:
             )
             if visible and self._name_label_dirty.get(mode):
                 if self._name_label_timer.isActive():
-                    continue  # 还在防抖窗口内, 到点由 timer 再进来
+                    continue  # Still within the anti-shake window, the timer will come in again at that point
                 self._rebuild_name_labels(mode)
             for it in self._name_label_items.get(mode, []):
                 it.setVisible(visible)
@@ -79,7 +78,7 @@ class NameLabelsMixin:
         id_map, names = provider()
         placements = compute_region_labels(id_map)
 
-        font = QFont("Microsoft YaHei")
+        font = QFont("Segoe UI")
         font.setPixelSize(24)
         font.setBold(True)
         brush = QBrush(QColor(255, 255, 255, 235))
@@ -91,14 +90,14 @@ class NameLabelsMixin:
             text = names.get(rid, "")
             if not text:
                 continue
-            # 区域每个连通块各放一个名字(飞地/被切开的部分单独标)
+            # Put a name on each connected block in the area (enclaves/cut parts are labeled separately)
             for cx, cy, angle, length, width in spots:
                 it = QGraphicsSimpleTextItem(text)
                 it.setFont(font)
                 it.setBrush(brush)
                 it.setPen(pen)
                 br = it.boundingRect()
-                # 文字铺满长轴 ~70%, 且不超过短轴高度的 90%
+                # The text covers ~70% of the long axis and does not exceed 90% of the short axis height
                 s = min(
                     length * 0.7 / max(br.width(), 1.0),
                     width * 0.9 / max(br.height(), 1.0),
@@ -110,9 +109,9 @@ class NameLabelsMixin:
                 it.setScale(s)
                 it.setPos(cx - br.center().x(), cy - br.center().y())
                 it.setZValue(6)
-                # 缓存渲染结果: 拖动画布时贴缓存位图, 不逐帧重绘矢量文字
+                # Cache rendering results: When dragging the canvas, the cached bitmap is pasted, and the vector text is not redrawn frame by frame.
                 it.setCacheMode(QGraphicsItem.CacheMode.DeviceCoordinateCache)
-                it.setVisible(False)  # 显隐统一由 _update_name_labels_visibility 管
+                it.setVisible(False)  # Unification of visibility and visibility is managed by _update_name_labels_visibility
                 self._scene.addItem(it)
                 items.append(it)
         self._name_label_items[mode] = items

@@ -1,9 +1,7 @@
-"""
-主窗口动作处理 — 省份生成/验证/国家对话框/河流/地形/大陆/战略区/后勤。
-从 views/main_window.py 拆分，作为 mixin 使用。
+"""Main window action processing - province generation/verification/country dialog/river/terrain/continent/strategic area/logistics.
+Split from views/main_window.py and used as a mixin.
 
-文件操作 (新建/打开/保存/导入/导出/测试导出) 在 views/main_window_file_ops.py。
-"""
+File operations (new/open/save/import/export/test export) are in views/main_window_file_ops.py."""
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
@@ -15,7 +13,7 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
 from PyQt5.QtGui import QColor
 
-from ui.i18n import tr, tr_pair
+from ui.i18n import tr
 from views.main_window_file_ops import MainWindowFileOpsMixin
 
 if TYPE_CHECKING:
@@ -24,10 +22,10 @@ if TYPE_CHECKING:
     from controllers.logistics import LogisticsController
 
 
-# ── 后台线程 ──
+# ── Background thread ──
 
 class _GenerateThread(QThread):
-    """后台线程生成省份"""
+    """Background thread generates provinces"""
     finished = pyqtSignal(object, int)
     error = pyqtSignal(str)
 
@@ -91,7 +89,7 @@ class _GenerateThread(QThread):
 
 
 class _ValidateThread(QThread):
-    """后台线程验证省份"""
+    """Background thread verification province"""
     finished = pyqtSignal(dict)
     error = pyqtSignal(str)
 
@@ -110,56 +108,50 @@ class _ValidateThread(QThread):
 
 
 class MainWindowActionsMixin(MainWindowFileOpsMixin):
-    """省份生成/验证/国家对话框/河流/地形/大陆/战略区/后勤处理。"""
+    """Province generation/validation/country dialog/rivers/terrain/continent/strategic areas/logistics."""
 
-    # ═══════════════════════ 州自动分组 ═══════════════════
+    # ═══════════════════════ State Auto Grouping ═══════════════════
 
     def _on_auto_states_with_confirm(self, per_state: int) -> None:
-        """自动分组前确认（会清空现有州数据）。可撤销 (Ctrl+Z)。"""
+        """Confirm before automatic grouping (will clear existing state data). Can be undone (Ctrl+Z)."""
         from commands.map.manager_snapshot import ManagerSnapshotCommand
         existing = len(self._project.state_mgr.states)
         if existing > 0:
             reply = QMessageBox.question(
                 self,
-                tr_pair("确认自动分组", "Confirm Automatic State Grouping"),
-                tr_pair(
-                    f"当前已有 {existing} 个州。\n自动分组将清空所有现有州数据，重新按每州 {per_state} 个省份分组。\n\n是否继续？",
-                    f"There are currently {existing} states.\nAutomatic grouping will clear all existing state data and regroup provinces at {per_state} provinces per state.\n\nContinue?",
-                ),
+                "Confirm Automatic State Grouping",
+                f"There are currently {existing} states.\nAutomatic grouping will clear all existing state data and regroup provinces at {per_state} provinces per state.\n\nContinue?",
             )
             if reply != QMessageBox.StandardButton.Yes:
                 return
-        # 撤销快照：state_mgr 内部字段
+        # Undo snapshot: state_mgr internal field
         state_mgr = self._project.state_mgr
         snap_fields = [f for f in ("_states", "_next_id") if hasattr(state_mgr, f)]
-        cmd = ManagerSnapshotCommand(tr_pair("自动分组州", "Automatically group states"), state_mgr, snap_fields)
+        cmd = ManagerSnapshotCommand("Automatically group states", state_mgr, snap_fields)
         self._controllers["state"].auto_states(per_state)
         cmd.capture_after()
         self._cmd_history._undo_stack.append(cmd)
         self._cmd_history._redo_stack.clear()
         self._cmd_history._notify()
 
-    # ═══════════════════════ 战略区域自动生成 ═══════════════════
+    # ═══════════════════════ Strategic area automatically generated ═══════════════════
 
     def _on_auto_sr_with_confirm(self) -> None:
-        """自动生成战略区域前确认。可撤销 (Ctrl+Z)。"""
+        """Confirm before automatically generating strategic areas. Can be undone (Ctrl+Z)."""
         from commands.map.manager_snapshot import ManagerSnapshotCommand
         existing = self._project.strategic_region_mgr.count()
         if existing > 0:
             reply = QMessageBox.question(
                 self,
-                tr_pair("确认自动生成", "Confirm Automatic Generation"),
-                tr_pair(
-                    f"当前已有 {existing} 个战略区域。\n自动生成将清空所有现有战略区域数据。\n\n是否继续？",
-                    f"There are currently {existing} strategic regions.\nAutomatic generation will clear all existing strategic-region data.\n\nContinue?",
-                ),
+                "Confirm Automatic Generation",
+                f"There are currently {existing} strategic regions.\nAutomatic generation will clear all existing strategic-region data.\n\nContinue?",
             )
             if reply != QMessageBox.StandardButton.Yes:
                 return
-        # 撤销快照：strategic_region_mgr 内部字段
+        # Undo snapshot: strategic_region_mgr internal field
         sr_mgr = self._project.strategic_region_mgr
         snap_fields = [f for f in ("_regions", "_next_id") if hasattr(sr_mgr, f)]
-        cmd = ManagerSnapshotCommand(tr_pair("自动生成战略区", "Automatically generate strategic regions"), sr_mgr, snap_fields)
+        cmd = ManagerSnapshotCommand("Automatically generate strategic regions", sr_mgr, snap_fields)
         self._controllers["strategic_region"].auto_generate()
         cmd.capture_after()
         self._cmd_history._undo_stack.append(cmd)
@@ -168,7 +160,7 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
         self._refresh_sr_list()
         self._event_bus.emit("sr_colors_dirty")
 
-    # ═══════════════════════ 省份生成与验证 ═══════════════════
+    # ═══════════════════════ Province generation and verification ═══════════════════
 
     @staticmethod
     def _reference_image_filter() -> str:
@@ -326,16 +318,13 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
         if not selected:
             QMessageBox.information(
                 self, tr("province_btn_random_split"),
-                tr_pair("请先选择至少一个省份。", "Select at least one province first."),
+                "Select at least one province first.",
             )
             return
         if target_count <= len(selected):
             QMessageBox.information(
                 self, tr("province_btn_random_split"),
-                tr_pair(
-                    "总块数必须大于当前选中的省份数。",
-                    "Total pieces must be greater than the number of selected provinces.",
-                ),
+                "Total pieces must be greater than the number of selected provinces.",
             )
             return
         try:
@@ -376,10 +365,7 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
             answer = QMessageBox.question(
                 self,
                 tr("river_auto_ref_dialog"),
-                tr_pair(
-                    "生成湖泊会改变地块类型。建议随后重新导入或生成省份，以免省份跨越陆地和湖泊。是否继续？",
-                    "Generating lakes changes tile types. Reimport or regenerate provinces afterwards so provinces do not cross land and lakes. Continue?",
-                ),
+                "Generating lakes changes tile types. Reimport or regenerate provinces afterwards so provinces do not cross land and lakes. Continue?",
                 QMessageBox.Yes | QMessageBox.No,
                 QMessageBox.No,
             )
@@ -434,7 +420,7 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
             QMessageBox.critical(self, tr("dlg_error"), str(exc))
 
     def _on_clear_new_land_mask(self) -> None:
-        """清空扩展陆地遮罩（保留已画陆地像素）。"""
+        """Clear the extended land mask (keep the painted land pixels)."""
         mask = self._canvas.new_land_mask
         if not mask.any():
             return
@@ -461,7 +447,7 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
         incremental = False
         has_provinces = int(self._canvas.province_map.max()) > 0
 
-        # R-NULL: 无省份时扩展遮罩无意义 — 自动清空避免误导
+        # R-NULL: Expanding the mask is meaningless when there are no provinces - automatically clear it to avoid misleading
         if not has_provinces and self._canvas.new_land_mask.any():
             self._canvas.new_land_mask[:] = False
             self._status_info.setText(tr("status_no_prov_mask_ignored"))
@@ -519,13 +505,13 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
             sea_scale = params.get("sea_scale", 0.15)
             lake_scale = params.get("lake_scale", 0.3)
 
-        # 增量模式：用新大陆画笔的 mask 预清除像素
+        # Incremental mode: Preclear pixels with the new world brush mask
         province_map_for_thread = None
         if incremental:
             province_map_for_thread = self._canvas.province_map.copy()
             mask = self._canvas.new_land_mask
             if mask.any():
-                # 保存副本供 _on_generate_done 同步 terrain，并立刻清空让用户可连画下一批
+                # Save a copy for _on_generate_done to synchronize the terrain, and clear it immediately so the user can draw the next batch
                 self._new_land_mask_copy = mask.copy()
                 province_map_for_thread[mask] = 0
                 self._canvas.new_land_mask[:] = False
@@ -558,23 +544,23 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
         self._project.mark_dirty()
         self._update_province_count()
 
-        # 发事件，级联清理由各 controller 自动处理
+        # When an event occurs, cascade cleanup is automatically handled by each controller.
         self._event_bus.emit(
             "province_map_regenerated",
             incremental=was_incremental or is_partial,
             scope=generation_scope,
         )
 
-        # 强制刷新画布（增量模式不切模式，保持新大陆画笔工具状态）
+        # Force refresh the canvas (incremental mode does not switch mode, maintain the state of the New World brush tool)
         self._canvas.refresh_display()
 
-        # 增量生成后：同步 terrain + 清理被吞省份 + 自动分配 + 清空画笔 mask
+        # After incremental generation: synchronize terrain + clean up swallowed provinces + automatic allocation + clear brush mask
         if was_incremental or is_partial:
             import numpy as np
             from data.constants import TILE_LAND, TILE_SEA, TILE_LAKE
             from data.terrain_types import TERRAIN_PALETTE_INDEX, DEFAULT_TERRAIN_FOR_TILE
 
-            # 同步 terrain_map（用保存的 mask 副本，不依赖 canvas.new_land_mask）
+            # Synchronize terrain_map (uses saved copy of mask, does not rely on canvas.new_land_mask)
             saved_mask = getattr(self, '_new_land_mask_copy', None) if was_incremental else None
             if saved_mask is not None and saved_mask.any():
                 tm = self._canvas.tile_map
@@ -598,18 +584,18 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
                 scope=tr(f"province_scope_{generation_scope}"),
                 count=count,
             )
-            msg += tr_pair(f" ({assigned} 个新省份已自动分配)", f" ({assigned} new provinces assigned automatically)")
+            msg += f" ({assigned} new provinces assigned automatically)"
             if consumed:
                 ids_str = ", ".join(str(i) for i in sorted(consumed)[:10])
                 if len(consumed) > 10:
-                    ids_str += tr_pair(f" ... 共 {len(consumed)} 个", f" ... {len(consumed)} total")
-                msg += tr_pair(f"\n⚠ 被完全吞并的省份: {ids_str}", f"\n⚠ Fully absorbed provinces: {ids_str}")
+                    ids_str += f" ... {len(consumed)} total"
+                msg += f"\n⚠ Fully absorbed provinces: {ids_str}"
             self._status_info.setText(msg)
         else:
             self._status_info.setText(tr("status_gen_done").format(count=count))
 
     def _cleanup_consumed_provinces(self, province_map) -> set[int]:
-        """清理被完全吞并的省份：从 state/country/战略区中移除不存在的省份引用。"""
+        """Clean up fully annexed provinces: Remove non-existent province references from state/country/strategic area."""
         import numpy as np
 
         existing_pids = set(np.unique(province_map).tolist())
@@ -620,7 +606,7 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
         sr_mgr = self._project.strategic_region_mgr
         country_mgr = self._project.country_mgr
 
-        # 清理 state 引用
+        # Clean up state references
         for sid, state in list(state_mgr.states.items()):
             old_provinces = state.provinces
             new_provinces = [p for p in old_provinces if p in existing_pids]
@@ -631,24 +617,24 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
                 if not new_provinces:
                     state_mgr.states.pop(sid, None)
 
-        # 重建 province_to_state 索引
+        # Rebuild province_to_state index
         if consumed and hasattr(state_mgr, '_province_to_state'):
             state_mgr._province_to_state = {
                 pid: sid for sid, s in state_mgr.states.items()
                 for pid in s.provinces
             }
 
-        # 清理战略区引用
+        # Clean up strategic area references
         if sr_mgr:
             for r in sr_mgr.regions.values():
                 r.province_ids = [p for p in r.province_ids if p in existing_pids]
 
-        # 清理国家首都引用
+        # Clean up national capital citations
         if country_mgr:
             for tag, country in country_mgr.countries.items():
                 if country.capital > 0 and country.capital not in existing_pids:
                     consumed.add(country.capital)
-                    # 找该国其他省份作为新首都
+                    # Find another province in the country to use as the new capital
                     new_cap = 0
                     owned_states = country_mgr.get_states_of_country(tag)
                     if state_mgr and owned_states:
@@ -662,7 +648,7 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
         return consumed
 
     def _auto_assign_new_provinces(self, province_map) -> int:
-        """增量生成后，把没有 state 的陆地省份分配到相邻最近的 state/战略区。"""
+        """After incremental generation, land provinces without states are assigned to the nearest adjacent state/strategic area."""
         import numpy as np
         from data.constants import TILE_LAND
 
@@ -671,13 +657,13 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
         tile_map = self._canvas.tile_map
         pm = province_map
 
-        # 找未分配 state 的陆地省份
+        # Find land provinces without assigned state
         max_pid = int(pm.max())
         if max_pid == 0:
             return 0
 
         assigned_count = 0
-        # 预计算质心
+        # Precomputed centroid
         flat = pm.ravel()
         n = max_pid + 1
         pid_count = np.bincount(flat, minlength=n)
@@ -685,7 +671,7 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
         sum_y = np.bincount(flat, weights=ys.ravel().astype(np.float64), minlength=n)
         sum_x = np.bincount(flat, weights=xs.ravel().astype(np.float64), minlength=n)
 
-        # 已有 state 的省份 → 质心
+        # Provinces with state → centroid
         state_centers: dict[int, tuple[float, float]] = {}  # state_id → (cy, cx)
         for sid, state in state_mgr.states.items():
             total_y, total_x, cnt = 0.0, 0.0, 0
@@ -697,22 +683,22 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
             if cnt > 0:
                 state_centers[sid] = (total_y / cnt, total_x / cnt)
 
-        # 对每个未分配的陆地省份，找最近 state
+        # For each unallocated land province, find the nearest state
         for pid in range(1, max_pid + 1):
             if pid_count[pid] == 0:
                 continue
-            # 检查是否陆地
+            # Check if it is land
             cy = int(sum_y[pid] / pid_count[pid])
             cx = int(sum_x[pid] / pid_count[pid])
             cy = min(cy, pm.shape[0] - 1)
             cx = min(cx, pm.shape[1] - 1)
             if int(tile_map[cy, cx]) != TILE_LAND:
                 continue
-            # 已有 state → 跳过
+            # Existing state → skip
             if state_mgr.get_state_of_province(pid) > 0:
                 continue
 
-            # 找最近 state
+            # Find the latest state
             best_sid, best_dist = 0, float('inf')
             py = sum_y[pid] / pid_count[pid]
             px = sum_x[pid] / pid_count[pid]
@@ -728,14 +714,14 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
                     state_mgr._province_to_state[pid] = best_sid
                     assigned_count += 1
 
-            # 战略区域也一样
+            # The same goes for strategic areas
             if sr_mgr.get_region_of_province(pid) == 0:
-                # 找最近的战略区
+                # Find the nearest strategic area
                 best_rid, best_dist = 0, float('inf')
                 for rid, region in sr_mgr._regions.items():
                     if not region.province_ids:
                         continue
-                    # 用第一个有像素的省份算距离
+                    # Calculate the distance using the first province with pixels
                     for rp in region.province_ids[:5]:
                         if 0 < rp < n and pid_count[rp] > 0:
                             ry = sum_y[rp] / pid_count[rp]
@@ -755,11 +741,10 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
         self._status_info.setText(tr("status_ready"))
 
     def _on_land_paint_confirm(self) -> None:
-        """已生成省份后第一次画陆海 → 弹确认框。
+        """Draw land and sea for the first time after the province has been generated → pop up the confirmation box.
 
-        画布经直连信号同步调用本方法, 返回时结果已写回
-        canvas._land_paint_confirmed, 画布据此决定这一笔画不画。
-        """
+        The canvas calls this method synchronously via a direct signal, and the result has been written back when it returns.
+        canvas._land_paint_confirmed, the canvas decides whether to draw this stroke accordingly."""
         ret = QMessageBox.warning(
             self, tr("land_paint_after_gen_title"),
             tr("land_paint_after_gen_msg"),
@@ -769,16 +754,16 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
             self._canvas._land_paint_confirmed = True
 
     def _on_smooth_coast(self) -> None:
-        """平滑海岸线。有选区时只平滑选区内，否则全图。可撤销 (Ctrl+Z)。"""
+        """Smooth coastline. If there is a selection, only the selected area will be smoothed, otherwise the entire image will be smoothed. Can be undone (Ctrl+Z)."""
         from domain.generators.coastline import smooth_coastline
         from commands.land.brush_stroke import BrushStrokeCommand
         map_data = self._project.map_data
 
-        # 检查画布是否有选区（变换工具框选的区域）
+        # Check whether there is a selection on the canvas (the area selected by the transform tool)
         sel = getattr(self._canvas, '_selection_rect', None)
         has_provinces = int(self._canvas.province_map.max()) > 0
 
-        # 已有省份时强警告：平滑会让 tile/province 边界错位
+        # Strong warning when already having provinces: Smoothing will dislocate tile/province boundaries
         if has_provinces:
             ret = QMessageBox.warning(
                 self, tr("smooth_coast_after_gen_title"),
@@ -788,7 +773,7 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
             if ret != QMessageBox.Yes:
                 return
         elif not sel:
-            # 无省份 + 全图：常规确认
+            # No provinces + full map: regular confirmation
             ret = QMessageBox.question(
                 self, tr("smooth_coast_confirm_title"),
                 tr("smooth_coast_confirm_msg"),
@@ -798,22 +783,22 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
                 return
         if sel:
             x0, y0, x1, y1 = sel
-            # 转换为整数像素坐标 (region 参数是 y0, x0, y1, x1)
+            # Convert to integer pixel coordinates (region parameters are y0, x0, y1, x1)
             region = (int(y0), int(x0), int(y1), int(x1))
         else:
             region = None
 
-        # 撤销快照：操作前
+        # Undo Snapshot: Before Operation
         snap_arrays = {"tile_map": map_data.tile_map}
         before = BrushStrokeCommand.snapshot_arrays(snap_arrays)
 
         new_tile = smooth_coastline(map_data.tile_map, region=region)
         map_data.tile_map[:] = new_tile
 
-        # 撤销快照：操作后 + 入栈
+        # Undo snapshot: after operation + push to stack
         if BrushStrokeCommand.has_changes(before, snap_arrays):
             after = BrushStrokeCommand.snapshot_arrays(snap_arrays)
-            cmd = BrushStrokeCommand(tr_pair("平滑海岸线", "Smooth coastline"), before, after)
+            cmd = BrushStrokeCommand("Smooth coastline", before, after)
             cmd.set_target_arrays(self._app._get_all_arrays())
             self._cmd_history._undo_stack.append(cmd)
             self._cmd_history._redo_stack.clear()
@@ -828,8 +813,8 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
             self._status_info.setText(tr("status_coast_smoothed"))
 
     def _on_density_clear(self) -> None:
-        """清除密度图，恢复均匀。密度遮罩保持当前显隐状态。"""
-        # 防呆: 二次确认 (清空数据无法撤销)
+        """Clear the density map and restore uniformity. Density masks retain their current visibility."""
+        # Fool-proof: double confirmation (clearing data cannot be undone)
         ret = QMessageBox.question(
             self, tr("density_clear_confirm_title"),
             tr("density_clear_confirm_msg"),
@@ -838,12 +823,12 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
         if ret != QMessageBox.Yes:
             return
         self._project.map_data.density_map = None
-        # 刷新遮罩内容（density_map=None 时 overlay 会自动隐藏）
+        # Refresh the mask content (overlay will be automatically hidden when density_map=None)
         self._canvas._render_density_overlay()
         self._status_info.setText(tr("status_density_cleared"))
 
     def _on_quick_init(self) -> None:
-        """一键初始化：自动生成州 + 战略区域 + 默认国家。可撤销 (Ctrl+Z)。"""
+        """One-click initialization: automatically generate states + strategic regions + default countries. Can be undone (Ctrl+Z)."""
         from commands.map.quick_init import QuickInitCommand
         pm = self._canvas.province_map
         if int(pm.max()) == 0:
@@ -860,7 +845,7 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
         self._status_info.setText(tr("status_initializing"))
         QApplication.processEvents()
 
-        # 撤销快照：操作前（捕获三个 manager 的初始状态）
+        # Undo snapshot: before operation (capture the initial state of the three managers)
         cmd = QuickInitCommand(
             self._project.state_mgr,
             self._project.country_mgr,
@@ -882,7 +867,7 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
             fc = _FakeCanvas(self._project.map_data)
             log = auto_complete_project(self._project, fc)
 
-            # 捕获 after 状态 + 推入撤销栈
+            # Capture after state + push to undo stack
             cmd.capture_after()
             self._cmd_history._undo_stack.append(cmd)
             self._cmd_history._redo_stack.clear()
@@ -916,7 +901,7 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
         self._status_info.setText(tr("status_ready"))
 
     def _show_validation_results(self, results: dict) -> None:
-        """诊断对话框：可点击的问题列表，双击跳转"""
+        """Diagnostic dialog: clickable problem list, double-click to jump"""
         from PyQt5.QtWidgets import (
             QDialog, QVBoxLayout, QListWidget, QListWidgetItem,
             QLabel, QDialogButtonBox,
@@ -980,7 +965,7 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
         v.addWidget(btns)
         dlg.exec_()
 
-    # ═══════════════════════ Country 对话框 ═══════════════════
+    # ═══════════════════════ Country Dialog ═══════════════════
 
     def _on_create_country(self) -> None:
         tag, ok = QInputDialog.getText(self, tr("country_create_btn"), tr("dlg_country_tag_prompt"))
@@ -1012,11 +997,11 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
         color = getattr(self._tool_panel, '_quick_create_color', (100, 100, 200))
         ctrl: CountryController = self._controllers["country"]
         if ctrl.create_country(tag, name, color, party):
-            # 建国后自然是圈地 → 自动开启分配领土模式 (按钮走信号同步 controller)
+            # After the founding of the country, it is natural to enclose territory → automatically turn on the territory allocation mode (button to move signal synchronization controller)
             self._tool_panel.set_country_assign_mode(True)
 
     def _on_country_highlight(self, tag: str) -> None:
-        """切换选中国家时, 把该国 RGB 传给 canvas, country renderer 会高亮该国像素."""
+        """When switching the selected country, pass the country's RGB to the canvas, and the country renderer will highlight the country's pixels."""
         if not tag:
             self._canvas.set_highlight_country(None)
             return
@@ -1027,11 +1012,11 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
         self._canvas.set_highlight_country(tuple(country.color))
 
     def _on_country_property_change(self, tag: str, prop: str, val) -> None:
-        """修改国家属性。可撤销 (Ctrl+Z)。"""
+        """Modify country attributes. Can be undone (Ctrl+Z)."""
         from commands.map.manager_snapshot import ManagerSnapshotCommand
         cm = self._project.country_mgr
         cmd = ManagerSnapshotCommand(
-            tr_pair(f"修改 {tag} {prop}", f"Change {tag} {prop}"), cm,
+            f"Change {tag} {prop}", cm,
             [f for f in ("_countries",) if hasattr(cm, f)],
         )
         self._controllers["country"].change_property(tag, prop, val)
@@ -1041,7 +1026,7 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
         self._cmd_history._notify()
 
     def _on_country_color_change(self, tag: str) -> None:
-        """修改国家颜色。可撤销 (Ctrl+Z)。"""
+        """Change country colors. Can be undone (Ctrl+Z)."""
         from commands.map.manager_snapshot import ManagerSnapshotCommand
         country = self._project.country_mgr.get_country(tag)
         if not country:
@@ -1052,7 +1037,7 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
             return
         cm = self._project.country_mgr
         cmd = ManagerSnapshotCommand(
-            tr_pair(f"修改 {tag} 颜色", f"Change {tag} color"), cm,
+            f"Change {tag} color", cm,
             [f for f in ("_countries",) if hasattr(cm, f)],
         )
         ctrl: CountryController = self._controllers["country"]
@@ -1073,7 +1058,7 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
     def _on_auto_terrain(self) -> None:
         from services.terrain_service import smart_auto_terrain, TerrainGenConfig
         from commands.map.generate_terrain import GenerateTerrainCommand
-        # 防呆: 二次确认 (会覆盖整张 terrain.bmp, 撤销才能恢复)
+        # Fool-proof: Double confirmation (will cover the entire terrain.bmp, and can only be restored by undoing)
         ret = QMessageBox.question(
             self, tr("auto_terrain_confirm_title"),
             tr("auto_terrain_confirm_msg"),
@@ -1084,7 +1069,7 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
         self._status_info.setText(tr("status_auto_terrain"))
         self.repaint()
         map_data = self._project.map_data
-        # 从 terrain page 获取配置 (如果有)
+        # Get configuration from terrain page (if available)
         config = None
         terrain_page = self._tool_panel._terrain_page
         if hasattr(terrain_page, 'get_gen_config'):
@@ -1094,10 +1079,10 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
         )
         cmd = GenerateTerrainCommand(map_data, new_terrain)
         self._cmd_history.execute(cmd)
-        # 不覆盖已有 provincial_terrain, 只填补空缺 (GenerateTerrainCommand 内部处理).
-        # 想全量重算属性 → 地形(属性)模式的「从视觉地形重新同步属性」按钮.
+        # Does not overwrite existing provincial_terrain, only fills gaps (processed internally by GenerateTerrainCommand).
+        # Want to recalculate all attributes → "Resynchronize attributes from visual terrain" button in Terrain (Attribute) mode.
         self._project.mark_dirty()
-        # 自动生成地形 → colormap 要重生
+        # Automatically generate terrain → colormap to regenerate
         self._project.mark_assets_dirty(
             "map/terrain/colormap_rgb_cityemissivemask_a.dds",
         )
@@ -1105,15 +1090,14 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
         self._status_info.setText(tr("status_auto_terrain_done"))
 
     def _on_realistic_height(self) -> None:
-        """一键生成真实感高度图 — 生成器 2 号 (山链/平原/大陆架)。
+        """Generate photorealistic height maps in one click - Generator 2 (Mountain Chains/Plains/Continental Shelves).
 
-        每次点击换随机种子 (不满意再点一次即重洗); 可撤销。
-        """
+        Change the random seed each time you click (if you are not satisfied, click again to re-wash); can be undone."""
         import random
         from domain.generators.heightmap import (
             RealisticHeightmapGenerator, HeightmapParams)
         from commands.map.apply_generator import ApplyGeneratorCommand
-        # 不再二次确认: 入口是选择题对话框, 点卡片即明确意图, 且可撤销
+        # No need to confirm twice: the entrance is a multiple-choice dialog box, click on the card to clarify your intention, and it can be revoked
         self._status_info.setText(tr("status_realistic_height"))
         self.repaint()
         from PyQt5.QtWidgets import QApplication
@@ -1138,15 +1122,14 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
             tr("status_realistic_height_done").format(seed=seed))
 
     def _on_detail_terrain(self, seed: int) -> None:
-        """按气候自动细化地形 — 路线 C 生成器的首个 UI 接入。
+        """Automatic terrain refinement by climate — first UI entry for Route C generator.
 
-        纬度气候带 (丛林/沙漠/森林/雪原) + 海拔叠加 (丘陵/山地/雪线)
-        + 噪声斑块。可撤销; 同种子可复现, 换种子重新生成。
-        """
+        Latitude climate zone (jungle/desert/forest/snowfield) + altitude overlay (hills/mountains/snow line)
+        + Noise patches. Can be revoked; can be reproduced with the same seed, or regenerated by changing the seed."""
         from domain.generators.terrain_detail import (
             TerrainDetailGenerator, TerrainDetailParams)
         from commands.map.generate_terrain import GenerateTerrainCommand
-        # 不再二次确认: 入口是选择题对话框, 点卡片即明确意图, 且可撤销
+        # No need to confirm twice: the entrance is a multiple-choice dialog box, click on the card to clarify your intention, and it can be revoked
         self._status_info.setText(tr("status_detail_terrain"))
         self.repaint()
         from PyQt5.QtWidgets import QApplication
@@ -1162,7 +1145,7 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
         finally:
             QApplication.restoreOverrideCursor()
         self._project.mark_dirty()
-        # 地形变了 → colormap 资产要重生, 预览缓存作废
+        # The terrain has changed → the colormap asset needs to be reborn, and the preview cache is invalidated
         self._project.mark_assets_dirty(
             "map/terrain/colormap_rgb_cityemissivemask_a.dds",
         )
@@ -1172,11 +1155,11 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
         self._status_info.setText(tr("status_detail_terrain_done"))
 
     def _on_beautify_terrain(self, seed: int) -> None:
-        """保形美化地形: 作者画的布局不变, 按原版实测参数上细节。"""
+        """Conformally beautify the terrain: The layout drawn by the author remains unchanged, and the details are based on the original measured parameters."""
         from domain.generators.terrain_beautify import (
             TerrainBeautifyGenerator, TerrainBeautifyParams)
         from commands.map.generate_terrain import GenerateTerrainCommand
-        # 不再二次确认: 入口是选择题对话框, 点卡片即明确意图, 且可撤销
+        # No need to confirm twice: the entrance is a multiple-choice dialog box, click on the card to clarify your intention, and it can be revoked
         self._status_info.setText(tr("status_beautify_terrain"))
         self.repaint()
         from PyQt5.QtWidgets import QApplication
@@ -1201,9 +1184,9 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
         self._status_info.setText(tr("status_beautify_terrain_done"))
 
     def _on_downgrade_mountain(self, mask=None) -> None:
-        """降级山脉 (全图或选区)。mask=None 时全图, 否则只在 mask 内。"""
+        """Degrade mountains (full map or selection). When mask=None, the whole image is used, otherwise only within the mask."""
         from commands.map.downgrade_mountain import DowngradeMountainCommand
-        # 防呆: 全图模式才弹窗 (选区是用户已经画了套索, 意图明确)
+        # Fool-proof: The pop-up window only appears in full-image mode (the selection is where the user has drawn a lasso, and the intention is clear)
         if mask is None:
             ret = QMessageBox.question(
                 self, tr("downgrade_mountain_confirm_title"),
@@ -1220,7 +1203,7 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
         self._canvas.height_map = map_data.height_map
         self._canvas._full_render()
         self._project.mark_dirty()
-        # 降级改了 terrain+height → colormap/fow/world_normal 都要重生
+        # Downgraded and changed terrain+height → colormap/fow/world_normal, all have to be reborn.
         self._project.mark_assets_dirty(
             "map/terrain/colormap_rgb_cityemissivemask_a.dds",
             "map/terrain/fow_rgb_waterspec_a.dds",
@@ -1229,7 +1212,7 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
         self._status_info.setText(tr("status_downgrade_done"))
 
     def _on_downgrade_lasso_mode(self, enabled: bool) -> None:
-        """切换选区降级套索模式。"""
+        """Toggle selection downgrade lasso mode."""
         self._canvas._downgrade_lasso_mode = enabled
         if enabled:
             self._status_info.setText(tr("status_downgrade_lasso_mode"))
@@ -1237,17 +1220,17 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
             self._canvas._refine_lasso_item.setVisible(False)
 
     def _on_terrain_underlay_toggle(self, enabled: bool) -> None:
-        """国家/州模式下的地形底图开关 — 画边界时参考海岸/山脉。"""
+        """Topographic basemap toggle in country/state mode — reference coasts/mountains when drawing borders."""
         self._canvas.set_terrain_underlay_visible(bool(enabled))
 
     def _on_terrain_underlay_opacity(self, value: int) -> None:
-        """滑块 0..100 → 0.0..1.0 不透明度。"""
+        """Slider 0..100 → 0.0..1.0 Opacity."""
         self._canvas.set_terrain_underlay_opacity(value / 100.0)
 
     def _on_terrain_underlay_source(self, source: str) -> None:
-        """切换地形底图源: 'height' (彩色高度图) 或 'terrain' (地形属性 provincial_terrain)."""
+        """Toggle terrain basemap source: 'height' (color heightmap) or 'terrain' (terrain attribute provincial_terrain)."""
         if source == "terrain":
-            # 确保 provincial_terrain RGB 已构建 (用户可能从未进过 province_terrain mode)
+            # Make sure provincial_terrain RGB is built (users may have never entered province_terrain mode)
             if getattr(self._canvas, "_provincial_terrain_color_rgb", None) is None:
                 app_ctrl = self._controllers.get("app")
                 if app_ctrl is not None and hasattr(app_ctrl, "_refresh_provincial_terrain_colors"):
@@ -1255,11 +1238,10 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
         self._canvas.set_terrain_underlay_source(source)
 
     def _on_terrain_context_overlay(self, enabled: bool) -> None:
-        """地形视图下显示/隐藏 国家色 + 州边界 叠加层。
+        """Show/hide the country color + state border overlay in terrain view.
 
-        开启时：缓存 mgrs + 订阅 state_changed/country_changed → 自动重绘（去抖 80ms）。
-        关闭时：取消订阅 + 隐藏。
-        """
+        When enabled: cache mgrs + subscribe to state_changed/country_changed → automatic redraw (debounce 80ms).
+        When closed: unsubscribe + hide."""
         if enabled:
             self._canvas.show_terrain_context_overlay(
                 True,
@@ -1280,7 +1262,7 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
                 bus.unsubscribe("province_map_changed", self._on_terrain_ctx_data_changed)
 
     def _on_terrain_ctx_data_changed(self, _event) -> None:
-        """State/Country 数据变化 → 去抖刷新 overlay (避免拖拽批量修改时卡顿)。"""
+        """State/Country data changes → debounce refresh overlay (to avoid lags during drag-and-drop batch modification)."""
         from PyQt5.QtCore import QTimer
         timer = getattr(self, "_terrain_ctx_refresh_timer", None)
         if timer is None:
@@ -1292,9 +1274,9 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
         timer.start()
 
     def _refresh_terrain_ctx_overlay_now(self) -> None:
-        """实际执行 overlay 刷新（被 QTimer 触发）。"""
+        """Actual execution of overlay refresh (triggered by QTimer)."""
         if getattr(self._canvas, "_terrain_context_visible", False):
-            # 项目可能已重新加载，重新缓存 mgrs
+            # Project may have been reloaded, recaching mgrs
             self._canvas.show_terrain_context_overlay(
                 True,
                 country_mgr=self._project.country_mgr,
@@ -1302,7 +1284,7 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
             )
 
     def _on_downgrade_lasso_drawn(self, points: list) -> None:
-        """套索画完 → 多边形转 mask → 调 _on_downgrade_mountain(mask)。"""
+        """The lasso is drawn → polygon to mask → adjust _on_downgrade_mountain(mask)."""
         from PyQt5.QtWidgets import QMessageBox
         map_data = self._project.map_data
         h, w = map_data.terrain_map.shape
@@ -1318,10 +1300,10 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
         self._tool_panel._terrain_page.reset_downgrade_lasso_button()
 
     def _on_auto_height(self) -> None:
-        """自动生成高度图（覆盖整图）。可撤销 (Ctrl+Z)。"""
+        """Automatically generate a height map (covering the entire image). Can be undone (Ctrl+Z)."""
         from services.terrain_service import smart_auto_height
         from commands.land.brush_stroke import BrushStrokeCommand
-        # 防呆: 二次确认 (覆盖整张高度图)
+        # Fool-proof: double confirmation (covering the entire height map)
         ret = QMessageBox.question(
             self, tr("auto_height_confirm_title"),
             tr("auto_height_confirm_msg"),
@@ -1337,26 +1319,26 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
             config = height_page.get_height_config()
         map_data = self._project.map_data
 
-        # 撤销快照：操作前
+        # Undo Snapshot: Before Operation
         snap_arrays = {"height_map": map_data.height_map}
         before = BrushStrokeCommand.snapshot_arrays(snap_arrays)
 
         new_height = smart_auto_height(map_data.tile_map, config)
-        # 同时更新 map_data 和 canvas (两边共享同一个数组)
+        # Update map_data and canvas simultaneously (both sides share the same array)
         map_data.height_map[:] = new_height
         self._canvas.height_map = map_data.height_map
 
-        # 撤销快照：操作后 + 入栈
+        # Undo snapshot: after operation + push to stack
         if BrushStrokeCommand.has_changes(before, snap_arrays):
             after = BrushStrokeCommand.snapshot_arrays(snap_arrays)
-            cmd = BrushStrokeCommand(tr_pair("自动生成高度图", "Automatically generate heightmap"), before, after)
+            cmd = BrushStrokeCommand("Automatically generate heightmap", before, after)
             cmd.set_target_arrays(self._app._get_all_arrays())
             self._cmd_history._undo_stack.append(cmd)
             self._cmd_history._redo_stack.clear()
             self._cmd_history._notify()
 
         self._project.mark_dirty()
-        # 自动生成高度 → world_normal / colormap / fow 要重生
+        # Automatically generate height → world_normal/colormap/fow to respawn
         self._project.mark_assets_dirty(
             "map/world_normal.bmp",
             "map/terrain/colormap_rgb_cityemissivemask_a.dds",
@@ -1365,8 +1347,8 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
         self._status_info.setText(tr("status_auto_height_done"))
 
     def _on_height_from_terrain(self) -> None:
-        """从 terrain 反推 height_map (覆盖现有). 优先用省份属性 (provincial_terrain),
-        fallback 到像素装饰 (terrain_map). HOI4 实际游戏用省份属性."""
+        """Invert height_map from terrain (overwrite existing). Prioritize province attributes (provincial_terrain),
+        fallback to pixel decoration (terrain_map). HOI4 actual game province attributes."""
         from services.terrain_service import auto_height_from_terrain
         map_data = self._project.map_data
         has_prov_terrain = bool(map_data.provincial_terrain)
@@ -1405,42 +1387,42 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
         )
         self._status_info.setText(tr("status_height_smoothed"))
 
-    # ── 山脉画线 ──
+    # ── Mountain line drawing ──
 
     def _on_ridge_mode(self, enabled: bool) -> None:
-        """切换山脉画线模式 — 同步到 canvas。"""
+        """Toggle mountain line drawing mode — sync to canvas."""
         self._ridge_mode = enabled
         self._canvas._ridge_mode = enabled
         if enabled:
             self._status_info.setText(tr("status_ridge_mode_on"))
         else:
-            # 退出模式时取消预览
+            # Cancel preview when exiting mode
             if hasattr(self, '_ridge_backup'):
                 self._on_ridge_cancel()
             self._status_info.setText(tr("status_ridge_mode_off"))
 
     def _on_ridge_drawn(self, points: list) -> None:
-        """canvas 画线完成 → 进入预览模式（不立即应用）。"""
+        """Canvas line drawing is completed → enter preview mode (not applied immediately)."""
         if len(points) < 2:
             return
-        # 间隔采样
+        # interval sampling
         if len(points) > 100:
             step = len(points) // 100
             points = points[::step] + [points[-1]]
 
-        # 保存原始高度图 + 画线路径
+        # Save original heightmap + line drawing path
         self._ridge_backup = self._project.map_data.height_map.copy()
         self._ridge_points = points
 
-        # 显示确认/取消按钮
+        # Show confirm/cancel button
         self._tool_panel._height_page.show_ridge_confirm()
 
-        # 立即生成预览
+        # Generate preview now
         self._apply_ridge_preview()
         self._status_info.setText(tr("status_ridge_preview"))
 
     def _apply_ridge_preview(self) -> None:
-        """用当前参数生成山脉预览（不修改 backup）。"""
+        """Generate a mountain preview using current parameters (without modifying backup)."""
         if not hasattr(self, '_ridge_backup') or self._ridge_backup is None:
             return
         from services.terrain_service import apply_mountain_ridge
@@ -1457,21 +1439,21 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
         self._canvas._full_render()
 
     def _on_ridge_preview(self) -> None:
-        """滑块变化 → 刷新预览。"""
+        """Slider changes → Refresh preview."""
         self._apply_ridge_preview()
 
     def _on_ridge_confirm(self) -> None:
-        """确认山脉 → 应用到高度图，清理预览状态。"""
+        """Confirm mountains → Apply to heightmap, clean up preview state."""
         self._ridge_backup = None
         self._ridge_points = None
         self._tool_panel._height_page.hide_ridge_confirm()
-        # 线已经画在 canvas 上，隐藏它
+        # The line has been drawn on the canvas, hide it
         self._canvas._split_line_item.setVisible(False)
         self._project.mark_dirty()
         self._status_info.setText(tr("status_ridge_applied"))
 
     def _on_ridge_cancel(self) -> None:
-        """取消山脉 → 恢复原始高度图。"""
+        """Undo Mountains → Restore original heightmap."""
         if hasattr(self, '_ridge_backup') and self._ridge_backup is not None:
             self._project.map_data.height_map[:] = self._ridge_backup
             self._canvas.height_map = self._project.map_data.height_map
@@ -1482,15 +1464,14 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
         self._canvas._split_line_item.setVisible(False)
         self._status_info.setText(tr("status_ridge_mode_on"))
 
-    # ── 保形精修（整图） ──
+    # ── Conformal finishing (whole picture) ──
 
     def _on_refine_whole_map(self) -> None:
-        """保形精修整张高度图: 你画的布局(哪高哪低)不变, 全图叠加质感。
+        """Conformally trim the height map: the layout you drew (which is higher and which is lower) remains unchanged, and the texture is superimposed on the entire image.
 
-        mask = 全图: 陆地走保形精修, 海底则无条件重建为大陆架坡度
-        (海底不是创作内容, 混乱遗留数据由算法接管)。
-        对话框里勾"从零重新生成"则变成全图重做 (等价一键生成)。
-        """
+        mask = full map: the land is conformally refined, and the seafloor is unconditionally reconstructed as the continental shelf slope.
+        (The seabed is not the creative content, the chaotic legacy data is taken over by algorithms).
+        Check "Regenerate from scratch" in the dialog box to redo the entire image (equivalent to one-click generation)."""
         import numpy as np
         from data.constants import TILE_LAND
         map_data = self._project.map_data
@@ -1502,13 +1483,13 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
         self._run_refine_dialog(mask)
 
     def _run_refine_dialog(self, mask) -> None:
-        """打开精修参数对话框并执行 (局部套索 / 全图共用)。"""
+        """Open the Refinement Parameters dialog box and execute (local lasso / common to the entire image)."""
         import numpy as np
         from features.map.height.refine_dialog import RefineDialog
         from commands.map.refine_height_region import RefineHeightRegionCommand
 
         map_data = self._project.map_data
-        # 备份原图供对话框预览使用
+        # Back up the original image for dialog preview use
         original = map_data.height_map.copy()
 
         dlg = RefineDialog(
@@ -1517,7 +1498,7 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
             mask=mask,
             tile_map=map_data.tile_map,
         )
-        # 预览：实时把 new_height 灌回 canvas
+        # Preview: Fill new_height back to canvas in real time
         def _update_preview(new_hm: np.ndarray) -> None:
             map_data.height_map[:] = new_hm
             self._canvas.height_map = map_data.height_map
@@ -1526,7 +1507,7 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
 
         accepted = dlg.exec_() == dlg.DialogCode.Accepted
 
-        # 对话框结束后先恢复原图（一致起点），再按需 push command
+        # After the dialog box ends, restore the original image (consistent starting point), and then push command as needed
         map_data.height_map[:] = original
         self._canvas.height_map = map_data.height_map
 
@@ -1559,13 +1540,13 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
             ctrl.toggle_pick(False)
 
     def _on_continent_add(self, name: str) -> None:
-        """添加大洲。可撤销 (Ctrl+Z)。"""
+        """Add continents. Can be undone (Ctrl+Z)."""
         from controllers.continent import ContinentController
         from commands.map.manager_snapshot import ManagerSnapshotCommand
         ctrl: ContinentController = self._controllers["continent"]
         cm = self._project.continent_mgr
         cmd = ManagerSnapshotCommand(
-            tr_pair("添加大洲", "Add continent"), cm,
+            "Add continent", cm,
             [f for f in ("_names", "_province_continent") if hasattr(cm, f)],
         )
         if ctrl.add_continent(name):
@@ -1578,13 +1559,13 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
             QMessageBox.warning(self, tr("dlg_error"), tr("dlg_continent_add_failed"))
 
     def _on_continent_rename(self, index: int, name: str) -> None:
-        """重命名大洲。可撤销 (Ctrl+Z)。"""
+        """Rename continents. Can be undone (Ctrl+Z)."""
         from controllers.continent import ContinentController
         from commands.map.manager_snapshot import ManagerSnapshotCommand
         ctrl: ContinentController = self._controllers["continent"]
         cm = self._project.continent_mgr
         cmd = ManagerSnapshotCommand(
-            tr_pair("重命名大洲", "Rename continent"), cm,
+            "Rename continent", cm,
             [f for f in ("_names",) if hasattr(cm, f)],
         )
         if ctrl.rename_continent(index, name):
@@ -1597,13 +1578,13 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
             QMessageBox.warning(self, tr("dlg_error"), tr("dlg_continent_rename_failed"))
 
     def _on_continent_remove(self, index: int) -> None:
-        """删除大洲。可撤销 (Ctrl+Z)。"""
+        """Delete continent. Can be undone (Ctrl+Z)."""
         from controllers.continent import ContinentController
         from commands.map.manager_snapshot import ManagerSnapshotCommand
         ctrl: ContinentController = self._controllers["continent"]
         cm = self._project.continent_mgr
         cmd = ManagerSnapshotCommand(
-            tr_pair("删除大洲", "Delete continent"), cm,
+            "Delete continent", cm,
             [f for f in ("_names", "_province_continent") if hasattr(cm, f)],
         )
         if ctrl.remove_continent(index):
@@ -1642,7 +1623,7 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
             ctrl.toggle_pick(False)
 
     def _track_sr_op(self, label: str):
-        """工厂方法：为 sr_mgr 当前状态创建 snapshot Command（操作后调 cmd.capture_after()+ push）。"""
+        """Factory method: Create a snapshot Command for the current state of sr_mgr (cmd.capture_after()+ push after the operation)."""
         from commands.map.manager_snapshot import ManagerSnapshotCommand
         sr_mgr = self._project.strategic_region_mgr
         return ManagerSnapshotCommand(
@@ -1651,27 +1632,27 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
         )
 
     def _commit_cmd(self, cmd) -> None:
-        """通用：snapshot 操作 capture_after + push 撤销栈。"""
+        """General: snapshot operation capture_after + push undo stack."""
         cmd.capture_after()
         self._cmd_history._undo_stack.append(cmd)
         self._cmd_history._redo_stack.clear()
         self._cmd_history._notify()
 
     def _on_sr_new(self) -> None:
-        """新建战略区。可撤销 (Ctrl+Z)。"""
-        cmd = self._track_sr_op(tr_pair("新建战略区", "Create strategic region"))
+        """Create a new strategic area. Can be undone (Ctrl+Z)."""
+        cmd = self._track_sr_op("Create strategic region")
         self._controllers["strategic_region"].create_region()
         self._commit_cmd(cmd)
         self._refresh_sr_list()
 
     def _on_sr_delete(self) -> None:
-        """删除战略区。可撤销 (Ctrl+Z)。"""
+        """Delete strategic areas. Can be undone (Ctrl+Z)."""
         lst = self._tool_panel._sr_list
         item = lst.currentItem()
         if item is None:
             return
         rid = int(item.data(Qt.UserRole) or 0)
-        cmd = self._track_sr_op(tr_pair(f"删除战略区 #{rid}", f"Delete strategic region #{rid}"))
+        cmd = self._track_sr_op(f"Delete strategic region #{rid}")
         self._controllers["strategic_region"].delete_region(rid)
         self._commit_cmd(cmd)
         self._refresh_sr_list()
@@ -1690,11 +1671,11 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
         r = self._project.strategic_region_mgr.get(rid)
         if r is None:
             return
-        # 高亮该区域所有省份
+        # Highlight all provinces in the area
         self._controllers["strategic_region"].select_region(rid)
-        # 更新编辑字段
+        # Update edit fields
         self._tool_panel._sr_name_edit.blockSignals(True)
-        # 旧数据 name 可能是 STRATEGICREGION_{id} 形式，显示为空让用户填
+        # The old data name may be in the form of STRATEGICREGION_{id} and is displayed as empty for the user to fill in.
         display_name = r.name if (r.name and r.name != f"STRATEGICREGION_{rid}") else ""
         self._tool_panel._sr_name_edit.setText(display_name)
         self._tool_panel._sr_name_edit.blockSignals(False)
@@ -1714,42 +1695,42 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
         self._tool_panel._sr_prov_count.setText(tr("sr_prov_count").format(len(r.province_ids)))
 
     def _on_sr_name_changed(self, name: str) -> None:
-        """改战略区名称。可撤销 (Ctrl+Z)。"""
+        """Change the name of the strategic area. Can be undone (Ctrl+Z)."""
         rid = self._get_sr_current_rid()
         if rid <= 0:
             return
-        cmd = self._track_sr_op(tr_pair(f"改战略区 #{rid} 名称", f"Change strategic region #{rid} name"))
+        cmd = self._track_sr_op(f"Change strategic region #{rid} name")
         self._controllers["strategic_region"].set_name(rid, name)
         self._commit_cmd(cmd)
         self._refresh_sr_list()
 
     def _on_sr_name_en_changed(self, name_en: str) -> None:
-        """改战略区英文名。可撤销 (Ctrl+Z)。"""
+        """Change the English name of the strategic area. Can be undone (Ctrl+Z)."""
         rid = self._get_sr_current_rid()
         if rid <= 0:
             return
         r = self._project.strategic_region_mgr.get(rid)
         if r is None:
             return
-        cmd = self._track_sr_op(tr_pair(f"改战略区 #{rid} 英文名", f"Change strategic region #{rid} English name"))
+        cmd = self._track_sr_op(f"Change strategic region #{rid} English name")
         r.name_en = name_en
         self._commit_cmd(cmd)
 
     def _on_sr_weather_changed(self, preset: str) -> None:
-        """改战略区天气。可撤销 (Ctrl+Z)。"""
+        """Change the weather in strategic areas. Can be undone (Ctrl+Z)."""
         rid = self._get_sr_current_rid()
         if rid <= 0:
             return
-        cmd = self._track_sr_op(tr_pair(f"改战略区 #{rid} 天气", f"Change strategic region #{rid} weather"))
+        cmd = self._track_sr_op(f"Change strategic region #{rid} weather")
         self._controllers["strategic_region"].set_weather(rid, preset)
         self._commit_cmd(cmd)
 
     def _on_sr_naval_changed(self, naval: str) -> None:
-        """改战略区海军地形。可撤销 (Ctrl+Z)。"""
+        """Change the naval terrain of strategic areas. Can be undone (Ctrl+Z)."""
         rid = self._get_sr_current_rid()
         if rid <= 0:
             return
-        cmd = self._track_sr_op(tr_pair(f"改战略区 #{rid} 海军地形", f"Change strategic region #{rid} naval terrain"))
+        cmd = self._track_sr_op(f"Change strategic region #{rid} naval terrain")
         self._controllers["strategic_region"].set_naval(rid, naval)
         self._commit_cmd(cmd)
 
@@ -1805,7 +1786,7 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
         from features.map.logistics.generation_dialog import LogisticsGenerationDialog
         LogisticsGenerationDialog(self._project, self._controllers["logistics"].history, self).exec_()
 
-    # ═══════════════════════ Logistics 对话框 ═══════════════
+    # ═══════════════════════ Logistics Dialog ═══════════════
 
     _adjacency_dialog = None
     _railway_dialog = None
@@ -1874,7 +1855,7 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
             self._refresh_dm_tree_list()
 
     def _on_dm_tree_reset(self) -> None:
-        # 防呆: 二次确认 (重置 tree 设置)
+        # Fool-proof: double confirmation (reset tree settings)
         ret = QMessageBox.question(
             self, tr("default_map_reset_confirm_title"),
             tr("default_map_reset_confirm_msg"),
@@ -1893,22 +1874,22 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
         for idx in self._project.default_map_settings.tree_palette_indices:
             lst.addItem(QListWidgetItem(str(idx)))
 
-    # ═══════════════════════ 杂项 ═══════════════════════════
+    # ═══════════════════════ Miscellaneous ═══════════════════════════
 
     def _on_toggle_language(self) -> None:
         """Compatibility hook for older callers; the application is English-only."""
         return
 
     def _retranslate_ui(self) -> None:
-        """语言切换后刷新整个界面文字（无需重启）。"""
-        # 窗口标题
+        """Refresh the entire interface text after language switching (no need to restart)."""
+        # window title
         self.setWindowTitle(tr("app_title"))
-        # 重建菜单栏
+        # Rebuild menu bar
         self.menuBar().clear()
         self._init_menu()
-        # 刷新工具面板
+        # Refresh tool panel
         self._tool_panel.retranslateUi()
-        # 刷新欢迎页
+        # Refresh welcome page
         if hasattr(self, '_welcome_page') and self._welcome_page:
             self._welcome_page.retranslateUi()
 
@@ -1920,11 +1901,10 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
 
 
 def _polygon_to_mask(points: list, h: int, w: int):
-    """把 [(y,x), ...] 闭合多边形转成 (h,w) bool mask。
+    """Convert [(y,x), ...] closed polygon to (h,w) bool mask.
 
-    用 matplotlib.path.Path 的 contains_points — 比手写扫描线稳，已在项目
-    requirements.txt 里的 Pillow/NumPy 生态中可用替代。这里用纯 numpy + 射线法。
-    """
+    Use contains_points of matplotlib.path.Path — more stable than handwritten scan lines, already in the project
+    Alternatives are available in the Pillow/NumPy ecosystem in requirements.txt. Pure numpy + ray method is used here."""
     import numpy as np
     if len(points) < 3:
         return np.zeros((h, w), dtype=bool)
@@ -1932,7 +1912,7 @@ def _polygon_to_mask(points: list, h: int, w: int):
     ys = np.array([p[0] for p in points], dtype=np.float32)
     xs = np.array([p[1] for p in points], dtype=np.float32)
 
-    # 包围盒加速
+    # Bounding box acceleration
     y_min = max(0, int(ys.min()) - 1)
     y_max = min(h, int(ys.max()) + 2)
     x_min = max(0, int(xs.min()) - 1)
@@ -1942,21 +1922,21 @@ def _polygon_to_mask(points: list, h: int, w: int):
     if y_max <= y_min or x_max <= x_min:
         return mask
 
-    # 射线法（向右发射），逐行扫描 bbox 内像素
-    # 对多边形每条边 (y0,x0)->(y1,x1)，看当前扫描行 y 是否穿过该边，
-    # 穿过则算交点 x_cross，统计 x_cross < 当前列 x 的次数
-    # 奇数次 → 在多边形内
+    # Ray method (emitting to the right), scanning the pixels in the bbox line by line
+    # For each side of the polygon (y0,x0)->(y1,x1), check whether the current scan line y passes through the side,
+    # If it passes through, the intersection point x_cross is calculated, and the number of times x_cross < current column x is counted
+    # odd number of times → within polygon
     n = len(points)
     for y in range(y_min, y_max):
         x_crossings = []
         for i in range(n):
             y0, x0 = ys[i], xs[i]
             y1, x1 = ys[(i + 1) % n], xs[(i + 1) % n]
-            # 检查这条边是否穿过水平线 y + 0.5
+            # Check if this edge passes through the horizontal line y + 0.5
             y_line = y + 0.5
             if (y0 <= y_line) == (y1 <= y_line):
                 continue
-            # 线性插值 x
+            # Linear interpolation x
             if y1 == y0:
                 continue
             t = (y_line - y0) / (y1 - y0)
@@ -1966,7 +1946,7 @@ def _polygon_to_mask(points: list, h: int, w: int):
             continue
         x_crossings.sort()
         row = mask[y]
-        # 成对填充
+        # Fill in pairs
         for i in range(0, len(x_crossings) - 1, 2):
             xa = max(x_min, int(np.ceil(x_crossings[i])))
             xb = min(x_max, int(np.floor(x_crossings[i + 1])) + 1)

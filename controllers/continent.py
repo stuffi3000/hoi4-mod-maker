@@ -1,7 +1,6 @@
-"""ContinentController — 大陆分区编辑控制器。
+"""ContinentController — Continental partition editing controller.
 
-处理大陆的添加/重命名/删除/省份指派。
-"""
+Handles continent addition/renaming/deletion/province assignment."""
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
@@ -14,43 +13,43 @@ if TYPE_CHECKING:
 
 
 class ContinentController(BaseController):
-    """大陆分区编辑。"""
+    """Mainland Division Editor."""
 
     def __init__(self, project: "Project", command_history: "CommandHistory") -> None:
         super().__init__(project, command_history)
         self.pick_on: bool = False
         self.pick_index: int = -1
         self.assign_by_state: bool = False
-        # 始终监听省份重新生成
+        # Always listen for province regeneration
         self.event_bus.subscribe("province_map_regenerated", self._on_province_regen)
 
     def _on_province_regen(self, event) -> None:
-        """省份全量重新生成 → 清除大陆分配。"""
+        """Provinces are regenerated in full → continent allocation is cleared."""
         if not event.data.get("incremental"):
             self.project.continent_mgr.clear()
 
     def activate(self) -> None:
-        """进入大陆模式。"""
+        """Enter continental mode."""
         self.pick_on = False
         self.pick_index = -1
-        self._emit_status("大陆分区编辑模式", "Continent editing mode")
+        self._emit_status("Continent editing mode")
 
     def deactivate(self) -> None:
-        """离开大陆模式。"""
+        """Leave continental mode."""
         self.pick_on = False
         self.pick_index = -1
 
     def toggle_pick(self, on: bool, index: int = -1) -> None:
-        """开关大陆指派拾取模式。"""
+        """Switch continent assignment pickup mode."""
         self.pick_on = on
         self.pick_index = index if on else -1
         if on and index >= 0:
-            self._emit_status("大洲指派: 点击陆地省份", "Continent assignment: click a land province")
+            self._emit_status("Continent assignment: click a land province")
         else:
-            self._emit_status("大洲指派关闭", "Continent assignment disabled")
+            self._emit_status("Continent assignment disabled")
 
     def on_province_clicked(self, pid: int) -> None:
-        """拾取模式下点击省份指派大陆。支持 State 级别批量分配。"""
+        """Click on a province in pickup mode to assign a continent. Supports state level batch allocation."""
         if not self.pick_on or self.pick_index < 0 or pid <= 0:
             return
 
@@ -61,7 +60,7 @@ class ContinentController(BaseController):
         province_map = map_data.province_map
         tile_map = map_data.tile_map
 
-        # 收集要分配的省份列表
+        # Gather a list of provinces to be allocated
         if self.assign_by_state:
             state_mgr = self.project.state_mgr
             sid = state_mgr.get_state_of_province(pid)
@@ -83,41 +82,38 @@ class ContinentController(BaseController):
 
         if count > 0:
             self.project.mark_dirty()
-            self._emit_status(
-                f"{count} 个省份已指派到大陆 #{self.pick_index + 1}",
-                f"{count} provinces assigned to continent #{self.pick_index + 1}",
-            )
+            self._emit_status(f"{count} provinces assigned to continent #{self.pick_index + 1}")
             self.event_bus.emit("continent_changed", action="assigned")
 
     def add_continent(self, name: str) -> bool:
-        """添加大陆。返回是否成功。"""
+        """Add continent. Return whether successful."""
         try:
             self.project.continent_mgr.add_continent(name)
             self.project.mark_dirty()
             self.event_bus.emit("continent_changed", action="added")
             return True
         except ValueError as e:
-            self._emit_status(f"添加大陆失败: {e}", f"Failed to add continent: {e}")
+            self._emit_status(f"Failed to add continent: {e}")
             return False
 
     def rename_continent(self, index: int, name: str) -> bool:
-        """重命名大陆。"""
+        """Rename the continent."""
         try:
             self.project.continent_mgr.rename_continent(index, name)
             self.project.mark_dirty()
             self.event_bus.emit("continent_changed", action="renamed")
             return True
         except (ValueError, IndexError) as e:
-            self._emit_status(f"重命名失败: {e}", f"Rename failed: {e}")
+            self._emit_status(f"Rename failed: {e}")
             return False
 
     def remove_continent(self, index: int) -> bool:
-        """删除大陆。"""
+        """Delete continent."""
         try:
             self.project.continent_mgr.remove_continent(index)
             self.project.mark_dirty()
             self.event_bus.emit("continent_changed", action="removed")
             return True
         except (ValueError, IndexError) as e:
-            self._emit_status(f"删除失败: {e}", f"Delete failed: {e}")
+            self._emit_status(f"Delete failed: {e}")
             return False

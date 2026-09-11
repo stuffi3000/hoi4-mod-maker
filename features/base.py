@@ -1,19 +1,17 @@
-"""
-Feature 基类 — 一个功能模块的统一接口.
+"""Feature base class — a unified interface for feature modules.
 
-每个 feature (map/land, map/state, content/tech_tree 等) 实现这个接口,
-在 app/container.py 注册. 加新功能 = 建新 feature 目录 + 注册一行, 其他地方零改动.
+Each feature (map/land, map/state, content/tech_tree, etc.) implements this interface,
+Register in app/container.py. Adding new features = creating a new feature directory + registering one line, leaving no changes in other places.
 
-接口约定:
-- id: 全局唯一标识, 例 'map.land' 'content.tech_tree'
-- display_name: 用户可见名
-- category: 'map' 或 'content', 对应顶部模式切换
-- build_page(parent) -> QWidget | None: 侧边栏 tab 内容, 返回 None 表示该功能不在侧边栏暴露
-- build_renderer() -> object | None: canvas 渲染器, 返回 None 表示复用上一个 feature
-- build_tools() -> list[Tool]: 该功能用的 canvas 工具
-- register_menu(menu_bar): 可选, 在菜单栏注册动作
-- on_activate(ctx) / on_deactivate(ctx): 切换到/离开该 feature 时的钩子
-"""
+Interface convention:
+- id: globally unique identifier, for example 'map.land' 'content.tech_tree'
+- display_name: user visible name
+- category: 'map' or 'content', corresponding to top mode switching
+- build_page(parent) -> QWidget | None: Sidebar tab content, returning None means that the function is not exposed in the sidebar
+- build_renderer() -> object | None: canvas renderer, returning None means reusing the previous feature
+- build_tools() -> list[Tool]: canvas tool used by this function
+- register_menu(menu_bar): optional, register actions in the menu bar
+- on_activate(ctx) / on_deactivate(ctx): hook when switching to/leaving this feature"""
 
 from __future__ import annotations
 
@@ -23,51 +21,51 @@ from typing import Protocol
 
 @dataclass
 class FeatureContext:
-    """Feature 能访问的所有应用级对象. 由 container 注入."""
-    # 数据管理器 (domain 层)
+    """All application-level objects accessible by Feature. Injected by container."""
+    # Data manager (domain layer)
     map_data: object = None
     state_mgr: object = None
     country_mgr: object = None
     continent_mgr: object = None
     river_mgr: object = None
     undo_mgr: object = None
-    # UI 根对象 (供 feature 需要时弹对话框/取状态栏)
+    # UI root object (for feature to pop up dialog box/get status bar when needed)
     main_window: object = None
     canvas: object = None
-    # 未来可加: strategic_region_mgr, railway_mgr, command_bus 等
+    # Can be added in the future: strategic_region_mgr, railway_mgr, command_bus, etc.
     extras: dict = field(default_factory=dict)
 
 
 class Feature(Protocol):
-    """Feature 协议 — 每个功能模块必须实现."""
+    """Feature protocol — every feature module must implement it."""
 
     id: str
     display_name: str
     category: str  # 'map' | 'content'
 
     def build_page(self, ctx: FeatureContext):
-        """返回侧边栏 QWidget, 或 None 表示无 UI 面板."""
+        """Returns the sidebar QWidget, or None for no UI panel."""
         ...
 
     def build_renderer(self, ctx: FeatureContext):
-        """返回 canvas Renderer, 或 None 表示复用默认."""
+        """Return canvas Renderer, or None to reuse the default."""
         ...
 
     def build_tools(self, ctx: FeatureContext) -> list:
-        """返回该功能用的画布 Tool 列表."""
+        """Returns the list of canvas Tools used by this function."""
         ...
 
     def on_activate(self, ctx: FeatureContext) -> None:
-        """切换到该 feature 时调用 (刷新 UI, 连信号等)."""
+        """Called when switching to this feature (refreshing UI, connecting signals, etc.)."""
         ...
 
     def on_deactivate(self, ctx: FeatureContext) -> None:
-        """离开该 feature 时调用 (清理临时状态)."""
+        """Called when leaving the feature (cleaning up temporary state)."""
         ...
 
 
 class BaseFeature:
-    """Feature 的默认空实现, 子类按需 override."""
+    """The default empty implementation of Feature, subclasses can override as needed."""
 
     id: str = ""
     display_name: str = ""

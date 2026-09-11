@@ -1,27 +1,25 @@
-"""
-Adjacency Rule 管理器 — 海峡/运河通行规则.
+"""Adjacency Rule Manager — Strait/Canal Adjacency Rules.
 
-参考: 参考/Map modding.txt 行 504-520 + vanilla map/adjacency_rules.txt
+Reference: reference/Map modding.txt lines 504-520 + vanilla map/adjacency_rules.txt
 
-每个 rule 有:
-- name: 字符串 ID, 在 adjacencies.csv 第 9 列引用
-- 4 种关系 × 4 种通行权限:
+Each rule has:
+- name: String ID, referenced in adjacencies.csv column 9
+- 4 types of relationships × 4 types of access rights:
   contested / enemy / friend / neutral × army / navy / submarine / trade
-- required_provinces: 控制者必须同时控制的省份列表 (≥2)
-- icon_province: 海军视图里图标显示的省份 (sea)
-- offset: 图标 3D 偏移 (X Z Y), 默认 0 0 0
+- required_provinces: list of provinces that the controller must control at the same time (≥2)
+- icon_province: The province (sea) displayed by the icon in the naval view
+- offset: icon 3D offset (X Z Y), default 0 0 0
 
-格式示例 (vanilla SUEZ_CANAL):
+Format example (vanilla SUEZ_CANAL):
 adjacency_rule = {
     name = "SUEZ_CANAL"
     contested = { army=no navy=no submarine=no trade=no }
-    enemy     = { army=no navy=no submarine=no trade=no }
-    friend    = { army=yes navy=yes submarine=yes trade=yes }
-    neutral   = { army=yes navy=yes submarine=yes trade=yes }
+    enemy = { army=no navy=no submarine=no trade=no }
+    friend = { army=yes navy=yes submarine=yes trade=yes }
+    neutral = { army=yes navy=yes submarine=yes trade=yes }
     required_provinces = { 12049 1155 4073 9947 }
     icon = 12049
-}
-"""
+}"""
 
 from __future__ import annotations
 
@@ -38,19 +36,19 @@ ALL_RELATIONS: tuple[str, ...] = ("contested", "enemy", "friend", "neutral")
 
 @dataclass
 class AdjacencyRule:
-    """一条 adjacency rule."""
+    """an adjacency rule."""
     name: str
-    # 4 种关系下的 4 种通行权限. dict 嵌 dict, 默认全部 no
+    # 4 kinds of access permissions under 4 kinds of relationships. dict embedded in dict, the default is no
     contested: dict[str, bool] = field(default_factory=lambda: {p: False for p in ALL_PASS_TYPES})
     enemy: dict[str, bool] = field(default_factory=lambda: {p: False for p in ALL_PASS_TYPES})
     friend: dict[str, bool] = field(default_factory=lambda: {p: True for p in ALL_PASS_TYPES})
     neutral: dict[str, bool] = field(default_factory=lambda: {p: True for p in ALL_PASS_TYPES})
-    # 控制条件
+    # control conditions
     required_provinces: list[int] = field(default_factory=list)
-    icon_province: int = -1  # -1 = 不写
+    icon_province: int = -1  # -1 = don’t write
 
     def get_relation(self, relation: str) -> dict[str, bool]:
-        """获取某关系的通行权限 dict."""
+        """Get the access permissions of a relationship dict."""
         return {
             "contested": self.contested,
             "enemy": self.enemy,
@@ -59,7 +57,7 @@ class AdjacencyRule:
         }[relation]
 
     def to_block(self) -> str:
-        """序列化为 adjacency_rules.txt 里的一个 adjacency_rule={...} 块."""
+        """Serialized to an adjacency_rule={...} block in adjacency_rules.txt."""
         lines: list[str] = []
         lines.append("adjacency_rule = {")
         lines.append(f'\tname = "{self.name}"')
@@ -80,7 +78,7 @@ class AdjacencyRule:
 
 
 class AdjacencyRuleManager:
-    """管理所有 adjacency rules. 按 name 去重."""
+    """Manage all adjacency rules. Remove duplicates by name."""
 
     def __init__(self) -> None:
         self._rules: dict[str, AdjacencyRule] = {}
@@ -111,10 +109,10 @@ class AdjacencyRuleManager:
     def clear(self) -> None:
         self._rules = {}
 
-    # ─────────── 数据同步 (compact_with_references) ───────────
+    # ─────────── Data synchronization (compact_with_references) ───────────
 
     def drop_provinces(self, pids: set[int]) -> None:
-        """删除引用了被删省份的 rule (整条丢弃)."""
+        """Delete rules that reference the deleted provinces (discard the entire rule)."""
         to_drop = []
         for name, rule in self._rules.items():
             if rule.icon_province in pids:
@@ -154,7 +152,7 @@ class AdjacencyRuleManager:
             )
         self._rules = new_rules
 
-    # ─────────── 序列化 ───────────
+    # ─────────── Serialization ───────────
 
     def to_dict(self) -> dict:
         return {
@@ -184,7 +182,7 @@ class AdjacencyRuleManager:
                 required_provinces=[int(p) for p in d.get("required_provinces", [])],
                 icon_province=int(d.get("icon_province", -1)),
             )
-            # 补 missing pass types
+            # Complement missing pass types
             for rel in ALL_RELATIONS:
                 rd = rule.get_relation(rel)
                 for p in ALL_PASS_TYPES:

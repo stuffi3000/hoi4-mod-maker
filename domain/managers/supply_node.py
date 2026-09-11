@@ -1,18 +1,16 @@
-"""
-SupplyNode 管理器 — 初始补给节点.
+"""SupplyNode manager — initial supply node.
 
-HOI4 用 map/supply_nodes.txt 定义玩家/AI 的起始 supply node.
-参考: 参考/Map modding.txt 行 528-532
+HOI4 uses map/supply_nodes.txt to define the starting supply node of the player/AI.
+Reference: Reference/Map modding.txt lines 528-532
 
-每行格式 (空格分隔, 无分号):
+Format per line (space separated, no semicolon):
 Level Province
 
-Level 默认上限 1, 很少用其他值.
-示例:
+Level has a default upper limit of 1, other values are rarely used.
+Example:
 1 1234
 
-无效定义 (不存在的省份 / stateless 省份) 会崩.
-"""
+Invalid definitions (non-existent provinces / stateless provinces) will crash."""
 
 from __future__ import annotations
 
@@ -29,26 +27,26 @@ class SupplyNode:
 
 
 class SupplyNodeManager:
-    """管理所有 supply nodes. 按 province_id 去重."""
+    """Manage all supply nodes. Remove duplicates by province_id."""
 
     def __init__(self) -> None:
         self._nodes: dict[int, SupplyNode] = {}
 
     def add(self, province_id: int, level: int = 1) -> None:
-        """添加或更新一个 supply node."""
+        """Add or update a supply node."""
         if level < 1:
             raise ValueError(f"level must be at least 1; received {level}")
         self._nodes[province_id] = SupplyNode(province_id=province_id, level=level)
 
     def remove(self, province_id: int) -> bool:
-        """删除指定省份的 supply node. 返回是否删掉."""
+        """Delete the supply node of the specified province. Returns whether to delete it."""
         if province_id in self._nodes:
             del self._nodes[province_id]
             return True
         return False
 
     def toggle(self, province_id: int, level: int = 1) -> bool:
-        """切换 supply node. 存在则删, 不存在则加. 返回最终状态 (True = 存在)."""
+        """Switch the supply node. If it exists, delete it, if it does not exist, add it. Return the final state (True = exists)."""
         if province_id in self._nodes:
             del self._nodes[province_id]
             return False
@@ -67,7 +65,7 @@ class SupplyNodeManager:
     def clear(self) -> None:
         self._nodes = {}
 
-    # ─────────── 数据同步 ───────────
+    # ─────────── Data synchronization ───────────
 
     def drop_provinces(self, pids: set[int]) -> None:
         for pid in pids:
@@ -81,7 +79,7 @@ class SupplyNodeManager:
                 new_nodes[new_pid] = SupplyNode(province_id=new_pid, level=node.level)
         self._nodes = new_nodes
 
-    # ─────────── 序列化 ───────────
+    # ─────────── Serialization ───────────
 
     def to_dict(self) -> dict:
         return {

@@ -1,17 +1,15 @@
-"""
-Phase 2 字节 diff 测试 — 保证拆 mod_exporter 前后输出完全一致.
+"""Phase 2 byte diff test — ensure that the output before and after mod_exporter is removed is completely consistent.
 
-策略:
-1. 首次运行: 用小测试工程导出 MOD, 记录所有文件的 sha256 到 baseline.json
-2. 后续运行: 再次导出, 比对所有文件哈希, 任一不匹配则测试失败
-3. 重构 mod_exporter 时, 这个测试是安全网
+Strategy:
+1. First run: Use a small test project to export MOD and record the sha256 of all files to baseline.json
+2. Subsequent runs: Export again and compare all file hashes. If any one does not match, the test fails.
+3. This test is a safety net when refactoring mod_exporter
 
-⚠ 已知假失败源: 导出内容里有一部分是从游戏本体抄写清洗的 vanilla 文件
-(如 common/decisions/categories/*)。**Steam 更新游戏后这些文件会变**,
-byte-diff 会在没有任何代码改动的情况下失败。确认失败文件都是 vanilla
-派生内容且游戏目录 mtime 晚于基线时间, 则删除 baseline.json 重建即可
-(2026-06-12 和 2026-07-04 各发生过一次, 排查记录见项目记忆)。
-"""
+⚠ Known sources of false failures: Part of the exported content is vanilla files copied and cleaned from the main game
+(such as common/decisions/categories/*). **These files will change after Steam updates the game**,
+byte-diff will fail without any code changes. Confirm that failed files are all vanilla
+If the content is derived and the mtime of the game directory is later than the baseline time, just delete baseline.json and rebuild.
+(Occurred once each on 2026-06-12 and 2026-07-04, please see project memory for troubleshooting records)."""
 
 import hashlib
 import json
@@ -34,16 +32,16 @@ BASELINE_FILE = Path(__file__).parent.parent / "fixtures" / "export_baseline.jso
 
 
 def _build_tiny_project():
-    """构造一个迷你测试工程: 全陆地 + 2 省份 + 1 state + 1 国家."""
+    """Construct a mini test project: all land + 2 provinces + 1 state + 1 country."""
     tile_map = np.full((MAP_HEIGHT, MAP_WIDTH), TILE_LAND, dtype=np.uint8)
-    # 边框海 (避免 coastal 报错)
+    # Border sea (to avoid coastal errors)
     tile_map[0, :] = TILE_SEA
     tile_map[-1, :] = TILE_SEA
     tile_map[:, 0] = TILE_SEA
     tile_map[:, -1] = TILE_SEA
 
     province_map = np.zeros((MAP_HEIGHT, MAP_WIDTH), dtype=np.int32)
-    # 省 1: 左半陆, 省 2: 右半陆, 省 3: 边框海
+    # Province 1: Left Half of the Land, Province 2: Right Half of the Land, Province 3: Border Sea
     mid = MAP_WIDTH // 2
     province_map[1:-1, 1:mid] = 1
     province_map[1:-1, mid:-1] = 2
@@ -68,7 +66,7 @@ def _build_tiny_project():
 
 
 def _hash_all_files(output_dir: str) -> dict[str, str]:
-    """递归收集 output_dir 下所有文件, 返回 {相对路径: sha256}."""
+    """Recursively collect all files under output_dir and return {relative path: sha256}."""
     result: dict[str, str] = {}
     root = Path(output_dir)
     for path in sorted(root.rglob("*")):
@@ -104,11 +102,10 @@ def _run_export_to_tmp() -> dict[str, str]:
 
 @pytest.mark.slow
 def test_export_byte_diff_matches_baseline():
-    """导出的所有文件哈希必须与 baseline.json 完全一致.
+    """All exported file hashes must match baseline.json exactly.
 
-    第一次运行 (baseline 不存在): 生成 baseline.json, 测试跳过.
-    后续运行: 比对.
-    """
+    First run (baseline does not exist): generate baseline.json, test skipped.
+    Subsequent runs: comparison."""
     current = _run_export_to_tmp()
 
     if not BASELINE_FILE.exists():

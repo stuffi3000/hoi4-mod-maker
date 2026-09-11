@@ -1,12 +1,10 @@
-"""
-国家 feature - 国家 CRUD + 颜色/政党/首都.
-"""
+"""Country feature - Country CRUD + color/party/capital."""
 
 from features.base import BaseFeature
 
 
 class CountryFeature(BaseFeature):
     id = "map.country"
-    display_name = "国家"
+    display_name = "Countries"
     category = "map"
-    # 1.0 已实现, page/renderer 在同目录
+    # 1.0 has been implemented, page/renderer is in the same directory

@@ -1,6 +1,4 @@
-"""
-选区从零重新生成地势测试 — refine_heightmap_region 的 regenerate 分支。
-"""
+"""Regenerate terrain test from scratch — regenerate branch of refine_heightmap_region."""
 
 import numpy as np
 
@@ -24,7 +22,7 @@ def _lasso_mask(h=200, w=300):
 
 
 def test_regenerate_only_touches_mask():
-    """选区外一个像素都不动; 选区内被重做。"""
+    """Not a single pixel outside the selection is moved; inside the selection is redone."""
     tile_map, height_map = _world()
     mask = _lasso_mask()
     out = refine_heightmap_region(
@@ -35,13 +33,13 @@ def test_regenerate_only_touches_mask():
 
 
 def test_regenerate_edges_blend_smoothly():
-    """选区边界无悬崖: 边界内侧一圈与原图差值很小 (羽化衔接)。"""
+    """There is no cliff on the boundary of the selection: the difference between the inner circle of the boundary and the original image is very small (feathering connection)."""
     tile_map, height_map = _world()
     mask = _lasso_mask()
     out = refine_heightmap_region(
         height_map, mask, tile_map, seed=3, regenerate=True)
 
-    # 选区上边界内侧第 1 行: 混合权重接近 0 → 应与原图几乎一致
+    # Row 1 inside the upper boundary of the selection: blending weight close to 0 → should be almost consistent with the original image
     border_row = out[50, 80:220].astype(np.int32)
     original_row = height_map[50, 80:220].astype(np.int32)
     assert int(np.abs(border_row - original_row).max()) <= 3
@@ -58,27 +56,26 @@ def test_regenerate_deterministic_and_seed_varies():
 
 
 def test_sea_floor_rebuilt_unconditionally():
-    """mask 含海洋时海底重建为大陆架坡度 — 即使精修强度为零。
+    """When the mask contains oceans, the seafloor is reconstructed as the continental shelf slope—even though the refinement intensity is zero.
 
-    海底不是创作内容, 混乱遗留数据由算法无条件接管 (用户反馈:
-    "海洋很混乱, 我不可能自己改")。
-    """
+    The seabed is not a creative content, the chaotic legacy data is unconditionally taken over by algorithms (user feedback:
+    "The ocean is a mess and I can't possibly change it myself")."""
     tile_map, height_map = _world()
-    height_map[:, :30] = 93                     # 混乱旧海底: 几乎贴着海平面
+    height_map[:, :30] = 93                     # The chaotic old seabed: almost close to the sea level
     mask = np.ones(tile_map.shape, dtype=bool)
 
     out = refine_heightmap_region(
         height_map, mask, tile_map, strength=0.0,
         enable_ridge=False, enable_erosion=False)
 
-    assert int(out[100, 29]) > int(out[100, 2])          # 近岸浅, 远海深
-    assert int(out[:, :30].max()) < SEA_LEVEL            # 全部压回海平面下
+    assert int(out[100, 29]) > int(out[100, 2])          # Shallow near shore, deep offshore
+    assert int(out[:, :30].max()) < SEA_LEVEL            # Push them all back below sea level
     land = tile_map == TILE_LAND
-    assert np.array_equal(out[land], height_map[land])   # 强度0: 陆地不动
+    assert np.array_equal(out[land], height_map[land])   # Strength 0: The land does not move
 
 
 def test_command_undo_restores_exactly():
-    """走命令路径: 执行改变选区, 撤销逐像素还原。"""
+    """Take the command path: perform change selection, undo pixel-by-pixel restoration."""
     from types import SimpleNamespace
     tile_map, height_map = _world()
     mask = _lasso_mask()

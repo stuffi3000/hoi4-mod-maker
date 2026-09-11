@@ -1,13 +1,11 @@
-"""
-default.map 配置 feature.
+"""default.map configures feature.
 
-控制 HOI4 引擎的地图加载行为. 通过菜单"工具 → 地图配置..." 打开.
-"""
+Controls the map loading behavior of the HOI4 engine. Open via the menu "Tools → Map Configuration..."."""
 
 from features.base import BaseFeature
 
 
 class DefaultMapFeature(BaseFeature):
     id = "map.default_map"
-    display_name = "地图配置"
+    display_name = "Map configuration"
     category = "map"

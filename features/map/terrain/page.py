@@ -1,8 +1,4 @@
-"""terrain feature 页面 — 独立 QWidget, 不依赖 ToolPanel.
-
-按 provincial terrain type 分组显示全部 graphical terrain 变体.
-每个按钮带 atlas0.dds 的真实贴图缩略图，让制作者直观看到游戏里的材质。
-"""
+"""Terrain editor page for selecting graphical terrain variants and brush tools."""
 
 import os
 
@@ -27,7 +23,7 @@ from ui.styles import (
 )
 from ui.i18n import tr
 
-# 从 vanilla atlas0.dds 提取的每个 texture tile 的真实平均色 (RGB)
+# Average RGB colors extracted from each texture tile in the vanilla atlas.
 _ATLAS_COLORS: dict[int, tuple[int, int, int]] = {
     0:  (129, 140, 102),
     1:  (153, 159, 119),
@@ -47,12 +43,12 @@ _ATLAS_COLORS: dict[int, tuple[int, int, int]] = {
     15: (90,   79,  68),
 }
 
-# 分组显示顺序
+# Display terrain groups in a stable order that matches the editor workflow.
 _GROUP_ORDER = ["plains", "forest", "hills", "mountain", "desert", "marsh", "jungle", "urban"]
 
-# 分组中文名
-def _group_cn(key: str) -> str:
-    """获取地形分组的翻译名称."""
+# Localized group labels
+def _group_label(key: str) -> str:
+    """Return the translated label for a terrain group."""
     _TR_MAP = {
         "plains": "terrain_group_plains",
         "forest": "terrain_group_forest",
@@ -66,7 +62,7 @@ def _group_cn(key: str) -> str:
     tr_key = _TR_MAP.get(key)
     return tr(tr_key) if tr_key else key
 
-# atlas 贴图缩略图目录
+# Directory containing the atlas tile thumbnails shown on terrain buttons.
 _TILES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                           "..", "..", "..", "data", "atlas_tiles")
 
@@ -74,16 +70,16 @@ _TILES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)),
 
 
 class TerrainPage(QWidget):
-    """地形编辑页面."""
+    """Present terrain-generation controls and graphical terrain palette buttons."""
 
-    # 输出信号
+    # Signals consumed by the terrain controller and map canvas.
     terrain_index_changed = pyqtSignal(int)
     terrain_brush_mode_changed = pyqtSignal(bool)
     terrain_brush_size_changed = pyqtSignal(int)
     terrain_soft_edge_changed = pyqtSignal(bool)
     auto_terrain_requested = pyqtSignal()
-    detail_terrain_requested = pyqtSignal(int)   # 按气候细化, 参数=种子
-    beautify_terrain_requested = pyqtSignal(int) # 保形美化, 参数=种子
+    detail_terrain_requested = pyqtSignal(int)   # Climate-detail generation seed
+    beautify_terrain_requested = pyqtSignal(int) # Shape-preserving beautification seed
     downgrade_mountain_requested = pyqtSignal()
     downgrade_lasso_mode_toggled = pyqtSignal(bool)
 
@@ -92,7 +88,7 @@ class TerrainPage(QWidget):
         self._init_ui()
 
     def _on_generate_menu(self) -> None:
-        """单一生成入口: 弹出选择题, 按用户情况发射对应的既有信号。"""
+        """Ask which terrain generator to run and emit the selected seed."""
         from ui.option_dialog import OptionChooserDialog
         key = OptionChooserDialog.choose(self, tr("terrain_gen_menu_title"), [
             ("detail", tr("terrain_gen_opt_detail"),
@@ -111,7 +107,7 @@ class TerrainPage(QWidget):
         outer.setContentsMargins(8, 8, 8, 8)
         outer.setSpacing(4)
 
-        # ── 概念隔离 hint（顶部）──
+        # Explain the distinction between provincial and graphical terrain.
         concept_hint = QLabel(tr("terrain_concept_hint"))
         concept_hint.setWordWrap(True)
         concept_hint.setTextFormat(Qt.RichText)
@@ -122,19 +118,19 @@ class TerrainPage(QWidget):
         )
         outer.addWidget(concept_hint)
 
-        # ── 智能生成设置 ──
+        # Smart generation controls share one entry point to keep the panel compact.
         gen_box = _make_section(tr("terrain_section_auto_gen"))
         gl = gen_box.layout()
 
-        # 单一入口: 生成方式收进"说人话的选择题"对话框
-        # (2026-07-04 用户反馈"按钮太多不知道点哪个")
+        # The choice dialog explains which generator is appropriate for each use case.
+        # This avoids exposing several similarly named generation buttons at once.
         gen_menu_btn = QPushButton(tr("terrain_btn_generate_menu"))
         gen_menu_btn.setStyleSheet(_PRIMARY_BTN_STYLE)
         gen_menu_btn.setToolTip(tr("terrain_btn_generate_menu_tooltip"))
         gen_menu_btn.clicked.connect(self._on_generate_menu)
         gl.addWidget(gen_menu_btn)
 
-        # 种子
+        # Random seed controls make generated terrain reproducible when needed.
         seed_row = QHBoxLayout()
         seed_lbl = QLabel(tr("terrain_label_seed"))
         seed_lbl.setStyleSheet(_LABEL_STYLE)
@@ -151,7 +147,7 @@ class TerrainPage(QWidget):
         seed_row.addWidget(rand_btn)
         gl.addLayout(seed_row)
 
-        # 噪声强度
+        # Noise controls the scale of variation in generated terrain.
         noise_row = QHBoxLayout()
         noise_lbl = QLabel(tr("terrain_label_noise"))
         noise_lbl.setStyleSheet(_LABEL_STYLE)
@@ -171,7 +167,7 @@ class TerrainPage(QWidget):
         )
         gl.addWidget(self._noise_slider)
 
-        # 散点密度
+        # Scatter controls how broadly terrain variants are distributed.
         scatter_row = QHBoxLayout()
         scatter_lbl = QLabel(tr("terrain_label_scatter"))
         scatter_lbl.setStyleSheet(_LABEL_STYLE)
@@ -191,7 +187,7 @@ class TerrainPage(QWidget):
         )
         gl.addWidget(self._scatter_slider)
 
-        # 山脉多少（阈值偏移）— 负数少山，正数多山
+        # Offset the mountain threshold to generate fewer or more mountain pixels.
         off_row = QHBoxLayout()
         off_lbl = QLabel(tr("terrain_label_mountain_amount"))
         off_lbl.setStyleSheet(_LABEL_STYLE)
@@ -213,7 +209,7 @@ class TerrainPage(QWidget):
         )
         gl.addWidget(self._mountain_amount_slider)
 
-        # 降级强度滑块 (0-100%, 默认 50%)
+        # Downgrade strength controls how far high terrain is reduced.
         ds_row = QHBoxLayout()
         ds_lbl = QLabel(tr("terrain_label_downgrade_strength"))
         ds_lbl.setStyleSheet(_LABEL_STYLE)
@@ -233,14 +229,14 @@ class TerrainPage(QWidget):
         )
         gl.addWidget(self._downgrade_strength_slider)
 
-        # 一键降级山脉按钮
+        # Apply the downgrade operation to the complete map.
         self._downgrade_btn = QPushButton(tr("terrain_btn_downgrade"))
         self._downgrade_btn.setStyleSheet(_SECONDARY_BTN_STYLE)
         self._downgrade_btn.setToolTip(tr("terrain_btn_downgrade_tip"))
         self._downgrade_btn.clicked.connect(self.downgrade_mountain_requested.emit)
         gl.addWidget(self._downgrade_btn)
 
-        # 选区降级按钮（套索选区）
+        # Apply the downgrade operation only inside a lasso selection.
         self._downgrade_lasso_btn = QPushButton(tr("terrain_btn_downgrade_region"))
         self._downgrade_lasso_btn.setCheckable(True)
         self._downgrade_lasso_btn.setStyleSheet(_SECONDARY_BTN_STYLE)
@@ -250,7 +246,7 @@ class TerrainPage(QWidget):
 
         outer.addWidget(gen_box)
 
-        # ── 编辑模式 ──
+        # Keep province and brush editing modes visually separate.
         mode_box = _make_section(tr("terrain_section_edit_mode"))
         mode_lay = mode_box.layout()
         mode_row = QHBoxLayout()
@@ -275,7 +271,7 @@ class TerrainPage(QWidget):
         mode_lay.addLayout(mode_row)
         outer.addWidget(mode_box)
 
-        # 画笔控件 (画笔模式下可见)
+        # Brush controls are visible only while brush mode is active.
         self._brush_box = _make_section(tr("terrain_section_brush"))
         bl = self._brush_box.layout()
 
@@ -301,21 +297,21 @@ class TerrainPage(QWidget):
         self._soft_edge_cb.toggled.connect(self.terrain_soft_edge_changed.emit)
         bl.addWidget(self._soft_edge_cb)
 
-        self._brush_box.hide()  # 默认省份模式，隐藏画笔设置
+        self._brush_box.hide()  # Province mode is the default.
         outer.addWidget(self._brush_box)
 
-        # ── 搜索框（过滤地形按钮）──
+        # Search filters the terrain palette without changing the selected terrain.
         self._search_input = QLineEdit()
         self._search_input.setPlaceholderText(tr("terrain_search_placeholder"))
         self._search_input.setStyleSheet(_LINEEDIT_STYLE)
         self._search_input.textChanged.connect(self._on_search_changed)
         outer.addWidget(self._search_input)
 
-        # 用于过滤的引用
+        # Keep button references so search can hide empty groups as well as buttons.
         self._terrain_btn_entries: list[tuple[QPushButton, str]] = []
         self._terrain_group_entries: list[tuple[QGroupBox, list[tuple[QPushButton, str]]]] = []
 
-        # 可滚动区域
+        # The palette is scrollable because terrain variants can exceed the panel height.
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setStyleSheet("QScrollArea { border: none; }")
@@ -329,10 +325,10 @@ class TerrainPage(QWidget):
             if not variants:
                 continue
 
-            group_name = _group_cn(group_type)
+            group_name = _group_label(group_type)
             box = _make_section(f"{group_name} ({len(variants)})")
             group_btn_list: list[tuple[QPushButton, str]] = []
-            # 加粗分组边框
+            # Emphasize each terrain group with a heavier section border.
             box.setStyleSheet(box.styleSheet() + """
                 QGroupBox {
                     border: 2px solid #555;
@@ -348,7 +344,7 @@ class TerrainPage(QWidget):
                     f"{tr('terrain_tip_type')}: {gt.type}  ID: {gt.id}"
                 )
 
-                # 加载 atlas 贴图缩略图作为图标 (带黑框)
+                # Use the atlas tile as the button icon when a thumbnail is available.
                 tile_path = os.path.normpath(
                     os.path.join(_TILES_DIR, f"texture_{gt.texture}.png")
                 )
@@ -361,7 +357,7 @@ class TerrainPage(QWidget):
                     btn.setIcon(QIcon(pix))
                     btn.setIconSize(QSize(40, 40))
 
-                # 用 atlas 贴图的真实平均色做背景
+                # Match each button background to the average color of its atlas tile.
                 r, g, b = _ATLAS_COLORS.get(gt.texture, (128, 128, 128))
                 if gt.perm_snow:
                     r = min(255, r + 50)
@@ -389,7 +385,7 @@ class TerrainPage(QWidget):
                     lambda _, idx=gt.palette_index: self.terrain_index_changed.emit(idx)
                 )
                 grid.addWidget(btn, i, 0)
-                # 记录按钮 + 可搜索文本（display name + 内部 id + 类型 + 分组名）
+                # Search display name, internal ID, type, and group label together.
                 search_text = " ".join([
                     graphical_terrain_display_name(gt) or "",
                     gt.id or "",
@@ -408,7 +404,7 @@ class TerrainPage(QWidget):
         scroll.setWidget(scroll_content)
         outer.addWidget(scroll)
 
-    # ── 槽函数 ──
+    # Slots below synchronize the palette controls with the map editing mode.
 
     def _on_mode_switched(self, mode_id: int) -> None:
         is_brush = mode_id == 1
@@ -416,7 +412,7 @@ class TerrainPage(QWidget):
         self._brush_box.setVisible(is_brush)
 
     def _on_search_changed(self, text: str) -> None:
-        """按输入文本过滤地形按钮 + 空组自动隐藏。"""
+        """Filter terrain buttons and hide groups that have no matching variants."""
         q = text.strip().lower()
         for box, btns in self._terrain_group_entries:
             any_visible = False
@@ -436,18 +432,18 @@ class TerrainPage(QWidget):
         self._seed_spin.setValue(random.randint(0, 99999))
 
     def reset_downgrade_lasso_button(self) -> None:
-        """套索画完后外部调这个取消勾选。"""
+        """Clear the lasso button after the controller completes a selection."""
         if self._downgrade_lasso_btn.isChecked():
             self._downgrade_lasso_btn.blockSignals(True)
             self._downgrade_lasso_btn.setChecked(False)
             self._downgrade_lasso_btn.blockSignals(False)
 
     def get_downgrade_strength(self) -> float:
-        """返回当前降级强度 (0.0..1.0)。"""
+        """Return the configured mountain-downgrade strength as a 0.0-1.0 value."""
         return self._downgrade_strength_slider.value() / 100.0
 
     def get_gen_config(self):
-        """返回当前 UI 参数构建的 TerrainGenConfig。"""
+        """Build a terrain-generation configuration from the current controls."""
         from services.terrain_service import TerrainGenConfig
         return TerrainGenConfig(
             noise_amplitude=float(self._noise_slider.value()),

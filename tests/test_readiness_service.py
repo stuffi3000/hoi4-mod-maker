@@ -1,8 +1,6 @@
-"""
-readiness_service 测试 — 完成度检查的业务规则。
+"""readiness_service test — Business rules for readiness checks.
 
-这套标准被导出预检和制作进度面板 (M2) 共用, 行为变化会同时影响两处。
-"""
+This set of standards is shared by the export preflight and production progress panels (M2), and behavioral changes will affect both at the same time."""
 
 from types import SimpleNamespace
 
@@ -18,12 +16,12 @@ from data.constants import TILE_LAND, TILE_SEA
 
 
 def _map_source(h=8, w=16):
-    """最小地图数据源: 上半海下半陆, 两个省份。"""
+    """Minimum map data source: upper half of the sea, lower half of the land, two provinces."""
     tile_map = np.full((h, w), TILE_SEA, dtype=np.uint8)
     tile_map[h // 2:, :] = TILE_LAND
     province_map = np.zeros((h, w), dtype=np.int32)
-    province_map[:h // 2, :] = 1                   # 海省份
-    province_map[h // 2:, :] = 2                   # 陆省份
+    province_map[:h // 2, :] = 1                   # maritime provinces
+    province_map[h // 2:, :] = 2                   # mainland provinces
     terrain_map = np.ones((h, w), dtype=np.uint8)
     height_map = np.full((h, w), 90, dtype=np.uint8)
     height_map[h // 2:, :] = 120
@@ -63,7 +61,7 @@ def _by_status(items: list[CheckItem]) -> dict[str, int]:
 
 
 def test_empty_map_short_circuits():
-    """没有省份: 只报一条 missing, 不做后续检查。"""
+    """There is no province: only one missing is reported, and no follow-up checks are performed."""
     src = _map_source()
     src.province_map[:] = 0
     items = check_project_readiness(_project(), src)
@@ -72,14 +70,14 @@ def test_empty_map_short_circuits():
 
 
 def test_complete_project_all_ok():
-    """齐备项目: 没有 missing 项。"""
+    """Complete items: There are no missing items."""
     items = check_project_readiness(_project(), _map_source())
     statuses = _by_status(items)
     assert statuses.get("missing", 0) == 0
 
 
 def test_missing_state_and_country_flagged_auto_fixable():
-    """缺 State/国家: 报 missing 且标记可自动补全。"""
+    """Missing State/Country: Report missing and the mark can be automatically completed."""
     items = check_project_readiness(
         _project(with_state=False, with_country=False), _map_source())
     missing = [i for i in items if i.status == "missing"]
@@ -88,16 +86,16 @@ def test_missing_state_and_country_flagged_auto_fixable():
 
 
 def test_id_gap_reported_as_warning():
-    """省份编号空洞: warning (导出会自动压实, 不阻断)。"""
+    """Province number hole: warning (export will be automatically compacted and not blocked)."""
     src = _map_source()
-    src.province_map[src.province_map == 2] = 9   # 造出 2-8 的空洞
+    src.province_map[src.province_map == 2] = 9   # Creates 2-8 holes
     proj = _project(with_state=False, with_country=False)
     items = check_project_readiness(proj, src)
     assert items[0].status == "warning"
 
 
 def test_accepts_mapdata_as_source():
-    """MapData 对象直接可用 (面板侧不必经过画布)。"""
+    """MapData objects are available directly (the panel side does not have to go through the canvas)."""
     import data.constants as constants
     from data.constants import set_map_size
     from domain.map_data import MapData

@@ -1,7 +1,6 @@
-"""从用户保存的 .hoi4proj 加载地图，补全缺失内容，导出可玩 MOD。
+"""Load the map from the .hoi4proj saved by the user, complete the missing content, and export the playable MOD.
 
-用法: python gen_from_project.py <项目路径>
-"""
+Usage: python gen_from_project.py <project path>"""
 import os
 import sys
 import json
@@ -20,14 +19,14 @@ from domain.managers.state import StateManager
 from domain.managers.country import CountryManager
 from export.mod_exporter import export_full_mod
 
-# ─── 配置 ───
+# ─── Configuration ───
 PROJECT_PATH = sys.argv[1] if len(sys.argv) > 1 else \
-    "C:/Users/Administrator.SKY-20180310BMB/Desktop/欧若拉/1.hoi4proj"
+    "C:/Users/Administrator.SKY-20180310BMB/Desktop/Aurora/1.hoi4proj"
 MOD_DIR = "D:/Documents/Paradox Interactive/Hearts of Iron IV/mod/WorldTest"
 MOD_NAME = "WorldTest"
 
-# ─── 1. 加载项目 ───
-print(f"加载项目: {PROJECT_PATH}")
+# ─── 1. Load project ───
+print(f"Loading project: {PROJECT_PATH}")
 with zipfile.ZipFile(PROJECT_PATH) as z:
     tile_map = np.load(z.open('tile_map.npy'))
     province_map = np.load(z.open('province_map.npy'))
@@ -41,13 +40,13 @@ H, W = tile_map.shape
 pcount = int(province_map.max())
 land_pixels = int(np.sum(tile_map == TILE_LAND))
 sea_pixels = int(np.sum(tile_map == TILE_SEA))
-print(f"地图: {W}x{H}, 省份: {pcount}, 陆地: {land_pixels:,}, 海洋: {sea_pixels:,}")
+print(f"Map: {W}x{H}, provinces: {pcount}, land: {land_pixels:,}, sea: {sea_pixels:,}")
 
-# ─── 2. 自动生成地形（如果全是默认） ───
+# ─── 2. Automatically generate terrain (if all are default) ───
 unique_terrain = np.unique(terrain_map)
-print(f"地形索引: {unique_terrain.tolist()}")
+print(f"Terrain indices: {unique_terrain.tolist()}")
 
-# 修正：陆地上不应该有 ocean 地形，改为 plains
+# Correction: There should be no ocean terrain on land, change it to plains
 land_mask = tile_map == TILE_LAND
 ocean_idx = TERRAIN_PALETTE_INDEX["ocean"]  # 15
 plains_idx = TERRAIN_PALETTE_INDEX["plains"]  # 0
@@ -55,69 +54,69 @@ bad_terrain = land_mask & (terrain_map == ocean_idx)
 bad_count = int(np.sum(bad_terrain))
 if bad_count > 0:
     terrain_map[bad_terrain] = plains_idx
-    print(f"修正: {bad_count:,} 个陆地像素的地形从 ocean 改为 plains")
+    print(f"Fixed: changed {bad_count:,} land pixels from ocean terrain to plains")
 
-# 修正：海洋上不应该有陆地地形
+# Fixed: There should not be land terrain on the ocean
 sea_mask = tile_map == TILE_SEA
 sea_bad = sea_mask & (terrain_map != ocean_idx)
 sea_bad_count = int(np.sum(sea_bad))
 if sea_bad_count > 0:
     terrain_map[sea_bad] = ocean_idx
-    print(f"修正: {sea_bad_count:,} 个海洋像素的地形改为 ocean")
+    print(f"Fixed: changed {sea_bad_count:,} sea pixels to ocean terrain")
 
-# ─── 3. 自动生成高度图（如果全是默认） ───
+# ─── 3. Automatically generate height maps (if all are default) ───
 land_mask = tile_map == TILE_LAND
 if np.all(height_map[land_mask] == height_map[land_mask][0] if land_mask.any() else True):
-    print("高度未调整，自动生成...")
+    print("Heightmap is flat; generating it automatically...")
     from services.terrain_service import auto_height
     height_map = auto_height(tile_map)
 else:
-    print("高度已调整")
+    print("Heightmap already contains terrain variation")
 
-# ─── 4. State 管理器 ───
+# ─── 4. State Manager ───
 state_mgr = StateManager()
 if states_data.get('states'):
     state_mgr.from_dict(states_data)
-    print(f"已有 State: {len(state_mgr.states)}")
+    print(f"Existing states: {len(state_mgr.states)}")
 else:
-    print("没有 State，自动生成...")
+    print("No states found; generating them automatically...")
     state_mgr.auto_split(province_map, tile_map, per_state=20)
-    print(f"自动生成 State: {len(state_mgr.states)}")
+    print(f"Generated states: {len(state_mgr.states)}")
 
-# ─── 5. 国家 ───
+# ─── 5. Country ───
 country_mgr = CountryManager()
 has_countries = bool(countries_data.get('countries', {}).get('countries'))
 if has_countries:
     country_mgr.from_dict(countries_data)
-    print(f"已有国家: {list(country_mgr.countries.keys())}")
+    print(f"Existing countries: {list(country_mgr.countries.keys())}")
 else:
-    print("没有国家，自动创建测试国家...")
-    # 创建一个测试国家拥有所有陆地
+    print("No countries found; creating a test country...")
+    # Create a test country that owns all landmasses
     c = country_mgr.create_country("AAA", "Aurora", (60, 130, 220))
     c.ruling_party = "democratic"
     c.popularities = {"democratic": 60, "fascism": 10, "communism": 10, "neutrality": 20}
 
-    # 所有 state 归 AAA
+    # All states belong to AAA
     for sid in state_mgr.states:
         country_mgr.assign_state(sid, "AAA")
         state = state_mgr.get_state(sid)
         if state:
             state.owner_tag = "AAA"
 
-    # 设首都
+    # Set up capital
     first_state = state_mgr.get_state(1)
     if first_state and first_state.provinces:
         c.capital = first_state.provinces[0]
 
-    print(f"创建国家 AAA, {len(state_mgr.states)} states")
+    print(f"Created country AAA with {len(state_mgr.states)} states")
 
-# ─── 6. 清理旧 MOD ───
+# ─── 6. Clean up old MODs ───
 if os.path.exists(MOD_DIR):
     shutil.rmtree(MOD_DIR)
 os.makedirs(MOD_DIR, exist_ok=True)
 
-# ─── 7. 导出 ───
-print(f"\n导出到: {MOD_DIR}")
+# ─── 7. Export ───
+print(f"\nExporting to: {MOD_DIR}")
 export_full_mod(
     tile_map=tile_map,
     province_map=province_map,
@@ -131,5 +130,5 @@ export_full_mod(
 )
 
 file_count = sum(len(files) for _, _, files in os.walk(MOD_DIR))
-print(f"\n[OK] {MOD_NAME} 导出完成: {file_count} 个文件")
-print("可以进游戏测试了！")
+print(f"\n[OK] Exported {MOD_NAME}: {file_count} files")
+print("The mod is ready for in-game testing.")

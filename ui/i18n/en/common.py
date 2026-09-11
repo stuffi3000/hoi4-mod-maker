@@ -1,8 +1,4 @@
-"""
-common — en 翻译
-
-本文件由 tools/migrate_i18n.py 生成。后续手动维护。
-"""
+"""Shared English labels, units, and generic validation messages."""
 
 STRINGS: dict[str, str] = {
     "btn_apply": "Apply",

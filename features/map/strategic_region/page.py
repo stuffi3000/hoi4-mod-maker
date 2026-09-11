@@ -1,8 +1,7 @@
-"""战略区域 page — 独立 QWidget, 不依赖 ToolPanel.
+"""Strategic area page — independent QWidget, does not depend on ToolPanel.
 
-功能: region 列表 + 自动生成 + 编辑 (名字/weather/naval_terrain).
-选中列表中的区域后，直接点击地图省份即可分配。
-"""
+Function: region list + automatic generation + editing (name/weather/naval_terrain).
+After selecting the area in the list, click directly on the map province to assign it."""
 
 from PyQt5.QtCore import pyqtSignal
 from PyQt5.QtWidgets import (
@@ -22,9 +21,9 @@ from ui.styles import (
 
 
 class StrategicRegionPage(QWidget):
-    """战略区域页面."""
+    """Strategic Areas Page."""
 
-    # 输出信号
+    # Output signal
     strategic_region_auto_requested = pyqtSignal()
     auto_weather_requested = pyqtSignal()
     strategic_region_selected = pyqtSignal(int)
@@ -53,7 +52,7 @@ class StrategicRegionPage(QWidget):
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(6)
 
-        # ── 快速开始 ──
+        # ──Quick start──
         quick_box = _make_section(tr("sr_quick_section"))
         ql = quick_box.layout()
         auto_btn = QPushButton(tr("sr_auto_btn"))
@@ -66,7 +65,7 @@ class StrategicRegionPage(QWidget):
         ql.addWidget(auto_weather_btn)
         lay.addWidget(quick_box)
 
-        # ── 手动编辑 ──
+        # ── Manual editing ──
         edit_box = _make_section(tr("sr_edit_section"))
         el = edit_box.layout()
         self._assign_chk = QCheckBox(tr("sr_assign_drag_label"))
@@ -97,7 +96,7 @@ class StrategicRegionPage(QWidget):
         el.addLayout(from_row)
         lay.addWidget(edit_box)
 
-        # ── 区域列表 ──
+        # ── Area list ──
         list_box = _make_section(tr("sr_list_section"))
         ll = list_box.layout()
         self._sr_list = QListWidget()
@@ -119,7 +118,7 @@ class StrategicRegionPage(QWidget):
         ll.addLayout(btn_row)
         lay.addWidget(list_box)
 
-        # ── 选中区域属性 ──
+        # ──Selected area attributes──
         prop_box = _make_section(tr("sr_props_section"))
         pl = prop_box.layout()
 
@@ -195,7 +194,7 @@ class StrategicRegionPage(QWidget):
         pl.addWidget(self._sr_prov_count)
         lay.addWidget(prop_box)
 
-        # 保留 pick 按钮引用（兼容 main_window_actions 对 _sr_pick_btn 的访问）
+        # Keep pick button reference (compatible with main_window_actions access to _sr_pick_btn)
         self._sr_pick_btn = QPushButton()
         self._sr_pick_btn.setVisible(False)
 

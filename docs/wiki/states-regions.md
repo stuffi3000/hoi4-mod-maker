@@ -1,65 +1,62 @@
-# HOI4 State 规则
+# HOI4 states and strategic regions
 
-> 编译自 Paradox Wiki "State modding" 页面
+States are the main territorial unit used by HOI4 history files. Strategic regions group provinces for weather, air operations, naval operations, and other map systems. The two layers must agree with the province raster.
 
-## State 文件格式
+## State history
 
-路径: `/history/states/*.txt`
+State files live in `history/states/*.txt` and use a structure like this:
 
-```
+```pdx
 state = {
-    id = 123                    # 必须, 整数, 从1开始连续
-    name = STATE_123            # 必须, 本地化key
-    manpower = 500000           # 必须, 总人口
-    state_category = large_town # 必须, 决定建筑槽位
-    provinces = { 123 456 789 } # 必须, 省份列表(空格分隔)
+    id = 123
+    name = STATE_123
+    manpower = 500000
+    state_category = town
+    provinces = { 123 456 789 }
 
-    impassable = yes            # 可选, 不可通行
-    resources = { steel = 10 aluminium = 20 }  # 注意: aluminium 英式拼写!
-    local_supplies = 8.3        # 可选, 基础补给
+    resources = { steel = 10 aluminium = 20 }
 
     history = {
         owner = POL
-        victory_points = { 1234 10 }  # 每条只能一个省份
-        victory_points = { 5678 5 }   # 多个VP写多条
+        victory_points = { 123 10 }
         add_core_of = POL
         buildings = {
             infrastructure = 3
-            7777 = {            # 省份级建筑套省份ID
-                naval_base = 10
-            }
+            123 = { naval_base = 2 }
         }
     }
 }
 ```
 
-## 致命规则
+The `provinces` block lists province IDs that belong to the state. The history block supplies ownership, cores, victory points, buildings, resources, and dated changes. `capital` in a country history file refers to a state ID, while a victory-point entry refers to a province ID.
 
-| 规则 | 违反后果 |
-|------|----------|
-| **State ID 必须连续** (从1开始, 不能有间隔) | 非 debug 模式 **[崩溃]** |
-| **无 owner 的 state** 执行任何 effect | **[崩溃]** (右键/转让/AI空袭评估) |
-| State 省份跨 strategic region | **[崩溃]** (非 debug) |
-| VP 引用不存在的省份 | **[崩溃]** 加载阶段 |
-| 内陆 state 定义沿海建筑(即使=0) | **[错误]** |
+## State categories
 
-## State Category (建筑槽位)
+`state_category` controls the state's building-slot rules. Common vanilla keys include `wasteland`, `enclave`, `tiny_island`, `small_island`, `large_island`, `pastoral`, `rural`, `town`, `large_town`, `city`, `large_city`, `metropolis`, and `megalopolis`. The category list and slot counts can change with the game version, so use the target version's definitions.
 
-| 名称 | 内部名 | 共享槽位 |
-|------|--------|---------|
-| Wasteland | wasteland | 0 |
-| Enclave | enclave | 0 |
-| Tiny island | tiny_island | 0 |
-| Pastoral | pastoral | 1 |
-| Small island | small_island | 1 |
-| Rural | rural | 2 |
-| Town | town | 4 |
-| Large town | large_town | 5 |
-| City | city | 6 |
-| Large city | large_city | 8 |
-| Metropolis | metropolis | 10 |
-| Megalopolis | megalopolis | 12 |
+## Strategic regions
 
-## 资源列表
+Strategic-region definitions are stored under `common/strategic_regions/*.txt`. A region contains province IDs and metadata such as its name, weather, and air/naval settings. Every province used by the playable map should belong to a valid strategic region. States should not mix provinces from unrelated strategic regions unless the target game version explicitly supports that layout.
 
-`oil`, `aluminium` (英式拼写!), `rubber`, `tungsten`, `steel`, `chromium`
+When editing or generating a map, update these relationships together:
+
+1. province colors and rows in `definition.csv`;
+2. the province list in each state history file;
+3. state ownership, capital, and victory points;
+4. strategic-region province lists;
+5. supply, railway, building, and adjacency references.
+
+## Validation checklist
+
+- state IDs are unique and all referenced states exist;
+- every listed province exists and appears in the intended state;
+- each state has a valid category and history owner when gameplay requires one;
+- victory points, capitals, buildings, railways, and supply hubs refer to the correct ID type;
+- strategic regions contain valid provinces and cover the playable map;
+- exported state and region files contain only the English localization keys used by the mod.
+
+## Sources
+
+- [HOI4 State modding](https://hoi4.paradoxwikis.com/State_modding)
+- [HOI4 Strategic region modding](https://hoi4.paradoxwikis.com/Strategic_region_modding)
+- [HOI4 Map modding](https://hoi4.paradoxwikis.com/Map_modding)

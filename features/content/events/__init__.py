@@ -1,15 +1,13 @@
-"""
-事件编辑器 (2.0 功能, 空壳).
+"""Event Editor (2.0 feature, empty shell).
 
-未来用来编辑 events/*.txt 的事件.
-读 1.0 的 map 数据 (state_mgr / country_mgr 等), 实现时按 Feature 协议扩展.
-"""
+Events for future editing of events/*.txt.
+Read 1.0 map data (state_mgr / country_mgr, etc.), and implement it according to the Feature protocol extension."""
 
 from features.base import BaseFeature
 
 
 class EventsFeature(BaseFeature):
     id = "content.events"
-    display_name = "事件"
+    display_name = "Events"
     category = "content"
-    # 空壳: 暂无实现, 仅让 FeatureRegistry 列出可用 2.0 功能
+    # Empty shell: No implementation yet, just let FeatureRegistry list available 2.0 features

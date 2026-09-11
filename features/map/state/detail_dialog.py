@@ -1,13 +1,11 @@
-"""
-State 详情对话框 — 编辑一个 State 的进阶字段:
-- impassable / controller / local_supplies
-- resources (6 种战略资源)
-- buildings (state 级建筑等级)
-- extra_cores / claims (TAG 列表)
+"""State Details Dialog — Edit advanced fields of a State:
+- impassable/controller/local_supplies
+- resources (6 strategic resources)
+- buildings (state building level)
+- extra_cores / claims (TAG list)
 
-省份级建筑 (bunker/coastal_bunker/naval_base) 暂未在此 UI 暴露,
-需按省份编辑, 下个迭代做专门的省份建筑工具.
-"""
+Provincial-level buildings (bunker/coastal_bunker/naval_base) are not exposed in this UI yet.
+It needs to be edited by province, and special province construction tools will be made in the next iteration."""
 
 from __future__ import annotations
 
@@ -22,7 +20,7 @@ from PyQt5.QtWidgets import (
 from ui.i18n import tr
 
 
-# HOI4 战略资源 (vanilla 1.18 完整列表)
+# HOI4 strategic resources (vanilla 1.18 full list)
 RESOURCE_NAMES = ["oil", "aluminium", "rubber", "tungsten", "steel", "chromium", "coal"]
 RESOURCE_LABELS = {
     "oil": "state_dlg_res_oil", "aluminium": "state_dlg_res_aluminium",
@@ -31,7 +29,7 @@ RESOURCE_LABELS = {
     "coal": "state_dlg_res_coal",
 }
 
-# HOI4 state 级建筑 (value 0 = 不写)
+# HOI4 state-level building (value 0 = do not write)
 STATE_BUILDINGS = [
     "infrastructure",
     "arms_factory",
@@ -71,12 +69,12 @@ BUILDING_MAX = {
     "rocket_site": 10,
     "mass_transit": 3,
     "supply_node": 1,
-    # 其他默认 30 (vanilla 实际上限视 state_category 而定)
+    # Others default 30 (vanilla actual limit depends on state_category)
 }
 
 
 class StateDetailDialog(QDialog):
-    """编辑单个 State 的进阶字段. 模态."""
+    """Edit advanced fields of a single State. Modal."""
 
     def __init__(self, state, country_tags: list[str], parent=None):
         super().__init__(parent)
@@ -88,7 +86,7 @@ class StateDetailDialog(QDialog):
         self._build_ui()
         self._load_from_state()
 
-    # ─────────── UI 构建 ───────────
+    # ─────────── UI construction ───────────
 
     def _build_ui(self) -> None:
         root = QVBoxLayout(self)
@@ -96,13 +94,13 @@ class StateDetailDialog(QDialog):
         tabs = QTabWidget()
         root.addWidget(tabs, 1)
 
-        # 每个 tab 包滚动区域: 内容(建筑13行/VP多行)超过窗口高度时可滚动, 不再被裁掉
+        # Each tab package scroll area: the content (building 13 lines/VP multi-line) can be scrolled when it exceeds the window height and will no longer be cropped
         tabs.addTab(self._wrap_scroll(self._build_basic_tab()), tr("state_dlg_tab_basic"))
         tabs.addTab(self._wrap_scroll(self._build_resources_tab()), tr("state_dlg_tab_resources"))
         tabs.addTab(self._wrap_scroll(self._build_buildings_tab()), tr("state_dlg_tab_buildings"))
         tabs.addTab(self._wrap_scroll(self._build_cores_tab()), tr("state_dlg_tab_cores"))
 
-        # 底部按钮
+        # bottom button
         btn_row = QHBoxLayout()
         btn_row.addStretch(1)
         ok_btn = QPushButton(tr("state_dlg_save"))
@@ -115,7 +113,7 @@ class StateDetailDialog(QDialog):
 
     @staticmethod
     def _wrap_scroll(inner: QWidget) -> QScrollArea:
-        """tab 内容套滚动区域, 高度不够时出滚动条。"""
+        """The tab content covers the scroll area, and the scroll bar appears when the height is not enough."""
         area = QScrollArea()
         area.setWidgetResizable(True)
         area.setFrameShape(QScrollArea.Shape.NoFrame)
@@ -154,7 +152,7 @@ class StateDetailDialog(QDialog):
         self._supplies_spin.setDecimals(2)
         lay.addRow(tr("state_dlg_supplies_label"), self._supplies_spin)
 
-        # VP 城市命名（中英两列，英文可选）
+        # Victory-point city name fields; the primary name is required and the English name is optional.
         vp_box = QGroupBox(tr("state_dlg_vp_names"))
         vp_lay = QGridLayout(vp_box)
         vp_lay.addWidget(QLabel(tr("state_dlg_vp_province")), 0, 0)
@@ -220,9 +218,9 @@ class StateDetailDialog(QDialog):
             lay.addWidget(spin, i + 1, 1)
             self._building_spins[key] = spin
 
-        # 省份级建筑入口
+        # Provincial building entrance
         last_row = len(STATE_BUILDINGS) + 1
-        lay.addWidget(QLabel(""), last_row, 0)  # 空行
+        lay.addWidget(QLabel(""), last_row, 0)  # blank line
         prov_btn = QPushButton(tr("state_dlg_edit_prov_buildings"))
         prov_btn.clicked.connect(self._on_edit_province_buildings)
         lay.addWidget(prov_btn, last_row + 1, 0, 1, 2)
@@ -230,11 +228,11 @@ class StateDetailDialog(QDialog):
         return w
 
     def _on_edit_province_buildings(self) -> None:
-        """打开省份级建筑对话框."""
+        """Opens the provincial building dialog box."""
         from features.map.state.province_buildings_dialog import (
             ProvinceBuildingsDialog,
         )
-        # 用 state.provinces 作为全部省份列表 (省份内部已经过滤过 land)
+        # Use state.provinces as a list of all provinces (land has been filtered within the provinces)
         land_pids = list(self._state.provinces)
         dlg = ProvinceBuildingsDialog(self._state, land_pids, parent=self)
         dlg.exec_()
@@ -243,7 +241,7 @@ class StateDetailDialog(QDialog):
         w = QWidget()
         lay = QVBoxLayout(w)
 
-        # 额外核心
+        # extra core
         cores_box = QGroupBox(tr("state_dlg_cores_group"))
         cores_lay = QVBoxLayout(cores_box)
         self._cores_list = QListWidget()
@@ -258,7 +256,7 @@ class StateDetailDialog(QDialog):
         cores_lay.addLayout(row)
         lay.addWidget(cores_box)
 
-        # 宣称
+        # claim
         claims_box = QGroupBox(tr("state_dlg_claims_group"))
         claims_lay = QVBoxLayout(claims_box)
         self._claims_list = QListWidget()
@@ -275,11 +273,11 @@ class StateDetailDialog(QDialog):
 
         return w
 
-    # ─────────── 加载/保存 ───────────
+    # ─────────── Load/Save ───────────
 
     def _load_from_state(self) -> None:
         s = self._state
-        # 如果旧数据 name 是 key 形式（STATE_123），UI 显示空让用户填显示名
+        # If the old data name is in the form of key (STATE_123), the UI will display empty and let the user fill in the display name.
         display_name = s.name if (s.name and s.name != f"STATE_{s.id}") else ""
         self._name_edit.setText(display_name)
         self._name_en_edit.setText(getattr(s, "name_en", "") or "")
@@ -292,17 +290,17 @@ class StateDetailDialog(QDialog):
 
         self._supplies_spin.setValue(float(getattr(s, "local_supplies", 0.0) or 0.0))
 
-        # 资源
+        # Resources
         res = getattr(s, "resources", {}) or {}
         for key, spin in self._resource_spins.items():
             spin.setValue(int(res.get(key, 0) or 0))
 
-        # 建筑
+        # architecture
         bld = getattr(s, "buildings", {}) or {}
         for key, spin in self._building_spins.items():
             spin.setValue(int(bld.get(key, 0) or 0))
 
-        # 核心 / 宣称
+        # core/claim
         self._cores_list.clear()
         for tag in getattr(s, "extra_cores", []) or []:
             self._cores_list.addItem(tag)
@@ -312,7 +310,7 @@ class StateDetailDialog(QDialog):
 
     def _on_accept(self) -> None:
         s = self._state
-        # name 留空就留空（不自动填 key；导出时按 name_en 或默认 "State {id}" 兜底）
+        # Leave name blank (key will not be automatically filled in; press name_en or default "State {id}" when exporting)
         s.name = self._name_edit.text().strip()
         s.name_en = self._name_en_edit.text().strip()
         s.manpower = int(self._manpower_spin.value())
@@ -337,7 +335,7 @@ class StateDetailDialog(QDialog):
             self._claims_list.item(i).text() for i in range(self._claims_list.count())
         ]
 
-        # VP 城市名（中英）
+        # Victory-point city name fields.
         if not hasattr(s, "vp_names_en") or s.vp_names_en is None:
             s.vp_names_en = {}
         for vpid, edit in self._vp_name_edits.items():
@@ -347,7 +345,7 @@ class StateDetailDialog(QDialog):
 
         self.accept()
 
-    # ─────────── 核心 / 宣称 操作 ───────────
+    # ─────────── Core / Claim Operation ───────────
 
     def _ask_tag(self, title: str) -> str:
         if self._country_tags:
@@ -362,7 +360,7 @@ class StateDetailDialog(QDialog):
         tag = self._ask_tag(tr("state_dlg_add_core_title"))
         if not tag:
             return
-        # 去重
+        # Remove duplicates
         existing = [self._cores_list.item(i).text() for i in range(self._cores_list.count())]
         if tag in existing:
             return

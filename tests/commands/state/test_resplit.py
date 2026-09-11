@@ -1,4 +1,4 @@
-"""ResplitStateCommand 测试 — 州内重分割/州外不动/undo/redo"""
+"""ResplitStateCommand test - resplit within the state/do not move outside the state/undo/redo"""
 import numpy as np
 import pytest
 
@@ -16,16 +16,16 @@ class _FakeMapData:
 @pytest.fixture
 def setup():
     md = _FakeMapData()
-    # 左半 = 省份 1 (州外); 右半上/下 = 省份 2/3 (目标州)
+    # Left half = province 1 (outside the state); right half top/bottom = province 2/3 (target state)
     md.province_map[:, :20] = 1
     md.province_map[:24, 24:] = 2
     md.province_map[24:, 24:] = 3
-    # 中间一条 pm==0 的未分配带 (x 20~23), 模拟新画陆地
+    # There is an unallocated band (x 20~23) with pm==0 in the middle, simulating a newly drawn land
     mgr = StateManager()
     mgr._states[7] = StateData(id=7, provinces=[2, 3])
     mgr._province_to_state = {2: 7, 3: 7}
     mgr._states[7].victory_points = {2: 5}
-    mgr._states[7].vp_names = {2: "旧城"}
+    mgr._states[7].vp_names = {2: "Oldtown"}
     return md, mgr
 
 
@@ -37,12 +37,12 @@ def test_resplit_only_inside_state(setup):
     cmd = ResplitStateCommand(md, mgr, 7, 6)
     cmd.execute()
 
-    # 州外像素 (省份 1 + 未分配带) 一个都没变
+    # None of the out-of-state pixels (province 1 + unallocated zone) changed
     assert (md.province_map[~inside] == old_pm[~inside]).all()
-    # 州内全部换成新 id (> 3)
+    # Replace all states with new IDs (> 3)
     new_ids = np.unique(md.province_map[inside])
     assert (new_ids > 3).all()
-    # 新省份归回该州, 反查表同步, VP 清空
+    # The new province is returned to the state, the reverse lookup table is synchronized, and the VP is cleared
     state = mgr.get_state(7)
     assert sorted(state.provinces) == sorted(int(i) for i in new_ids)
     assert all(mgr.get_state_of_province(int(i)) == 7 for i in new_ids)
@@ -65,6 +65,6 @@ def test_resplit_undo_redo(setup):
     assert state.victory_points == {2: 5}
     assert mgr.get_state_of_province(2) == 7
 
-    cmd.execute()  # redo 回放, 结果和第一次完全一致
+    cmd.execute()  # redo playback, the result is exactly the same as the first time
     assert (md.province_map == after_pm).all()
     assert list(mgr.get_state(7).provinces) == after_provinces

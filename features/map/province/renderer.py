@@ -1,4 +1,4 @@
-"""Province 模式渲染: 按省份 ID 映射到颜色 LUT."""
+"""Province mode rendering: maps to color LUT by province ID."""
 
 
 def render(canvas) -> None:

@@ -1,8 +1,4 @@
-"""
-welcome — en 翻译
-
-本文件由 tools/migrate_i18n.py 生成。后续手动维护。
-"""
+"""English welcome-page strings."""
 
 STRINGS: dict[str, str] = {
     "welcome_changelog_title": "Changelog ({ver})",
@@ -13,7 +9,7 @@ STRINGS: dict[str, str] = {
 - Smart heightmap & terrain & river generation
 - Full state / country / region workflow
 - 5-second export of 2000+ file complete MOD
-- Chinese / English bilingual UI""",
+- English-only UI""",
     "welcome_features_title": "Highlights",
     "welcome_height": "Height:",
     "welcome_import_mod": "Import MOD Map",

@@ -1,15 +1,13 @@
-"""
-战略总览贴图颜色 feature.
+"""Strategy overview map color feature.
 
-控制 map/terrain/colormap_rgb_cityemissivemask_a.dds 的陆/海/湖颜色,
-让架空 MOD 不再像地球. 通过菜单"工具 → 总览贴图颜色..." 打开对话框.
-"""
+Control the land/sea/lake color of map/terrain/colormap_rgb_cityemissivemask_a.dds,
+Make the overhead MOD no longer look like the Earth. Open the dialog via the menu "Tools → Overview Map Colors..."."""
 
 from features.base import BaseFeature
 
 
 class ColormapFeature(BaseFeature):
     id = "map.colormap"
-    display_name = "总览贴图"
+    display_name = "Colormap"
     category = "map"
-    # 通过菜单触发, 不在 mode tab 暴露
+    # Triggered through menu, not exposed in mode tab

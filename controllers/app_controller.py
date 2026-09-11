@@ -1,22 +1,21 @@
-"""ApplicationController — 应用级调度器。
+"""ApplicationController — Application-level scheduler.
 
-从 MainWindow 抽出的业务逻辑：
-- 模式切换副作用
-- 省份信息计算
-- State/Country 颜色图刷新
-- VP 数据收集
-- 列表刷新
-- 撤销/重做管理
+Business logic extracted from MainWindow:
+- Mode switching side effects
+- Calculation of province information
+- State/Country color map refresh
+- VP data collection
+- List refresh
+- Undo/redo management
 
-MainWindow 只做 UI 构建和信号路由，所有逻辑委托到这里。
-"""
+MainWindow only does UI construction and signal routing, and all logic is delegated here."""
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-from ui.i18n import tr, tr_pair
+from ui.i18n import tr
 
 if TYPE_CHECKING:
     from model.project import Project
@@ -30,7 +29,7 @@ from commands.land.brush_stroke import BrushStrokeCommand
 
 
 class ApplicationController:
-    """应用级调度器 — 协调 controllers、canvas、tool_panel。"""
+    """Application-level scheduler — coordinates controllers, canvas, tool_panel."""
 
     def __init__(
         self,
@@ -51,13 +50,13 @@ class ApplicationController:
         self._current_controller = None
         self._province_info_cache: dict[int, dict] = {}
 
-        # 画笔 stroke 状态（用于 BrushStrokeCommand）
+        # Brush stroke state (for BrushStrokeCommand)
         self._stroke_before: dict | None = None
 
-        # 订阅 EventBus 事件
+        # Subscribe to EventBus events
         self._subscribe_events()
 
-    # ═══════════════════════ EventBus 订阅 ═══════════════════
+    # ═══════════════════════ EventBus Subscription ═══════════════════
 
     def _subscribe_events(self) -> None:
         bus = self._event_bus
@@ -74,9 +73,9 @@ class ApplicationController:
         bus.subscribe("sr_colors_dirty", self._on_sr_colors_dirty)
         bus.subscribe("province_gaps_changed", self._on_province_gaps)
 
-    # ═══════════════════════ 模式切换 ═══════════════════════
+    # ═══════════════════════ Mode switch ═══════════════════════
 
-    # 模式名称映射
+    # Schema name mapping
     _MODE_KEYS = {
         "land": "mode_land", "province": "mode_province",
         "terrain": "mode_terrain", "height": "mode_height",
@@ -90,20 +89,20 @@ class ApplicationController:
     }
 
     def on_mode_changed(self, mode: str) -> str:
-        """模式切换：停用旧 controller、激活新 controller、刷新相关数据。
-        返回模式中文名。"""
+        """Mode switching: deactivate the old controller, activate the new controller, and refresh related data.
+        Returns the display name of the pattern."""
         if self._current_controller is not None:
             self._current_controller.deactivate()
 
         self._canvas.cleanup_mode_state()
-        # density 模式底图是 land（叠密度遮罩）
+        # The density mode basemap is land (stacked density mask)
         if mode == "density":
             self._canvas.display_mode = "land"
         else:
             self._canvas.display_mode = mode
 
-        # 密度模式特殊：借用 LandController 但开启 density_mode
-        # 密度图作为遮罩叠加在 land 视图上
+        # Density mode special: borrow LandController but enable density_mode
+        # The density map is overlaid on the land view as a mask
         if mode == "density":
             md = self._project.map_data
             if md.density_map is None:
@@ -116,9 +115,9 @@ class ApplicationController:
             if self._current_controller is not None:
                 self._current_controller.density_mode = True
                 self._current_controller.activate()
-                self._current_controller._emit_status("密度画笔模式", "Province density brush mode")
+                self._current_controller._emit_status("Province density brush mode")
         else:
-            # 切到其他模式时，确保 land controller 退出密度模式，隐藏密度遮罩
+            # When switching to other modes, make sure the land controller exits density mode and hides the density mask
             self._canvas.set_density_overlay_visible(False)
             land_ctrl = self._controllers.get("land")
             if land_ctrl is not None:
@@ -127,17 +126,17 @@ class ApplicationController:
             if self._current_controller is not None:
                 self._current_controller.activate()
 
-        # 按模式刷新颜色图
+        # Refresh colormap by mode
         if mode == "state":
             self._refresh_state_colors()
-            # state 模式叠加国家边界 + owner 高亮, 需要 country_rgb + assigned_mask
+            # state mode overlays country borders + owner highlighting, requires country_rgb + assigned_mask
             self._refresh_country_colors()
-            # 进 state 模式时清掉残留的国家高亮 (从 country mode 切过来时)
+            # Clear remaining country highlighting when entering state mode (when switching from country mode)
             self._canvas.set_highlight_country(None)
         elif mode == "country":
             self._refresh_country_colors()
         elif self._canvas._highlight_country_rgb is not None:
-            # 离开 state / country 模式时清掉国家高亮
+            # Clear country highlighting when leaving state / country mode
             self._canvas.set_highlight_country(None)
         elif mode == "strategic_region":
             self._refresh_sr_colors()
@@ -149,7 +148,7 @@ class ApplicationController:
         elif mode == "continent":
             self._refresh_continent_colors()
 
-        # 离开战略区模式时隐藏 state 边界叠加
+        # Hide state border overlay when leaving strategic area mode
         if mode != "strategic_region":
             self._canvas.show_state_borders(False)
 
@@ -160,15 +159,15 @@ class ApplicationController:
     def current_controller(self):
         return self._current_controller
 
-    # ═══════════════════════ 省份信息 ═══════════════════════
+    # ═══════════════════════ Province Information ═══════════════════════
 
     def invalidate_province_cache(self) -> None:
-        """清除省份信息缓存。"""
+        """Clear province information cache."""
         self._province_info_cache.clear()
 
     def calculate_province_info(self, pid: int) -> dict | None:
-        """计算省份信息（类型/地形/像素数/沿海），带缓存。
-        返回 dict 或 None。"""
+        """Calculate province information (type/terrain/number of pixels/coastal) with caching.
+        Returns a dict or None."""
         if pid in self._province_info_cache:
             return self._province_info_cache[pid]
 
@@ -192,7 +191,7 @@ class ApplicationController:
         else:
             ptype = tr("tile_land")
 
-        # 沿海检查
+        # coastal inspection
         _adj = False
         for dy, dx in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
             ny = np.clip(ys + dy, 0, tm.shape[0] - 1)
@@ -202,8 +201,8 @@ class ApplicationController:
                 break
         coastal = _adj and land_n > sea_n and land_n > lake_n
 
-        # 优先读 provincial_terrain dict（属性层 = gameplay 真值）
-        # 没有时才退回 terrain.bmp 多数像素（视觉层推断）
+        # Read provincial_terrain dict first (attribute layer = gameplay true value)
+        # Return terrain.bmp majority pixels only if none (visual layer inference)
         from data.terrain_types import (
             GRAPHICAL_TERRAIN_BY_INDEX, TERRAIN_TYPES,
             terrain_display_name, graphical_terrain_display_name,
@@ -217,7 +216,7 @@ class ApplicationController:
             terrain_data = self._canvas.terrain_map[mask]
             if len(terrain_data) > 0:
                 counts = np.bincount(terrain_data)
-                # 跳过 index 0（背景/海洋），优先取非零地形
+                # Skip index 0 (background/ocean), giving priority to non-zero terrain
                 if len(counts) > 1 and counts[1:].max() > 0:
                     terrain_idx = int(counts[1:].argmax()) + 1
                 else:
@@ -234,7 +233,7 @@ class ApplicationController:
         self._province_info_cache[pid] = info
         return info
 
-    # ═══════════════════════ State/Country 刷新 ═══════════════
+    # ═══════════════════════ State/Country Refresh ═══════════════
 
     def _refresh_state_list(self) -> None:
         country_mgr = self._project.country_mgr
@@ -249,24 +248,24 @@ class ApplicationController:
             return
         rgb = self._project.state_mgr.build_state_color_map(self._canvas.province_map)
         self._canvas.set_state_colors(rgb)
-        # 名字标签: 传惰性 provider, id 图构建推迟到画布防抖到期后执行
+        # Name tag: Pass lazy provider, id graph construction is postponed until canvas anti-shake expires
         state_mgr = self._project.state_mgr
         self._canvas.set_name_label_data("state", lambda: (
             state_mgr.build_state_id_map(self._canvas.province_map),
             {sid: s.name for sid, s in state_mgr.states.items()},
         ))
         self._refresh_vp_data()
-        # 统计未分配的 land province → 状态栏提示
+        # Statistics of unallocated land province → status bar prompt
         self._emit_unassigned_count()
 
     def _emit_unassigned_count(self) -> None:
-        """统计未分配到 state 的 land province 数量，发送到状态栏。"""
+        """Count the number of land provinces not allocated to state and send it to the status bar."""
         from data.constants import TILE_LAND
         tm = self._project.map_data.tile_map
         pm = self._canvas.province_map
         if pm is None or pm.max() == 0:
             return
-        # 所有 land province ID
+        # All land province IDs
         land_pids = set(np.unique(pm[tm == TILE_LAND]).tolist())
         land_pids.discard(0)
         count = self._project.state_mgr.count_unassigned_provinces(land_pids)
@@ -281,22 +280,22 @@ class ApplicationController:
             )
 
     def _refresh_provincial_terrain_colors(self) -> None:
-        """计算每个 province 的 gameplay terrain 颜色，传给 canvas。
-        像素颜色 = 该 province 的 provincial_terrain[pid] 对应的颜色。
-        未指定 type 的 province 显示灰色。"""
+        """Calculate the gameplay terrain color of each province and pass it to canvas.
+        Pixel color = the color corresponding to the province's provincial_terrain[pid].
+        Provinces with no type specified are grayed out."""
         province_map = self._canvas.province_map
         if int(province_map.max()) == 0:
             return
         from data.terrain_types import TERRAIN_TYPES
         prov_terrain = self._project.map_data.provincial_terrain
         n = int(province_map.max()) + 1
-        # pid → RGB（0=灰色 fallback）
+        # pid → RGB (0=gray fallback)
         lookup = np.full((n, 3), 80, dtype=np.uint8)
         for pid, ptype in prov_terrain.items():
             if pid < n and ptype in TERRAIN_TYPES:
                 r, g, b = TERRAIN_TYPES[ptype].color
                 lookup[pid] = (r, g, b)
-        # 按 province_map 索引上色
+        # Color by province_map index
         rgb = lookup[province_map]
         self._canvas.set_provincial_terrain_colors(rgb)
 
@@ -318,16 +317,16 @@ class ApplicationController:
     def _refresh_country_colors(self) -> None:
         if int(self._canvas.province_map.max()) == 0:
             return
-        # 传 tile_map → 让 builder 用多数决识别陆地省, 避免海洋省被涂色
-        # 返回 (rgb, assigned_mask): assigned_mask 标记"已分配国家"的 land 像素
-        # → 国家 renderer 据此只在已分配区域之间画白边, 跳过海洋/未分配 state
+        # Pass tile_map → let the builder use majority rule to identify land provinces and avoid ocean provinces being colored
+        # Returns (rgb, assigned_mask): assigned_mask land pixels marked "Assigned Country"
+        # → state renderer accordingly only draws white borders between allocated areas, skipping ocean/unallocated state
         rgb, assigned_mask = self._project.country_mgr.build_country_color_map(
             self._canvas.province_map,
             self._project.state_mgr,
             tile_map=self._canvas.tile_map,
         )
         self._canvas.set_country_colors(rgb, assigned_mask)
-        # 名字标签: 传惰性 provider, 序号图构建推迟到画布防抖到期后执行
+        # Name tag: Pass a lazy provider, and the serial number graph construction is postponed until the canvas anti-shake expires.
         country_mgr = self._project.country_mgr
         state_mgr = self._project.state_mgr
         self._canvas.set_name_label_data("country", lambda: (
@@ -371,20 +370,20 @@ class ApplicationController:
         self._canvas.set_railway_colors(rgb)
 
     def update_province_count(self) -> int:
-        """返回当前省份数量。"""
+        """Returns the current number of provinces."""
         return int(self._canvas.province_map.max())
 
-    # ═══════════════════════ EventBus 处理器 ═══════════════════
+    # ═══════════════════════ EventBus Processor ═══════════════════
 
     def _on_render(self, event) -> None:
         full = event.data.get("full", False)
         bbox = event.data.get("bbox")
         self._canvas._rebind_aliases()
-        # province_terrain 模式下，渲染前先刷新颜色（属性变化要立即反映）
+        # In province_terrain mode, refresh the color before rendering (attribute changes must be reflected immediately)
         if self._canvas.display_mode == "province_terrain":
             self._refresh_provincial_terrain_colors()
         if full or bbox is None:
-            # 清除省份边界缓存，确保合并/切割后边界线刷新
+            # Clear province boundary cache to ensure boundary lines are refreshed after merging/cutting
             self._canvas._border_cache = None
             if hasattr(self._canvas, '_border_base_pixmap'):
                 self._canvas._border_base_pixmap = None
@@ -395,25 +394,22 @@ class ApplicationController:
             self._canvas._partial_render(x0, y0, x1, y1)
 
     def _on_province_count(self, event) -> None:
-        # 由 MainWindow 处理状态栏更新
+        # Status bar updates are handled by MainWindow
         pass
 
     def _on_province_gaps(self, event) -> None:
-        """省份 ID 空洞变化 → 更新工具面板 + 状态栏提示。"""
+        """Province ID hole change → Update tool panel + status bar prompt."""
         gap_ids = event.data.get("gap_ids", [])
         self._panel.update_province_gaps(gap_ids)
-        # 状态栏也提示（不管当前在哪个页面都能看到）
+        # The status bar also prompts (you can see it no matter which page you are currently on)
         if gap_ids:
             self._event_bus.emit(
                 "status_message",
-                text=tr_pair(
-                    f"缺失省份 ID: {len(gap_ids)} 个（切割可自动补回）",
-                    f"Missing province IDs: {len(gap_ids)} (splitting can restore them automatically)",
-                ),
+                text=f"Missing province IDs: {len(gap_ids)} (splitting can restore them automatically)",
             )
 
     def _on_state_changed(self, event) -> None:
-        """State 数据变化 → 刷新 UI。"""
+        """State data changes → Refresh UI."""
         action = event.data.get("action", "")
         if action == "refresh":
             self.invalidate_province_cache()
@@ -429,7 +425,7 @@ class ApplicationController:
             prop = event.data.get("property", "")
             if prop in ("", "provinces", "assign"):
                 self._refresh_state_colors()
-                # 列表项里的省份计数 [id] name (N) 也要跟着刷，否则点了分配不更新
+                # The province count [id] name (N) in the list item must also be refreshed, otherwise the allocation will not be updated when clicking on it.
                 self._refresh_state_list()
         elif action == "selected":
             sid = event.data.get("state_id", 0)
@@ -438,11 +434,11 @@ class ApplicationController:
                 self._panel.update_state_info(
                     state.name, state.manpower, state.category
                 )
-                # 高亮选中州的所有省份
+                # Highlight all provinces in selected state
                 self._canvas.set_batch_selection_pids(list(state.provinces))
-                # 在列表中选中对应行 + 更新 page 的 _current_state_id
+                # Select the corresponding row in the list + update the _current_state_id of the page
                 self._panel.select_state_in_list(sid)
-                # 在画布上高亮该 state 的 owner 那一国 (state 模式渲染会叠暖黄)
+                # Highlight the country that is the owner of the state on the canvas (state mode rendering will be overlaid with warm yellow)
                 owner = self._project.country_mgr.get_owner_of_state(sid)
                 country = self._project.country_mgr.get_country(owner) if owner else None
                 if country is not None:
@@ -454,7 +450,7 @@ class ApplicationController:
                 self._canvas.set_highlight_country(None)
 
     def _on_country_changed(self, event) -> None:
-        """Country 数据变化 → 刷新 UI。"""
+        """Country data changes → Refresh UI."""
         action = event.data.get("action", "")
         tag = event.data.get("tag", "")
         if action in ("refresh", "created", "modified"):
@@ -464,21 +460,19 @@ class ApplicationController:
                 self._update_country_info_panel(tag)
         elif action == "selected" and tag:
             self._update_country_info_panel(tag)
-            # 地图点击(信息模式)选中的国家 → 列表高亮 + 画布高亮该国领土
+            # Click on the map (information mode) to select the country → list highlight + canvas highlight the country’s territory
             self._panel.select_country_in_list(tag)
             country = self._project.country_mgr.get_country(tag)
             if country and self._canvas.display_mode == "country":
                 self._canvas.set_highlight_country(tuple(country.color))
         elif action == "assign_mode_reset":
-            # 切出国家模式 → "分配领土模式"按钮复位
+            # Switch out of country mode → "Assign territories mode" button reset
             self._panel.reset_country_assign_mode()
 
     def _update_country_info_panel(self, tag: str) -> None:
         country = self._project.country_mgr.get_country(tag)
         if country:
-            capital_name = tr_pair(
-                f"省份 {country.capital}", f"Province {country.capital}",
-            ) if country.capital > 0 else ""
+            capital_name = f"Province {country.capital}" if country.capital > 0 else ""
             self._panel.update_country_info(
                 country.tag, country.name, country.ruling_party,
                 country.color, capital_name,
@@ -488,13 +482,13 @@ class ApplicationController:
         self._refresh_vp_data()
 
     def _on_continent_changed(self, event) -> None:
-        """大陆列表/指派变化 → 如果在大陆模式下，立即刷新颜色图。"""
+        """Continent list/assignment changes → Refresh colormap immediately if in continent mode."""
         if self._canvas.display_mode == "continent":
             self._refresh_continent_colors()
             self._canvas.refresh_display()
 
     def _on_province_regen(self, event) -> None:
-        """省份重新生成 → 清除所有颜色缓存，强制下次切模式时重建。"""
+        """Province Regeneration → Clear all color caches and force rebuilding the next time you switch modes."""
         self.invalidate_province_cache()
         self._canvas._state_color_rgb = None
         self._canvas._country_color_rgb = None
@@ -502,7 +496,7 @@ class ApplicationController:
         self._canvas._railway_color_rgb = None
         self._canvas._provincial_terrain_color_rgb = None
         self._canvas._continent_color_rgb = None
-        # 立即刷新当前模式的颜色（不然切模式前看到的是旧的）
+        # Immediately refresh the color of the current mode (otherwise what you see before switching modes is the old one)
         mode = self._canvas.display_mode
         if mode == "state":
             self._refresh_state_colors()
@@ -514,13 +508,13 @@ class ApplicationController:
             self._refresh_railway_colors()
             self._canvas.refresh_logistics_overlay()
 
-    # ═══════════════════════ 撤销/重做 ═══════════════════════
+    # ═══════════════════════ Undo/Redo ═══════════════════════
 
     def _get_stroke_arrays(self) -> dict[str, np.ndarray]:
-        """获取当前模式对应的数组，用于画笔快照。"""
+        """Get the array corresponding to the current mode, used for brush snapshots."""
         mode = self._canvas.display_mode
         if mode == "land":
-            # 密度遮罩开启时画笔改的是 density_map（在 land mode 底图上叠加涂抹）
+            # When the density mask is turned on, the brush changes to density_map (overlayed on the land mode base map)
             md = self._project.map_data
             if (getattr(self._canvas, '_density_overlay_visible', False)
                     and md.density_map is not None):
@@ -537,7 +531,7 @@ class ApplicationController:
         return {}
 
     def _get_all_arrays(self) -> dict[str, np.ndarray]:
-        """获取所有数组引用（撤销/重做时需要）。"""
+        """Get all array references (required for undo/redo)."""
         arrays = {
             "tile_map": self._canvas.tile_map,
             "province_map": self._canvas.province_map,
@@ -551,21 +545,21 @@ class ApplicationController:
         return arrays
 
     def on_stroke_started(self) -> None:
-        """画笔开始 — 记录操作前快照。"""
+        """Brush Start — Record a pre-operation snapshot."""
         arrays = self._get_stroke_arrays()
         self._stroke_before = BrushStrokeCommand.snapshot_arrays(arrays)
 
     def on_stroke_ended(self) -> None:
-        """画笔结束 — 比较变化，创建 Command 并推入 CommandHistory。"""
+        """Brush End - Compare changes, create Command and push to CommandHistory."""
         if self._stroke_before is None:
             return
         arrays = self._get_stroke_arrays()
         if BrushStrokeCommand.has_changes(self._stroke_before, arrays):
             after = BrushStrokeCommand.snapshot_arrays(arrays)
             mode = self._canvas.display_mode
-            cmd = BrushStrokeCommand(tr_pair(f"{mode} 绘制", f"Paint {mode}"), self._stroke_before, after)
+            cmd = BrushStrokeCommand(f"Paint {mode}", self._stroke_before, after)
             cmd.set_target_arrays(self._get_all_arrays())
-            # 直接推入栈，不调 execute（因为画笔已经绘制完了）
+            # Push directly into the stack without calling execute (because the brush has been drawn)
             self._cmd_history._undo_stack.append(cmd)
             self._cmd_history._redo_stack.clear()
             if len(self._cmd_history._undo_stack) > self._cmd_history._max_size:
@@ -583,7 +577,7 @@ class ApplicationController:
         self._stroke_before = None
 
     def _refresh_brush_targets(self, cmd) -> None:
-        """递归把 BrushStrokeCommand（包括嵌套在 CompositeCommand 内的）刷成最新数组引用。"""
+        """Recursively brush BrushStrokeCommands (including those nested within CompositeCommands) to the latest array reference."""
         from commands.composite import CompositeCommand
         if isinstance(cmd, BrushStrokeCommand):
             cmd.set_target_arrays(self._get_all_arrays())
@@ -592,37 +586,37 @@ class ApplicationController:
                 self._refresh_brush_targets(child)
 
     def undo(self) -> str:
-        """执行撤销。返回状态消息。"""
-        # 如果有未完成的 stroke，先提交
+        """Perform undo. Return status message."""
+        # If there is an unfinished stroke, submit it first
         if self._stroke_before is not None:
             self.on_stroke_ended()
 
         if not self._cmd_history.can_undo:
-            return tr_pair("没有可撤销的操作", "Nothing to undo")
+            return "Nothing to undo"
 
-        # 确保 BrushStrokeCommand（含 composite 内的）有最新数组引用
+        # Ensure that BrushStrokeCommand (within composite) has the latest array reference
         self._refresh_brush_targets(self._cmd_history._undo_stack[-1])
 
         self._cmd_history.undo()
         self._post_undo_redo_refresh()
-        return tr_pair("已撤销", "Undone")
+        return "Undone"
 
     def redo(self) -> str:
-        """执行重做。返回状态消息。"""
+        """Perform redo. Return status message."""
         if self._stroke_before is not None:
             self.on_stroke_ended()
 
         if not self._cmd_history.can_redo:
-            return tr_pair("没有可重做的操作", "Nothing to redo")
+            return "Nothing to redo"
 
         self._refresh_brush_targets(self._cmd_history._redo_stack[-1])
 
         self._cmd_history.redo()
         self._post_undo_redo_refresh()
-        return tr_pair("已重做", "Redone")
+        return "Redone"
 
     def _post_undo_redo_refresh(self) -> None:
-        """撤销/重做后刷新画布 + 按模式重建颜色图 + 通知所有 list 刷新。"""
+        """Refresh canvas after undo/redo + rebuild colormap by mode + notify all list refreshes."""
         mode = self._canvas.display_mode
         if mode == "logistics":
             self._refresh_railway_colors()
@@ -637,14 +631,14 @@ class ApplicationController:
             self._refresh_continent_colors()
         self._canvas.refresh_display()
 
-        # 撤销/重做可能改了 manager 数据 — 全面 emit 让所有 list 刷新（低频操作，可接受）
+        # Undo/redo may have changed the manager data - comprehensive emit to refresh all lists (low frequency operation, acceptable)
         bus = self._event_bus
         bus.emit("state_changed", state_id=0, action="refresh")
         bus.emit("country_changed", tag="", action="refresh")
         bus.emit("continent_changed", action="refresh")
         bus.emit("sr_colors_dirty")
         bus.emit("railway_changed")
-        # 省份数和缺失 ID 也可能变（如局部重生）
+        # The number of provinces and missing IDs may also change (such as partial rebirth)
         pm_max = int(self._canvas.province_map.max())
         bus.emit("province_count_changed", count=pm_max)
         import numpy as np
@@ -653,10 +647,10 @@ class ApplicationController:
             gap_ids = sorted(set(range(1, pm_max + 1)) - existing)
             bus.emit("province_gaps_changed", gap_ids=gap_ids)
 
-    # ═══════════════════════ 省份点击路由 ═══════════════════
+    # ═══════════════════════ Province click route ═══════════════════
 
     def on_province_clicked(self, pid: int) -> dict | None:
-        """省份被点击：计算信息 + 转发给当前 controller。返回省份信息 dict。"""
+        """Province is clicked: calculation information + forwarded to current controller. Return province information dict."""
         if pid <= 0:
             return None
         info = self.calculate_province_info(pid)

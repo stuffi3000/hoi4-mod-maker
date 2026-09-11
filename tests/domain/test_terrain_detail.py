@@ -1,6 +1,4 @@
-"""
-地形自动细化测试 — 气候带分布 / 海拔叠加 / 生成器协议。
-"""
+"""Terrain Auto-Thinning Test - Climate Zone Distribution/Elevation Overlay/Generator Protocol."""
 
 from types import SimpleNamespace
 
@@ -15,18 +13,17 @@ from data.constants import TILE_LAND, TILE_SEA, TILE_LAKE, SEA_LEVEL
 
 
 def _world(h=180, w=512):
-    """全陆地平坦世界 (纬度跨满 0~90)。
+    """A flat world with all land (latitude spans 0~90).
 
-    宽度要足够大: 噪声斑块半径 ~14px, 窄世界里单条纬度带可能
-    恰好整条落进一个斑块, 比例断言会抖。
-    """
+    The width must be large enough: noise patch radius ~14px, a single latitude band is possible in a narrow world
+    If the entire piece falls into one patch, the proportions will definitely shake."""
     tile_map = np.full((h, w), TILE_LAND, dtype=np.uint8)
     height_map = np.full((h, w), SEA_LEVEL + 10, dtype=np.uint8)
     return tile_map, height_map
 
 
 def test_water_tiles_untouched():
-    """海洋/湖泊像素固定为对应索引, 不参与气候细化。"""
+    """Ocean/lake pixels are fixed to the corresponding index and do not participate in climate refinement."""
     tile_map, height_map = _world()
     tile_map[:, :8] = TILE_SEA
     tile_map[:, 8:12] = TILE_LAKE
@@ -36,25 +33,25 @@ def test_water_tiles_untouched():
 
 
 def test_climate_bands_present():
-    """赤道带有丛林、副热带有沙漠、极地有雪原 — 但都不是一刀切色块。"""
+    """There are jungles at the equator, deserts in the subtropics, and snowfields at the poles—but none of them are one-size-fits-all color blocks."""
     tile_map, height_map = _world()
     out = generate_detailed_terrain(tile_map, height_map)
 
-    eq_band = out[76:105]                      # 整条丛林带 (|纬度| < 14°)
+    eq_band = out[76:105]                      # Entire jungle zone (|latitude| < 14°)
     jungle_ratio = np.isin(eq_band, [IDX_JUNGLE, IDX_JUNGLE_VAR]).mean()
-    assert 0.3 < jungle_ratio < 0.95           # 有丛林斑块, 但不是糊满
+    assert 0.3 < jungle_ratio < 0.95           # There are patches of jungle, but it's not overly dense
 
-    sub_band = out[114:126]                    # |纬度| ≈ 24°~36° (h=180, 赤道在 90)
+    sub_band = out[114:126]                    # |Latitude| ≈ 24°~36° (h=180, equator at 90)
     desert_ratio = np.isin(
         sub_band, [IDX_DESERT, IDX_DESERT_VAR, IDX_DESERT_ROCK]).mean()
     assert desert_ratio > 0.3
 
-    polar = out[:8]                            # 北极
+    polar = out[:8]                            # arctic
     assert (polar == IDX_PLAINS_SNOW).mean() > 0.8
 
 
 def test_high_peaks_become_snow_mountains():
-    """超过雪线的高地变成雪山。"""
+    """The highlands above the snow line turn into snow mountains."""
     tile_map, height_map = _world()
     height_map[100:104, 10:14] = SEA_LEVEL + 130
     out = generate_detailed_terrain(tile_map, height_map)
@@ -62,7 +59,7 @@ def test_high_peaks_become_snow_mountains():
 
 
 def test_deterministic_by_seed():
-    """同种子可复现, 换种子结果不同。"""
+    """It can be reproduced with the same seed, but the result will be different if the seed is changed."""
     tile_map, height_map = _world()
     a = generate_detailed_terrain(tile_map, height_map, seed=1)
     b = generate_detailed_terrain(tile_map, height_map, seed=1)
@@ -72,7 +69,7 @@ def test_deterministic_by_seed():
 
 
 def test_generator_protocol_with_mask():
-    """生成器接口: 不改 map_data; mask 外保持原图层。"""
+    """Generator interface: Do not change map_data; maintain the original layer except mask."""
     tile_map, height_map = _world()
     original_terrain = np.full(tile_map.shape, 99, dtype=np.uint8)
     md = SimpleNamespace(
@@ -86,7 +83,7 @@ def test_generator_protocol_with_mask():
     out = gen.generate(md, TerrainDetailParams(seed=5), mask=mask)
 
     assert out.dtype == np.uint8
-    assert np.all(md.terrain_map == 99)        # 输入零修改
-    assert np.all(out[:, 32:] == 99)           # mask 外保留原值
-    assert not np.all(out[:, :32] == 99)       # mask 内被细化
+    assert np.all(md.terrain_map == 99)        # Enter zero modifications
+    assert np.all(out[:, 32:] == 99)           # Keep the original value outside the mask
+    assert not np.all(out[:, :32] == 99)       # The mask is refined
     assert gen.target_layer == "terrain_map"

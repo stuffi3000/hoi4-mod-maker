@@ -1,7 +1,5 @@
-"""
-Phase 0 验收测试 — 骨架 + 基类 + Registry + CommandBus 能正常工作.
-这些测试保证重构过程中核心基础设施不被破坏.
-"""
+"""Phase 0 Acceptance Test - Skeleton + Base Class + Registry + CommandBus work properly.
+These tests ensure that the core infrastructure is not damaged during the refactoring process."""
 
 import pytest
 
@@ -15,13 +13,13 @@ from commands.bus import CommandBus
 
 class _DummyMapFeature(BaseFeature):
     id = "map.dummy"
-    display_name = "测试地图功能"
+    display_name = "Test map feature"
     category = "map"
 
 
 class _DummyContentFeature(BaseFeature):
     id = "content.dummy"
-    display_name = "测试内容功能"
+    display_name = "Test content feature"
     category = "content"
 
 
@@ -101,7 +99,7 @@ def test_exporter_registry_rejects_duplicate_name():
 # ──────────────── CommandBus ────────────────
 
 class _IncrementCommand(Command):
-    """测试用命令: 给 state dict 的 count 加 1."""
+    """Test command: Add 1 to the count of state dict."""
 
     def __init__(self, state: dict):
         self.state = state
@@ -170,5 +168,5 @@ def test_command_bus_respects_max_history():
     bus = CommandBus(max_history=3)
     for _ in range(10):
         bus.execute(_IncrementCommand(state))
-    assert bus.undo_depth() == 3  # 只保留最近 3 条
-    assert state["count"] == 10  # 但数据变化已落地
+    assert bus.undo_depth() == 3  # Only keep the latest 3 items
+    assert state["count"] == 10  # But the data changes have been implemented

@@ -1,7 +1,6 @@
-"""HeightController — 高度编辑模式控制器。
+"""HeightController — Height edit mode controller.
 
-处理按省份设置高度值。
-"""
+Handles setting height values ​​by province."""
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
@@ -17,18 +16,18 @@ if TYPE_CHECKING:
 
 
 class HeightController(BaseController):
-    """高度编辑模式：点击省份设置高度。"""
+    """Height editing mode: Click on the province to set the height."""
 
     def __init__(self, project: "Project", command_history: "CommandHistory") -> None:
         super().__init__(project, command_history)
         self.current_height_value: int = 100
 
     def activate(self) -> None:
-        """进入高度模式。"""
-        self._emit_status("高度编辑模式", "Height editing mode")
+        """Enter altitude mode."""
+        self._emit_status("Height editing mode")
 
     def on_province_clicked(self, pid: int) -> None:
-        """点击省份设置高度值。"""
+        """Click on the province to set the height value."""
         if pid <= 0:
             return
 
@@ -42,11 +41,11 @@ class HeightController(BaseController):
         cmd = SetHeightCommand(map_data, mask, self.current_height_value)
         self.history.execute(cmd)
         self.project.mark_dirty()
-        # 高度变了 → world_normal 必须重生（法线从高度图算）; colormap/fow 也略受影响
+        # The height has changed → world_normal must be reborn (normals are calculated from the height map); colormap/fow is also slightly affected
         self._invalidate_art_assets(
             "map/world_normal.bmp",
             "map/terrain/colormap_rgb_cityemissivemask_a.dds",
             "map/terrain/fow_rgb_waterspec_a.dds",
         )
         self._emit_render(full=True)
-        self._emit_status(f"省份 {pid} 高度已设为 {self.current_height_value}", f"Province {pid} height set to {self.current_height_value}")
+        self._emit_status(f"Province {pid} height set to {self.current_height_value}")

@@ -1,4 +1,4 @@
-"""Continent 模式渲染: 大陆分区颜色图。"""
+"""Continent mode rendering: Continental partition color map."""
 
 
 def render(canvas) -> None:

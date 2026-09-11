@@ -1,4 +1,4 @@
-"""兼容层 — 旧代码通过 ui.canvas_widget 引用 MapCanvas 和颜色 LUT。"""
+"""Compatibility layer — Legacy code references MapCanvas and color LUTs via ui.canvas_widget."""
 from views.canvas.widget import MapCanvas
 from views.canvas.luts import (
     _TILE_BGRA,

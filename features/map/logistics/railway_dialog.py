@@ -1,9 +1,7 @@
-"""
-铁路列表对话框 — 查看/删除已画的铁路.
+"""Rail List Dialog — View/Delete Drawn Railroads.
 
-新建铁路走侧边栏的"启用铁路画笔"按钮 + 画布工具 (RailwayDrawTool).
-这里只负责查看和删除.
-"""
+To create a new railway, click the "Enable Railway Brush" button in the sidebar + Canvas Tool (RailwayDrawTool).
+This is only responsible for viewing and deleting."""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""LandController 单元测试。"""
+"""LandController unit tests."""
 import pytest
 
 from model.project import Project
@@ -9,7 +9,7 @@ from controllers.land import LandController
 
 @pytest.fixture
 def land_setup():
-    """创建 Project + CommandHistory + LandController。"""
+    """Create Project + CommandHistory + LandController."""
     bus = EventBus()
     project = Project(event_bus=bus)
     history = CommandHistory(event_bus=bus)
@@ -38,7 +38,7 @@ def test_stores_tool_and_tile_type(land_setup):
 
 def test_on_press_fill_returns_true(land_setup):
     ctrl, project, _ = land_setup
-    # 需要有地图数据
+    # Map data is required
     import numpy as np
     project.map_data.tile_map = np.zeros((16, 16), dtype=np.uint8)
     ctrl.current_tool = "fill"

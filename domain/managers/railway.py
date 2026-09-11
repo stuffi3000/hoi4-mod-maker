@@ -1,21 +1,19 @@
-"""
-Railway 管理器 — 铁路线数据.
+"""Railway Manager — Railway line data.
 
-HOI4 用 map/railways.txt 定义初始铁路.
-参考: 参考/Map modding.txt 行 534-540
+HOI4 uses map/railways.txt to define initial railways.
+Reference: Reference/Map modding.txt lines 534-540
 
-每行格式 (空格分隔, 无分号):
+Format per line (space separated, no semicolon):
 Level Amount_of_provinces List_of_provinces
 
-示例:
-4 4 693 1444 12 11   # level 4, 4 个省份, 依次经过 693/1444/12/11
+Example:
+4 4 693 1444 12 11 # level 4, 4 provinces, passing through 693/1444/12/11 in sequence
 
-Level 上限 5 (默认, 见 NDefines.NSupply.MAX_RAILWAY_LEVEL).
-无效定义会导致 HOI4 崩溃:
-- 经过不存在的省份
-- 经过 stateless 省份
-- 严重不连续的定义
-"""
+Level capped at 5 (default, see NDefines.NSupply.MAX_RAILWAY_LEVEL).
+Invalid definitions will cause HOI4 to crash:
+- Pass through a non-existent province
+- Pass through stateless provinces
+- Definition of severe discontinuity"""
 
 from __future__ import annotations
 
@@ -25,18 +23,18 @@ import numpy as np
 
 @dataclass
 class RailwayEntry:
-    """一条铁路."""
+    """a railway."""
     level: int  # 1-5
     province_ids: list[int] = field(default_factory=list)
 
     def to_line(self) -> str:
-        """序列化为 railways.txt 一行."""
+        """Serialized to railways.txt one line."""
         ids_str = " ".join(str(p) for p in self.province_ids)
         return f"{self.level} {len(self.province_ids)} {ids_str}"
 
 
 class RailwayManager:
-    """管理所有铁路线. 按顺序存储, 允许重复路径."""
+    """Manage all rail lines. Stored in sequence, allowing duplicate routes."""
 
     MAX_LEVEL = 5
 
@@ -46,7 +44,7 @@ class RailwayManager:
     # ─────────── CRUD ───────────
 
     def add(self, level: int, province_ids: list[int]) -> int:
-        """添加一条铁路, 返回索引."""
+        """Add a railway, return index."""
         if not (1 <= level <= self.MAX_LEVEL):
             raise ValueError(f"level must be between 1 and {self.MAX_LEVEL}; received {level}")
         if len(province_ids) < 2:
@@ -76,23 +74,23 @@ class RailwayManager:
         self._entries = []
 
     def find_by_province(self, province_id: int) -> list[int]:
-        """返回所有经过指定省份的铁路索引."""
+        """Returns the index of all railways passing through the specified province."""
         return [
             i for i, e in enumerate(self._entries)
             if province_id in e.province_ids
         ]
 
-    # ─────────── 数据同步 ───────────
+    # ─────────── Data synchronization ───────────
 
     def drop_provinces(self, pids: set[int]) -> None:
-        """删除引用了被删省份的铁路 (整条丢弃)."""
+        """Removed railways that referenced the deleted province (discarded in their entirety)."""
         self._entries = [
             e for e in self._entries
             if not any(p in pids for p in e.province_ids)
         ]
 
     def remap_provinces(self, old_to_new: dict[int, int]) -> None:
-        """按旧→新 ID 映射重写. 任一省份找不到新 ID 就丢弃整条."""
+        """Rewrite according to the old → new ID mapping. If a new ID cannot be found in any province, the entire entry will be discarded."""
         new_entries: list[RailwayEntry] = []
         for e in self._entries:
             new_ids = []
@@ -107,10 +105,10 @@ class RailwayManager:
                 new_entries.append(RailwayEntry(level=e.level, province_ids=new_ids))
         self._entries = new_entries
 
-    # ─────────── 省份级别查询/着色 ───────────
+    # ─────────── Province level query/coloring ───────────
 
     def province_levels(self) -> dict[int, int]:
-        """每个省份的最大铁路等级。"""
+        """Maximum rail grade for each province."""
         levels: dict[int, int] = {}
         for e in self._entries:
             for pid in e.province_ids:
@@ -118,13 +116,13 @@ class RailwayManager:
         return levels
 
     def set_province_level(self, pid: int, level: int) -> None:
-        """设置省份铁路等级（0=删除）。更新所有经过该省份的铁路链。"""
+        """Set provincial railway level (0=delete). Updated all rail links passing through the province."""
         if level == 0:
-            # 从所有铁路中移除该省份
+            # Remove this province from all railroads
             for e in self._entries:
                 if pid in e.province_ids:
                     e.province_ids.remove(pid)
-            # 清理空铁路
+            # clear empty railway
             self._entries = [e for e in self._entries if len(e.province_ids) >= 2]
         else:
             found = False
@@ -133,19 +131,19 @@ class RailwayManager:
                     e.level = max(e.level, level)
                     found = True
             if not found:
-                # 新建单省份占位（导出时会和邻居合并）
+                # Create a new single province placeholder (will be merged with neighbors when exported)
                 self._entries.append(RailwayEntry(level=level, province_ids=[pid, pid]))
 
     def build_railway_color_map(self, province_map: np.ndarray) -> np.ndarray:
-        """生成铁路着色图 (H, W, 3)。等级 0=灰, 1=浅灰, 5=红。"""
-        # 等级颜色 (RGB)
+        """Generates a railway shading map (H, W, 3). Level 0=grey, 1=light gray, 5=red."""
+        # Grade color (RGB)
         LEVEL_COLORS = {
-            0: (50, 50, 50),      # 无铁路 — 深灰
-            1: (100, 100, 120),   # 灰蓝
-            2: (80, 140, 80),     # 绿
-            3: (200, 170, 50),    # 金黄
-            4: (210, 120, 50),    # 橙
-            5: (210, 50, 50),     # 红
+            0: (50, 50, 50),      # No rails - dark gray
+            1: (100, 100, 120),   # gray blue
+            2: (80, 140, 80),     # green
+            3: (200, 170, 50),    # golden
+            4: (210, 120, 50),    # Orange
+            5: (210, 50, 50),     # red
         }
         max_pid = int(province_map.max())
         lut = np.full((max_pid + 1, 3), 50, dtype=np.uint8)
@@ -159,7 +157,7 @@ class RailwayManager:
         flat = np.clip(province_map.ravel(), 0, max_pid)
         return lut[flat].reshape(province_map.shape[0], province_map.shape[1], 3)
 
-    # ─────────── 序列化 ───────────
+    # ─────────── Serialization ───────────
 
     def to_dict(self) -> dict:
         return {

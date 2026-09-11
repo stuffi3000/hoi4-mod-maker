@@ -1,6 +1,4 @@
-"""
-崩溃处理器测试.
-"""
+"""Crash handler testing."""
 
 import sys
 
@@ -16,7 +14,7 @@ def test_install_sets_excepthook():
 
 
 def test_write_crash_log_creates_file(tmp_path, monkeypatch):
-    """_write_crash_log 必须能把 traceback 写到 logs/crash_*.log."""
+    """_write_crash_log must be able to write traceback to logs/crash_*.log."""
     tb_text = "Traceback (most recent call last):\n  ValueError: test\n"
     path = _write_crash_log(tb_text)
     import os
@@ -29,16 +27,16 @@ def test_write_crash_log_creates_file(tmp_path, monkeypatch):
 
 
 def test_install_handles_keyboard_interrupt():
-    """KeyboardInterrupt 应走默认行为, 不弹窗不吞."""
+    """KeyboardInterrupt should take the default behavior, no pop-ups or swallowing."""
     old = sys.excepthook
     install_crash_handler()
     new_hook = sys.excepthook
-    # 我们的 handler 遇到 KeyboardInterrupt 应 delegate 给 sys.__excepthook__
-    # 这里只验证 handler 可调用且不崩
+    # Our handler should delegate to sys.__excepthook__ when encountering KeyboardInterrupt
+    # Here we only verify that the handler is callable and does not crash
     try:
         raise KeyboardInterrupt()
     except KeyboardInterrupt:
         exc_type, exc_value, exc_tb = sys.exc_info()
-        # 不能实际调 (会退出 test), 但验证函数存在
+        # It cannot be actually called (test will exit), but the verification function exists
         assert callable(new_hook)
     sys.excepthook = old

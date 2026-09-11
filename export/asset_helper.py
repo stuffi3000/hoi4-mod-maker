@@ -1,10 +1,9 @@
-"""美术资产导出辅助 — 决定是写回原字节还是重新生成。
+"""Art asset export assist — decide whether to write back the original bytes or regenerate them.
 
-导入 MOD 时，工具把 colormap / world_normal 等非结构性文件读入 project.assets。
-用户编辑画布时相关资产被标 dirty。导出时：
-  clean → 直接写回原字节（保留原美术）
-  dirty 或不在 assets → 调 generator_fn 生成新版本
-"""
+When importing MOD, the tool reads non-structured files such as colormap / world_normal into project.assets.
+The related assets are marked dirty when the user edits the canvas. When exporting:
+  clean → write back the original bytes directly (retain the original art)
+  dirty or not in assets → adjust generator_fn to generate a new version"""
 from __future__ import annotations
 
 import os
@@ -18,17 +17,17 @@ def write_or_restore(
     dirty_assets: set[str] | None,
     generator_fn: Callable[[], None],
 ) -> str:
-    """按 dirty 状态决定写回原 asset 还是生成新文件。
+    """Depending on the dirty status, decide whether to write back the original asset or generate a new file.
 
-    参数:
-        rel_path: MOD 相对路径，如 "map/terrain/colormap_rgb_cityemissivemask_a.dds"
-                  （斜杠分隔，与 project.assets 的 key 一致）
-        output_dir: 导出根目录（MOD 根）
-        assets: project.assets（可能为 None，表示没有导入资产）
-        dirty_assets: project.dirty_assets（可能为 None）
-        generator_fn: 当需要重新生成时调用的函数（无参数，内部自行写文件）
+    Parameters:
+        rel_path: MOD relative path, such as "map/terrain/colormap_rgb_cityemissivemask_a.dds"
+                  (Slash separated, consistent with the key of project.assets)
+        output_dir: export root directory (MOD root)
+        assets: project.assets (may be None, indicating no assets were imported)
+        dirty_assets: project.dirty_assets (may be None)
+        generator_fn: function called when regeneration is required (no parameters, internally writes the file itself)
 
-    返回:
+    Return:
         "restored" | "generated" | "skipped"
     """
     if assets is None:
@@ -36,7 +35,7 @@ def write_or_restore(
     if dirty_assets is None:
         dirty_assets = set()
 
-    # clean asset → 写回原字节
+    # clean asset → write back the original bytes
     if rel_path in assets and rel_path not in dirty_assets:
         dst = os.path.join(output_dir, rel_path.replace("/", os.sep))
         os.makedirs(os.path.dirname(dst), exist_ok=True)
@@ -44,7 +43,7 @@ def write_or_restore(
             f.write(assets[rel_path])
         return "restored"
 
-    # 否则执行生成
+    # Otherwise execute the generation
     generator_fn()
     return "generated"
 
@@ -54,9 +53,9 @@ def classify_assets(
     assets: dict[str, bytes] | None,
     dirty_assets: set[str] | None,
 ) -> tuple[int, int, int]:
-    """统计：(restored, generated, total_paths)。
+    """Statistics: (restored, generated, total_paths).
 
-    用于 UI 显示"保留 X 个 / 重生 Y 个"。
+    Used for UI to display "Keep X / Respawn Y".
     """
     if assets is None:
         assets = {}

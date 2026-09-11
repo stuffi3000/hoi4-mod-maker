@@ -1,14 +1,13 @@
-"""本次会话新功能的测试。
+"""Testing of new features in this session.
 
-覆盖：
-- 铁路导入解析 (count 字段修复)
-- 铁路 set_province_level + undo
-- 补给节点 add/remove
-- 战略区域 weather/naval 导入
-- VP 导入解析
-- 质心缓存性能
-- SR color map 向量化
-"""
+Coverage:
+- Railway import parsing (count field repair)
+- railway set_province_level + undo
+- Supply node add/remove
+- Strategic area weather/naval import
+- VP import analysis
+- Centroid caching performance
+- SR color map vectorization"""
 
 import numpy as np
 import pytest
@@ -16,10 +15,10 @@ import tempfile
 import os
 
 
-# ── 铁路导入解析 ──
+# ── Railway import analysis ──
 
 def test_parse_railways_skips_count_field():
-    """railways.txt 第二个字段是 count，不是省份 ID。"""
+    """The second field in railways.txt is count, not province ID."""
     from services.import_service import _parse_railways
 
     tmp = tempfile.NamedTemporaryFile(
@@ -35,21 +34,21 @@ def test_parse_railways_skips_count_field():
     os.unlink(tmp.name)
 
     assert len(result) == 3
-    # 第一行: level=4, count=4, pids=[693,1444,12,11]
+    # The first line: level=4, count=4, pids=[693,1444,12,11]
     assert result[0]["level"] == 4
     assert result[0]["province_ids"] == [693, 1444, 12, 11]
-    # 不应该包含 count 值 (4) 作为省份
+    # Should not contain count value (4) as province
     assert 4 not in result[0]["province_ids"]
-    # 第二行: level=2, pids=[100,200,300]
+    # Second line: level=2, pids=[100,200,300]
     assert result[1]["province_ids"] == [100, 200, 300]
-    # 第三行: level=1, pids=[50,60]
+    # The third line: level=1, pids=[50,60]
     assert result[2]["province_ids"] == [50, 60]
 
 
-# ── 铁路 Command + Undo ──
+# ── Railway Command + Undo ──
 
 def test_railway_set_level_command():
-    """SetRailwayLevelCommand 执行和撤销。"""
+    """SetRailwayLevelCommand execution and cancellation."""
     from domain.managers.railway import RailwayManager
     from commands.map.set_railway import SetRailwayLevelCommand
 
@@ -63,7 +62,7 @@ def test_railway_set_level_command():
 
 
 def test_railway_set_level_via_history():
-    """通过 CommandHistory 执行铁路等级设置 + 撤销。"""
+    """Perform rail level setup + undo via CommandHistory."""
     from domain.managers.railway import RailwayManager
     from commands.map.set_railway import SetRailwayLevelCommand
     from commands.history import CommandHistory
@@ -82,10 +81,10 @@ def test_railway_set_level_via_history():
     assert mgr.province_levels().get(50) == 5
 
 
-# ── 补给节点 ──
+# ── Supply Node ──
 
 def test_supply_node_add_remove():
-    """补给节点添加和删除。"""
+    """Supply node addition and deletion."""
     from domain.managers.supply_node import SupplyNodeManager
 
     mgr = SupplyNodeManager()
@@ -98,10 +97,10 @@ def test_supply_node_add_remove():
     assert mgr.count() == 0
 
 
-# ── 战略区域导入 ──
+# ── Strategic area introduction ──
 
 def test_parse_sr_weather_and_naval():
-    """战略区域解析器读取 weather 和 naval_terrain。"""
+    """The strategic terrain parser reads weather and naval_terrain."""
     from services.import_service import _parse_strategic_region_file
 
     tmp = tempfile.NamedTemporaryFile(
@@ -142,7 +141,7 @@ def test_parse_sr_weather_and_naval():
 
 
 def test_parse_sr_cold_weather():
-    """寒带温度推断。"""
+    """Cold zone temperature inference."""
     from services.import_service import _guess_weather_preset
 
     text = """
@@ -154,10 +153,10 @@ def test_parse_sr_cold_weather():
     assert _guess_weather_preset(text) == "cold"
 
 
-# ── VP 导入 ──
+# ── VP import ──
 
 def test_parse_state_victory_points():
-    """State 解析器读取 victory_points。"""
+    """The State parser reads victory_points."""
     from services.import_service import _parse_state_file
 
     tmp = tempfile.NamedTemporaryFile(
@@ -188,14 +187,14 @@ def test_parse_state_victory_points():
     assert r["victory_points"] == {100: 10, 200: 5}
 
 
-# ── 质心缓存 ──
+# ── Centroid cache ──
 
 def test_centroid_cache_performance():
-    """质心缓存构建和查询。"""
+    """Centroid cache construction and querying."""
     from domain.map_data import MapData
 
     md = MapData.__new__(MapData)
-    # 小地图: 3 个省份
+    # Minimap: 3 provinces
     md.province_map = np.array([
         [1, 1, 2, 2],
         [1, 1, 2, 3],
@@ -210,10 +209,10 @@ def test_centroid_cache_performance():
     assert md.get_province_centroid(999) is None
 
 
-# ── SR color map 向量化 ──
+# ── SR color map vectorization ──
 
 def test_sr_color_map_no_crash():
-    """SR color map 生成不卡死（向量化版本）。"""
+    """SR color map generation is not stuck (vectorized version)."""
     from domain.managers.strategic_region import StrategicRegionManager
 
     mgr = StrategicRegionManager()
@@ -225,14 +224,14 @@ def test_sr_color_map_no_crash():
 
     rgb = mgr.build_sr_color_map(pm, tm)
     assert rgb.shape == (2, 3, 3)
-    # 未分配省份 (0) 应该是深灰
+    # Unassigned provinces (0) should be dark gray
     assert rgb[0, 0, 0] == 50
 
 
-# ── VP 数据存储 ──
+# ── VP Data Storage ──
 
 def test_state_vp_names():
-    """StateData 存储 VP 名称。"""
+    """StateData stores the VP name."""
     from domain.managers.state import StateData
 
     s = StateData(id=1, provinces=[10, 20])

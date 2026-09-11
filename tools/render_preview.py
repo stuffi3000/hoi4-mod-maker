@@ -1,17 +1,15 @@
-"""
-预览渲染 CLI — 用游戏贴图合成预览 PNG, 不开 GUI。
+"""Preview rendering CLI — Use game textures to synthesize preview PNGs without opening the GUI.
 
-用法:
-    py tools/render_preview.py <project.hoi4proj> [输出.png]            # 渲染项目
-    py tools/render_preview.py <project.hoi4proj> [输出.png] --enrich   # 演示: 地形自动细化
-    py tools/render_preview.py vanilla [输出.png]                       # 渲染游戏原版地图
+Usage:
+    py tools/render_preview.py <project.hoi4proj> [output.png] # Rendering project
+    py tools/render_preview.py <project.hoi4proj> [output.png] --enrich # Demonstration: automatic terrain refinement
+    py tools/render_preview.py vanilla [output.png] # Render the original game map
 
---enrich 只在内存里细化地形, 项目文件零改动 — 用于演示效果。
+--enrich only refines the terrain in memory, with zero changes to the project file - for demonstration purposes.
 
-M1 验收工具: 直接看合成效果, 也用于日后排查预览问题。
-vanilla 模式是对照实验: 同样的数据游戏怎么画 vs 我们怎么画,
-差距即合成公式的差距, 与项目数据质量无关。
-"""
+M1 Acceptance Tool: View the synthesis effect directly, and also be used to troubleshoot preview problems in the future.
+The vanilla mode is a controlled experiment: how the game draws vs how we draw the same data,
+The gap is the gap in the synthetic formula and has nothing to do with the quality of the project data."""
 
 import os
 import sys
@@ -35,21 +33,21 @@ def _load_project_layers(proj_path: str, enrich: bool = False,
     tile_map, _pm, terrain_map, height_map, river_map, _pt, _snap = load_project(
         proj_path, StateManager(), CountryManager())
     if realheight:
-        # 演示模式: 内存里重新生成真实感高度图, 不写回项目
+        # Demonstration mode: Regenerate realistic height map in memory, do not write back to the project
         from domain.generators.heightmap import generate_realistic_heightmap
         height_map = generate_realistic_heightmap(tile_map)
     if enrich:
-        # 演示模式: 内存里自动细化地形, 不写回项目
+        # Demo mode: Automatically refine the terrain in memory, without writing back to the project
         from domain.generators.terrain_detail import generate_detailed_terrain
         terrain_map = generate_detailed_terrain(tile_map, height_map)
-    # 自制地图没有手绘色调图 → 按纬度/海拔自动生成气候色调
+    # Self-made maps do not have hand-drawn tone maps → automatically generate climate tones by latitude/altitude
     from domain.preview.climate_tint import generate_climate_tint
     tint = generate_climate_tint(tile_map, height_map)
     return tile_map, terrain_map, height_map, river_map, tint
 
 
 def _load_vanilla_layers(assets: GameAssets):
-    """读游戏原版 map/ 下的三张 BMP + 配套色调图。"""
+    """Read the three BMP + matching tone maps under the original game map/."""
     g = assets.install_dir
     terrain_map = np.asarray(Image.open(os.path.join(g, "map/terrain.bmp")))
     height_map = np.asarray(Image.open(os.path.join(g, "map/heightmap.bmp")))
@@ -59,7 +57,7 @@ def _load_vanilla_layers(assets: GameAssets):
     is_water = np.isin(terrain_map, list(water_idx))
     tile_map = np.where(is_water, TILE_SEA, TILE_LAND).astype(np.uint8)
 
-    # 色调图是地图一半分辨率, 放大 2 倍对齐
+    # Tone map is map half resolution, aligned at 2x magnification
     tint = assets.colormap_rgb()
     if tint is not None:
         fy = terrain_map.shape[0] // tint.shape[0]
@@ -85,12 +83,12 @@ def main() -> int:
 
     assets = GameAssets()
     if not assets.available():
-        print("未找到 HOI4 安装目录")
+        print("HOI4 installation directory was not found")
         return 1
     tiles = assets.atlas_tiles()
     mapping = assets.terrain_to_texture()
     if tiles is None or mapping is None:
-        print(f"游戏资产读取失败: {assets.last_error}")
+        print(f"Failed to read game assets: {assets.last_error}")
         return 1
 
     t0 = time.perf_counter()
@@ -108,7 +106,7 @@ def main() -> int:
     t2 = time.perf_counter()
 
     Image.fromarray(img).save(out_path)
-    print(f"加载 {t1 - t0:.1f}s | 合成 {t2 - t1:.1f}s | "
+    print(f"Load {t1 - t0:.1f}s | Compose {t2 - t1:.1f}s | "
           f"{img.shape[1]}x{img.shape[0]} -> {out_path}")
     return 0
 

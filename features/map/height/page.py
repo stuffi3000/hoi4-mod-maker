@@ -1,7 +1,6 @@
-"""height feature 页面 — 高度图编辑。
+"""height feature page — height map editing.
 
-流程: 画完陆海 → 点「智能生成」自动算高度 → 用画笔微调 → 切地形模式生成地形。
-"""
+Process: After drawing the land and sea → click "Intelligent Generation" to automatically calculate the height → use the brush to fine-tune → switch to terrain mode to generate terrain."""
 
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtWidgets import (
@@ -19,21 +18,21 @@ from ui.i18n import tr
 
 
 class HeightPage(QWidget):
-    """高度编辑页面."""
+    """Highly editable page."""
 
-    # 输出信号
+    # Output signal
     height_value_changed = pyqtSignal(int)
     auto_height_requested = pyqtSignal()
-    realistic_height_requested = pyqtSignal()    # 真实感高度图 (山链/平原/大陆架)
+    realistic_height_requested = pyqtSignal()    # Photorealistic height map (mountain chain/plain/continental shelf)
     height_from_terrain_requested = pyqtSignal()
-    ridge_mode_toggled = pyqtSignal(bool)       # 山脉画线模式开关
-    ridge_peak_changed = pyqtSignal(int)         # 山峰高度
-    ridge_falloff_changed = pyqtSignal(int)      # 衰减距离
-    ridge_preview_requested = pyqtSignal()       # 请求刷新预览
-    ridge_confirmed = pyqtSignal()               # 确认应用山脉
-    ridge_cancelled = pyqtSignal()               # 取消山脉
-    refine_whole_map_requested = pyqtSignal()    # 保形精修整张高度图（生成菜单第③项）
-    # 手动微调画笔
+    ridge_mode_toggled = pyqtSignal(bool)       # Mountain line drawing mode switch
+    ridge_peak_changed = pyqtSignal(int)         # mountain height
+    ridge_falloff_changed = pyqtSignal(int)      # Attenuation distance
+    ridge_preview_requested = pyqtSignal()       # Request to refresh preview
+    ridge_confirmed = pyqtSignal()               # Confirm application mountains
+    ridge_cancelled = pyqtSignal()               # cancel mountains
+    refine_whole_map_requested = pyqtSignal()    # Conformally trimmed height map (Generate menu item ③)
+    # Manual fine-tuning brush
     height_brush_mode_changed = pyqtSignal(str)   # "off" | "raise" | "lower" | "smooth"
     height_brush_size_changed = pyqtSignal(int)
     height_brush_strength_changed = pyqtSignal(int)
@@ -43,9 +42,9 @@ class HeightPage(QWidget):
         self._init_ui()
 
     def _on_generate_menu(self) -> None:
-        """单一生成入口: 弹出选择题, 按用户情况发射对应的既有信号。"""
+        """Single generation entrance: multiple-choice questions pop up, and corresponding existing signals are emitted according to user conditions."""
         from ui.option_dialog import OptionChooserDialog
-        # 顺序 = 用户的做事顺序: ①自动生成 → ②按地形反推 → ③精修当前
+        # Sequence = user’s order of doing things: ①Automatically generated → ②Reverse according to terrain → ③Refined current
         key = OptionChooserDialog.choose(self, tr("height_gen_menu_title"), [
             ("realistic", tr("height_gen_opt_realistic"),
              tr("height_gen_opt_realistic_desc")),
@@ -66,13 +65,13 @@ class HeightPage(QWidget):
         lay.setContentsMargins(8, 8, 8, 8)
         lay.setSpacing(10)
 
-        # ═══════ 🏔 顶部：一键智能生成高度（推荐）═══════
+        # ═══════ 🏔 Top: One-click intelligently generate height (recommended) ═══════
         from ui.styles import _ACCENT
         auto_top_box = _make_section(tr("height_auto_top_section"))
         auto_top_layout = auto_top_box.layout()
 
-        # 单一入口: 三种生成/优化方式收进一个"说人话的选择题"对话框
-        # (2026-07-04 用户反馈"按钮太多不知道点哪个" — 每页只留一个生成入口)
+        # Single entrance: three generation/optimization methods are integrated into a "human-speaking multiple choice question" dialog box
+        # (2026-07-04 User feedback "There are too many buttons and I don't know which one to click" - only one generation entry is left on each page)
         gen_menu_btn = QPushButton(tr("height_btn_generate_menu"))
         gen_menu_btn.setMinimumHeight(44)
         gen_menu_btn.setStyleSheet(
@@ -98,11 +97,11 @@ class HeightPage(QWidget):
 
         lay.addWidget(auto_top_box)
 
-        # ── 详细参数（自动生成区）──
+        # ── Detailed parameters (automatically generated area)──
         gen_box = _make_section(tr("height_section_auto_gen"))
         gl = gen_box.layout()
 
-        # 种子
+        # seeds
         seed_row = QHBoxLayout()
         seed_lbl = QLabel(tr("height_label_seed"))
         seed_lbl.setStyleSheet(_LABEL_STYLE)
@@ -119,7 +118,7 @@ class HeightPage(QWidget):
         seed_row.addWidget(rand_btn)
         gl.addLayout(seed_row)
 
-        # 山脉强度
+        # Mountain strength
         mt_row = QHBoxLayout()
         mt_lbl = QLabel(tr("height_label_mountain"))
         mt_lbl.setStyleSheet(_LABEL_STYLE)
@@ -139,7 +138,7 @@ class HeightPage(QWidget):
         )
         gl.addWidget(self._mountain_slider)
 
-        # 提示：改了参数要再次点[一键生成]才生效
+        # Tip: If you change the parameters, you have to click [One-click generation] again to take effect.
         gen_hint = QLabel(tr("height_gen_params_hint"))
         gen_hint.setStyleSheet(f"color: {_DIM}; font-size: 11px; padding: 4px 2px;")
         gen_hint.setWordWrap(True)
@@ -147,7 +146,7 @@ class HeightPage(QWidget):
 
         lay.addWidget(gen_box)
 
-        # ── 山脉画线 ──
+        # ── Mountain line drawing ──
         ridge_box = _make_section(tr("height_section_ridge"))
         rl = ridge_box.layout()
 
@@ -157,7 +156,7 @@ class HeightPage(QWidget):
         self._ridge_btn.toggled.connect(self._on_ridge_toggled)
         rl.addWidget(self._ridge_btn)
 
-        # 山峰高度
+        # mountain height
         rpk_row = QHBoxLayout()
         rpk_lbl = QLabel(tr("height_label_ridge_peak"))
         rpk_lbl.setStyleSheet(_LABEL_STYLE)
@@ -177,7 +176,7 @@ class HeightPage(QWidget):
         )
         rl.addWidget(self._ridge_peak_slider)
 
-        # 衰减距离
+        # Attenuation distance
         rfo_row = QHBoxLayout()
         rfo_lbl = QLabel(tr("height_label_ridge_falloff"))
         rfo_lbl.setStyleSheet(_LABEL_STYLE)
@@ -197,7 +196,7 @@ class HeightPage(QWidget):
         )
         rl.addWidget(self._ridge_falloff_slider)
 
-        # 确认/取消按钮（画完线后显示）
+        # Confirm/Cancel button (displayed after drawing the line)
         self._ridge_confirm_row = QWidget()
         cr = QHBoxLayout(self._ridge_confirm_row)
         cr.setContentsMargins(0, 8, 0, 0)
@@ -220,13 +219,13 @@ class HeightPage(QWidget):
         rl.addWidget(self._ridge_confirm_row)
         self._ridge_confirm_row.hide()
 
-        # 滑块变化时请求刷新预览
+        # Request to refresh preview when slider changes
         self._ridge_peak_slider.valueChanged.connect(lambda _: self._on_ridge_param_changed())
         self._ridge_falloff_slider.valueChanged.connect(lambda _: self._on_ridge_param_changed())
 
         lay.addWidget(ridge_box)
 
-        # ── 手动微调 ──
+        # ── Manual fine adjustment ──
         brush_box = _make_section(tr("height_section_manual"))
         bl = brush_box.layout()
 
@@ -247,7 +246,7 @@ class HeightPage(QWidget):
         self._height_slider.valueChanged.connect(self._on_height_value)
         bl.addWidget(self._height_slider)
 
-        # 快捷预设
+        # Quick preset
         preset_row = QHBoxLayout()
         preset_row.setSpacing(4)
         for name, val in [(tr("height_preset_seabed"), 40), (tr("height_preset_sealevel"), 95), (tr("height_preset_flat"), 110),
@@ -259,7 +258,7 @@ class HeightPage(QWidget):
             preset_row.addWidget(btn)
         bl.addLayout(preset_row)
 
-        # ── 雕刻画笔（抬升 / 下沉 / 平滑）──
+        # ── Sculpting Brush (Raise/Sink/Smooth)──
         sep = QLabel("—— " + tr("height_brush_section") + " ——")
         sep.setAlignment(Qt.AlignmentFlag.AlignCenter)
         sep.setStyleSheet(f"color: {_DIM}; font-size: 11px; padding: 6px 0 2px 0;")
@@ -267,7 +266,7 @@ class HeightPage(QWidget):
 
         brush_row = QHBoxLayout()
         brush_row.setSpacing(4)
-        # 非互斥按钮组 — 再次点击已选按钮 = 关闭画笔（切回按省份模式）
+        # Non-mutually exclusive button groups — click selected button again = close brush (switch back to province-by-province mode)
         self._brush_group = QButtonGroup(self)
         self._brush_group.setExclusive(False)
         self._brush_btns: dict[str, QPushButton] = {}
@@ -293,7 +292,7 @@ class HeightPage(QWidget):
             brush_row.addWidget(b)
         bl.addLayout(brush_row)
 
-        # 画笔尺寸
+        # Brush size
         bsize_row = QHBoxLayout()
         bsize_lbl = QLabel(tr("height_brush_size"))
         bsize_lbl.setStyleSheet(_LABEL_STYLE)
@@ -311,7 +310,7 @@ class HeightPage(QWidget):
         self._brush_size_slider.valueChanged.connect(self._on_brush_size)
         bl.addWidget(self._brush_size_slider)
 
-        # 强度（每刷一下改变多少 / 平滑多快）
+        # Strength (how much changes per swipe / how fast it smooths)
         bstr_row = QHBoxLayout()
         bstr_lbl = QLabel(tr("height_brush_strength"))
         bstr_lbl.setStyleSheet(_LABEL_STYLE)
@@ -333,7 +332,7 @@ class HeightPage(QWidget):
 
         lay.addStretch()
 
-    # ── 槽函数 ──
+    # ── Slot function ──
     def _on_height_value(self, value: int) -> None:
         self._height_value_label.setText(str(value))
         self.height_value_changed.emit(value)
@@ -343,7 +342,7 @@ class HeightPage(QWidget):
         self._height_seed_spin.setValue(random.randint(0, 99999))
 
     def get_height_config(self):
-        """返回当前 UI 参数构建的 HeightGenConfig。"""
+        """Returns the HeightGenConfig built with the current UI parameters."""
         from services.terrain_service import HeightGenConfig
         return HeightGenConfig(
             noise_amplitude=float(self._mountain_slider.value()),
@@ -351,20 +350,20 @@ class HeightPage(QWidget):
         )
 
     def show_ridge_confirm(self) -> None:
-        """画完线后显示确认/取消按钮。"""
+        """Show confirm/cancel button after drawing the line."""
         self._ridge_confirm_row.show()
 
     def hide_ridge_confirm(self) -> None:
-        """隐藏确认/取消按钮。"""
+        """Hide confirm/cancel buttons."""
         self._ridge_confirm_row.hide()
 
     def _on_ridge_param_changed(self) -> None:
-        """滑块变化时，如果确认按钮可见（预览中），请求刷新预览。"""
+        """When the slider changes, if the confirmation button is visible (in preview), request to refresh the preview."""
         if self._ridge_confirm_row.isVisible():
             self.ridge_preview_requested.emit()
 
     def _on_ridge_toggled(self, on: bool) -> None:
-        """山脉画线开关：打开时关闭雕刻画笔（两者互斥）。"""
+        """Mountain line drawing switch: Turns off the sculpting brush when turned on (the two are mutually exclusive)."""
         if on:
             any_brush = any(b.isChecked() for b in getattr(self, '_brush_btns', {}).values())
             if any_brush:
@@ -375,19 +374,19 @@ class HeightPage(QWidget):
                 self.height_brush_mode_changed.emit("off")
         self.ridge_mode_toggled.emit(on)
 
-    # ── 雕刻画笔 ──
+    # ── Engraving Brush ──
     def _on_brush_button(self, key: str) -> None:
-        """点击画笔按钮：同按钮再点 = 关闭；其它按钮 = 切换到该模式。"""
+        """Click the brush button: click the same button again = close; other buttons = switch to this mode."""
         clicked_btn = self._brush_btns[key]
-        # 取消其它画笔按钮勾选
+        # Uncheck other brush buttons
         for k, b in self._brush_btns.items():
             if k != key and b.isChecked():
                 b.blockSignals(True)
                 b.setChecked(False)
                 b.blockSignals(False)
-        # 与山脉画线互斥：激活画笔时关闭山脉模式
+        # Mutually exclusive with mountain line drawing: turns off mountain mode when activating the brush
         if clicked_btn.isChecked() and self._ridge_btn.isChecked():
-            self._ridge_btn.setChecked(False)  # 触发 ridge_mode_toggled(False)
+            self._ridge_btn.setChecked(False)  # Trigger ridge_mode_toggled(False)
         if clicked_btn.isChecked():
             self.height_brush_mode_changed.emit(key)
         else:
@@ -402,7 +401,7 @@ class HeightPage(QWidget):
         self.height_brush_strength_changed.emit(s)
 
     def deactivate_brush(self) -> None:
-        """切走高度页时取消画笔激活状态。"""
+        """Cancel the brush activation state when switching away from the height page."""
         for b in self._brush_btns.values():
             b.blockSignals(True)
             b.setChecked(False)

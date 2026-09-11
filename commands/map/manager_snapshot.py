@@ -1,9 +1,7 @@
-"""
-ManagerSnapshotCommand — 通用 manager 字段快照 undo/redo。
+"""ManagerSnapshotCommand — Generic manager field snapshot undo/redo.
 
-用于自动分组州、自动战略区、其他批量改 manager 内部字段的命令。
-保留 dict 对象身份（clear + update），不替换引用，避免外部持有旧引用失效。
-"""
+Commands used for automatic grouping of states, automatic strategic areas, and other batch modification of internal fields of the manager.
+Retain the identity of the dict object (clear + update), do not replace the reference, and avoid the invalidation of old external references."""
 
 from __future__ import annotations
 
@@ -14,14 +12,13 @@ from commands.base import Command
 
 
 class ManagerSnapshotCommand(Command):
-    """通用 manager 状态快照命令。
+    """Generic manager state snapshot command.
 
-    用法：
-    1. cmd = ManagerSnapshotCommand("自动分组州", mgr, ["_states", "_next_id"])
-    2. handler 执行实际操作（修改 mgr）
+    Usage:
+    1. cmd = ManagerSnapshotCommand("Auto group states", mgr, ["_states", "_next_id"])
+    2. handler performs actual operations (modify mgr)
     3. cmd.capture_after()
-    4. history._undo_stack.append(cmd)
-    """
+    4. history._undo_stack.append(cmd)"""
 
     def __init__(self, label: str, manager: Any, field_names: list[str]) -> None:
         self.label = label
@@ -40,7 +37,7 @@ class ManagerSnapshotCommand(Command):
         for field, val in snap.items():
             current = getattr(self._manager, field, None)
             new_val = copy.deepcopy(val)
-            # dict 保持对象身份（clear + update），其他直接 setattr
+            # dict maintains object identity (clear + update), others are directly setattr
             if isinstance(current, dict) and isinstance(new_val, dict):
                 current.clear()
                 current.update(new_val)
@@ -54,7 +51,7 @@ class ManagerSnapshotCommand(Command):
                 setattr(self._manager, field, new_val)
 
     def execute(self) -> None:
-        """redo — 还原到 after。首次执行由 handler 完成。"""
+        """redo — Revert to after. The first execution is done by the handler."""
         if self._after is None:
             return
         self._restore(self._after)

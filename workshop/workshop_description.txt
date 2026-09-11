@@ -1,22 +1,22 @@
 [h1]HOI4 Fantasy World Map Maker[/h1]
 [b]v1.0.1 Beta[/b]
 
-[h2]English[/h2]
-A standalone desktop tool for creating complete HOI4 total-conversion mods from scratch — no manual file editing required.
+A standalone desktop tool for creating complete HOI4 total-conversion mods from scratch without manually editing game files.
 
 [b]Features:[/b]
 [list]
-[*] Draw land, sea, and lakes with circular brush / fill / transform tools
-[*] Auto-generate provinces (Poisson disk + Lloyd relaxation, supports density map)
-[*] Smart heightmap generation (coastal distance field + Perlin noise mountains)
-[*] Smart terrain assignment (height-based with noise blending)
-[*] Auto-generate rivers from heightmap (flow accumulation)
-[*] State / Country / Strategic Region / Continent management
-[*] Railway / Supply Node / Adjacency (strait) editing
-[*] One-click full MOD export (2000+ files, 5-second export)
-[*] Import existing MOD maps
-[*] Undo/Redo support
-[*] Chinese / English bilingual UI
+[*] Draw land, sea, and lakes with circular brush, fill, and transform tools
+[*] Generate provinces automatically with Poisson-disk sampling and Lloyd relaxation
+[*] Control province density with a density map
+[*] Generate heightmaps with coastal-distance fields, Perlin-noise mountains, and user-controlled refinement
+[*] Assign terrain from height and noise data
+[*] Generate rivers from heightmap flow accumulation
+[*] Manage states, countries, strategic regions, and continents
+[*] Edit railways, supply nodes, and strait adjacencies
+[*] Export a complete mod in one operation
+[*] Import existing HOI4 map data
+[*] Undo and redo editing operations
+[*] English-only interface and export localization
 [/list]
 
 [b]How to use:[/b]
@@ -28,38 +28,8 @@ Typical path: [i]Steam\steamapps\workshop\content\394360\<id>\hoi4_map_maker.exe
 [b]Requirements:[/b] Windows 10+, HOI4 1.17.x
 
 [hr]
-[h2]Chinese / 中文[/h2]
-HOI4 幻想世界 MOD 制作工具 — 独立桌面应用，从零开始制作完整的 HOI4 全转换 MOD，无需手动编辑任何游戏文件。
+[h2]Community and source code[/h2]
 
-[b]功能特性：[/b]
-[list]
-[*] 圆形画笔/填充/变换工具绘制陆地、海洋、湖泊
-[*] 自动生成省份（泊松盘采样 + Lloyd松弛，支持密度图控制疏密）
-[*] 智能高度图生成（海岸距离场 + Perlin噪声山脉）
-[*] 智能地形分配（高度分层 + 噪声混合）
-[*] 从高度图自动生成河流（汇流模拟）
-[*] 州 / 国家 / 战略区域 / 大陆管理
-[*] 铁路 / 补给节点 / 海峡邻接编辑
-[*] 一键导出完整MOD（2000+文件，5秒导出）
-[*] 导入已有MOD地图
-[*] 撤销/重做支持
-[*] 中英双语界面
-[/list]
-
-[b]使用方法：[/b]
-订阅后在 Steam 创意工坊目录找到工具文件夹，运行 [i]hoi4_map_maker.exe[/i] 即可。
-路径通常为：[i]Steam\steamapps\workshop\content\394360\<id>\hoi4_map_maker.exe[/i]
-
-[b]支持地图尺寸：[/b]2048x1024 / 3072x1536 / 4096x2048 / 5632x2048
-
-[b]系统要求：[/b]Windows 10+，HOI4 1.17.x
-
-[hr]
-[h2]Community / 社区[/h2]
-
-[b]QQ 工具测试群 / Tool Testing:[/b] 1077283666
 [b]Discord:[/b] https://discord.gg/njHjBf2ADG
-[b]QQ 图书馆群 / Library:[/b] 378525932
-
-[b]Source code / 源码：[/b] https://github.com/AmonStreeling/hoi4-mod-maker
-[b]Issues / 反馈：[/b] https://github.com/AmonStreeling/hoi4-mod-maker/issues
+[b]Source code:[/b] https://github.com/AmonStreeling/hoi4-mod-maker
+[b]Issue tracker:[/b] https://github.com/AmonStreeling/hoi4-mod-maker/issues

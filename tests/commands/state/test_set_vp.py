@@ -1,6 +1,4 @@
-"""
-SetVPCommand 单元测试。
-"""
+"""SetVPCommand unit test."""
 
 import pytest
 
@@ -9,16 +7,16 @@ from commands.state.set_vp import SetVPCommand
 
 
 class TestSetVPCommand:
-    """SetVPCommand 测试。"""
+    """SetVPCommand test."""
 
     def _make_state_mgr(self) -> StateManager:
-        """创建带一个 State 的 StateManager。"""
+        """Create a StateManager with a State."""
         mgr = StateManager()
         state = mgr.create_state(provinces=[1, 2, 3])
         return mgr
 
     def test_execute_sets_vp(self) -> None:
-        """execute 应设置 VP。"""
+        """execute should set VP."""
         mgr = self._make_state_mgr()
         cmd = SetVPCommand(mgr, pid=1, old_vp=None, new_vp=10)
         cmd.execute()
@@ -28,7 +26,7 @@ class TestSetVPCommand:
         assert state.victory_points[1] == 10
 
     def test_undo_restores_no_vp(self) -> None:
-        """undo 应移除之前不存在的 VP。"""
+        """undo should remove a VP that did not exist before."""
         mgr = self._make_state_mgr()
         cmd = SetVPCommand(mgr, pid=1, old_vp=None, new_vp=10)
         cmd.execute()
@@ -39,9 +37,9 @@ class TestSetVPCommand:
         assert 1 not in state.victory_points
 
     def test_undo_restores_old_vp(self) -> None:
-        """undo 应恢复旧的 VP 值。"""
+        """undo should restore the old VP value."""
         mgr = self._make_state_mgr()
-        # 先设一个初始 VP
+        # First set an initial VP
         mgr.set_vp(2, 5)
 
         cmd = SetVPCommand(mgr, pid=2, old_vp=5, new_vp=20)
@@ -55,7 +53,7 @@ class TestSetVPCommand:
         assert state.victory_points[2] == 5
 
     def test_execute_remove_vp(self) -> None:
-        """new_vp=None 时 execute 应移除 VP。"""
+        """execute should remove the VP when new_vp=None."""
         mgr = self._make_state_mgr()
         mgr.set_vp(1, 10)
 

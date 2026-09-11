@@ -1,21 +1,17 @@
-"""
-HOI4 硬规则中心 — 所有从 Paradox 官方文档抽出的硬规则集中在这里。
+"""HOI4 Hard Rules Center - All hard rules pulled from the official Paradox documentation are gathered here.
 
-来源：参考/Map modding.txt（用户本地保存的官方 wiki）
+Source: Reference/Map modding.txt (official wiki saved locally by the user)
 
-任何修改这个文件的，都要在注释里写明出处行号或原文，避免凭记忆编规则。
-其他模块（validator / exporter / generator）从这里读规则，禁止把数字硬编码到别处。
-"""
+Anyone who modifies this file must indicate the source line number or original text in the comments to avoid making up rules from memory.
+Other modules (validator/exporter/generator) read rules from here and are prohibited from hardcoding numbers elsewhere."""
 
 from data.constants import MAP_WIDTH, MAP_HEIGHT
-from ui.i18n import tr_pair
-
 
 class Hoi4Rules:
-    """HOI4 引擎对地图文件的硬性约束。所有字段是常量。"""
+    """The HOI4 engine has hard constraints on map files. All fields are constants."""
 
-    # ───────────── BMP 文件格式 ─────────────
-    # 来源：Map modding.txt 第 71-104 行
+    # ───────────── BMP file format ─────────────
+    # Source: Map modding.txt lines 71-104
     BMP_BITDEPTH = {
         "provinces":    24,   # 24-bit RGB
         "heightmap":    8,    # 8-bit greyscale
@@ -25,96 +21,96 @@ class Hoi4Rules:
         "trees":        8,    # 8-bit indexed
         "cities":       8,    # 8-bit indexed
     }
-    # 来源：Map modding.txt 第 206 行
-    BMP_BOTTOM_UP = True  # 像素数据从下到上写
+    # Source: Map modding.txt line 206
+    BMP_BOTTOM_UP = True  # Pixel data is written from bottom to top
     BMP_NO_COMPRESSION = True
 
-    # ───────────── 地图尺寸约束 ─────────────
-    # 来源：Map modding.txt 第 206 行
+    # ───────────── Map size constraints ──────────────
+    # Source: Map modding.txt line 206
     # "both length and width have to be a multiple of 256"
     MAP_DIM_MULTIPLE = 256
 
-    # 来源：Map modding.txt 第 206 行
+    # Source: Map modding.txt line 206
     # "the total area of the file in pixels cannot exceed 13 238 272"
     MAP_MAX_TOTAL_PIXELS = 13_238_272
 
-    # 来源：Map modding.txt 第 151-153 行
+    # Source: Map modding.txt lines 151-153
     MAP_WRAPS_HORIZONTALLY = True
     MAP_WRAPS_VERTICALLY = False
 
-    # ───────────── 省份规则 ─────────────
-    # 来源：Map modding.txt 第 239 行
+    # ──────────── Provincial Rules ─────────────
+    # Source: Map modding.txt line 239
     # "NGraphics.MINIMUM_PROVINCE_SIZE_IN_PIXELS (8 by default)"
     MIN_PROVINCE_PIXELS = 8
 
-    # 来源：Map modding.txt 第 238 行
+    # Source: Map modding.txt line 238
     # "width/height of more than 1/8th of the total map width/height"
     PROVINCE_MAX_BBOX_RATIO = 1.0 / 8
 
-    # 来源：Map modding.txt 第 230 行
+    # Source: Map modding.txt line 230
     # "No more than 65536 different province borders... usually hit at about 21000"
-    PROVINCE_HARD_MAX = 21000   # 必崩
-    PROVINCE_SOFT_MAX = 14000   # 强烈建议上限
-    PROVINCE_RECOMMENDED = 13000  # vanilla 量级
+    PROVINCE_HARD_MAX = 21000   # Will collapse
+    PROVINCE_SOFT_MAX = 14000   # Highly recommended cap
+    PROVINCE_RECOMMENDED = 13000  # vanilla magnitude
 
-    # 来源：Map modding.txt 第 227 行
+    # Source: Map modding.txt line 227
     # "Province IDs should go in order. While a gap... will create a different problem"
     PROVINCE_IDS_MUST_BE_CONTIGUOUS = True
 
-    # 来源：Map modding.txt 第 237 行
+    # Source: Map modding.txt line 237
     # "Map invalid X crossing. Four provinces share a common corner"
     FORBID_X_CROSSINGS = True
 
-    # 来源：Map modding.txt 第 232 行
+    # Source: Map modding.txt line 232
     # "These disjointed island provinces may also cause a game crash"
-    FORBID_DISJOINTED_PIECES = True  # 一个 ID 必须是单连通块
+    FORBID_DISJOINTED_PIECES = True  # An ID must be a simply connected block
 
-    # 来源：Map modding.txt 第 257 行
+    # Source: Map modding.txt line 257
     # "All land provinces must belong to a continent to avoid errors"
     LAND_REQUIRES_CONTINENT = True
 
-    # ───────────── 省份类型与地形 ─────────────
-    # 来源：Map modding.txt 第 224 行
+    # ───────────── Province types and terrain ─────────────
+    # Source: Map modding.txt line 224
     # "For lake provinces, terrain must be 'lakes' while for sea provinces it must be 'ocean'"
     REQUIRED_TERRAIN_BY_TYPE = {
         "lake": "lakes",
         "sea":  "ocean",
     }
 
-    # 来源：Map modding.txt 第 225 行
-    # 1.11+ 后 coastal 字段以 bitmap 邻接为准，definition.csv 的 coastal 字段被忽略
+    # Source: Map modding.txt line 225
+    # After 1.11+, the coastal field is based on the bitmap adjacency, and the coastal field of definition.csv is ignored.
     COASTAL_DETERMINED_BY_BITMAP = True
 
-    # ───────────── 河流规则 ─────────────
-    # 来源：Map modding.txt 第 394 行
+    # ───────────── River Rules ─────────────
+    # Source: Map modding.txt line 394
     # "Rivers must be exactly one pixel thick and only go in orthogonal directions"
     RIVER_PIXEL_WIDTH = 1
     RIVER_DIAGONAL_FORBIDDEN = True
 
-    # 来源：Map modding.txt 第 396 行
+    # Source: Map modding.txt line 396
     # "each river must have exactly one... green start marker"
     RIVER_REQUIRES_ONE_GREEN_SOURCE = True
 
-    # 来源：Map modding.txt 第 412 行
-    RIVER_INDEX_SMALL_MAX = 6   # 索引 0-6 是小河
-    RIVER_INDEX_LARGE_MAX = 11  # 索引 7-11 是大河
+    # Source: Map modding.txt line 412
+    RIVER_INDEX_SMALL_MAX = 6   # Index 0-6 is the river
+    RIVER_INDEX_LARGE_MAX = 11  # Index 7-11 is a big river
 
-    # ───────────── 编码 ─────────────
+    # ───────────── Coding ─────────────
     LOCALIZATION_ENCODING = "utf-8-sig"  # UTF-8 with BOM
 
-    # ═══════════════ 检查函数 ═══════════════
+    # ═══════════════ Check function ═══════════════
 
     @classmethod
     def check_map_dimensions(cls, w: int, h: int) -> list[str]:
-        """检查地图尺寸是否符合 HOI4 约束。返回错误列表（空=合法）。"""
+        """Check that the map dimensions comply with HOI4 constraints. Returns a list of errors (empty = legal)."""
         errors = []
         if w % cls.MAP_DIM_MULTIPLE != 0:
-            errors.append(tr_pair(f"地图宽度 {w} 不是 {cls.MAP_DIM_MULTIPLE} 的倍数", f"Map width {w} is not a multiple of {cls.MAP_DIM_MULTIPLE}"))
+            errors.append(f"Map width {w} is not a multiple of {cls.MAP_DIM_MULTIPLE}")
         if h % cls.MAP_DIM_MULTIPLE != 0:
-            errors.append(tr_pair(f"地图高度 {h} 不是 {cls.MAP_DIM_MULTIPLE} 的倍数", f"Map height {h} is not a multiple of {cls.MAP_DIM_MULTIPLE}"))
+            errors.append(f"Map height {h} is not a multiple of {cls.MAP_DIM_MULTIPLE}")
         if w * h > cls.MAP_MAX_TOTAL_PIXELS:
             errors.append(
-                tr_pair(f"地图总像素 {w*h} 超过 HOI4 上限 {cls.MAP_MAX_TOTAL_PIXELS}", f"Total map pixels {w*h} exceed HOI4's limit of {cls.MAP_MAX_TOTAL_PIXELS}")
+                f"Total map pixels {w*h} exceed HOI4's limit of {cls.MAP_MAX_TOTAL_PIXELS}"
             )
         return errors
 
@@ -135,11 +131,11 @@ class Hoi4Rules:
 
     @classmethod
     def province_count_warning(cls, count: int) -> str:
-        """返回省份总数对应的警告字符串，无问题返回空。"""
+        """Returns the warning string corresponding to the total number of provinces, and returns empty if there is no problem."""
         if count > cls.PROVINCE_HARD_MAX:
-            return tr_pair(f"危险：{count} > {cls.PROVINCE_HARD_MAX}，超过 HOI4 边界硬上限，必崩", f"Danger: {count} > {cls.PROVINCE_HARD_MAX}, exceeding HOI4's hard limit and guaranteed to crash")
+            return f"Danger: {count} > {cls.PROVINCE_HARD_MAX}, exceeding HOI4's hard limit and guaranteed to crash"
         if count > cls.PROVINCE_SOFT_MAX:
-            return tr_pair(f"警告：{count} > {cls.PROVINCE_SOFT_MAX}，HOI4 文档建议上限", f"Warning: {count} > {cls.PROVINCE_SOFT_MAX}, the limit recommended by HOI4 documentation")
+            return f"Warning: {count} > {cls.PROVINCE_SOFT_MAX}, the limit recommended by HOI4 documentation"
         if count > cls.PROVINCE_RECOMMENDED:
-            return tr_pair(f"提示：{count} 接近 vanilla {cls.PROVINCE_RECOMMENDED}-{cls.PROVINCE_SOFT_MAX} 推荐区间", f"Note: {count} is close to the recommended vanilla range of {cls.PROVINCE_RECOMMENDED}–{cls.PROVINCE_SOFT_MAX}")
+            return f"Note: {count} is close to the recommended vanilla range of {cls.PROVINCE_RECOMMENDED}–{cls.PROVINCE_SOFT_MAX}"
         return ""

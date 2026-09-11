@@ -1,6 +1,4 @@
-"""
-AssignProvinceToStateCommand — 将省份分配到指定 State。
-"""
+"""AssignProvinceToStateCommand — Assigns a province to the specified State."""
 
 from __future__ import annotations
 
@@ -8,9 +6,9 @@ from commands.base import Command
 
 
 class AssignProvinceToStateCommand(Command):
-    """将省份从一个 State 移动到另一个 State。"""
+    """Move provinces from one State to another."""
 
-    label = "分配省份到State"
+    label = "Assign provinces to state"
 
     def __init__(
         self,
@@ -19,22 +17,20 @@ class AssignProvinceToStateCommand(Command):
         old_state_id: int,
         new_state_id: int,
     ) -> None:
-        """
-        参数:
-            state_mgr: StateManager 实例
-            pid: 省份 ID
-            old_state_id: 原 State ID（0=未分配）
-            new_state_id: 新 State ID
-        """
+        """Parameters:
+            state_mgr: StateManager instance
+            pid: province ID
+            old_state_id: old State ID (0=not assigned)
+            new_state_id: new State ID"""
         self._state_mgr = state_mgr
         self._pid = pid
         self._old_state_id = old_state_id
         self._new_state_id = new_state_id
 
     def execute(self) -> None:
-        """将省份移动到新 State。"""
+        """Move provinces to new State."""
         self._state_mgr.assign_province(self._pid, self._new_state_id)
 
     def undo(self) -> None:
-        """将省份移回旧 State。"""
+        """Move provinces back to old State."""
         self._state_mgr.assign_province(self._pid, self._old_state_id)

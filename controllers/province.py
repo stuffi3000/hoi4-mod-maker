@@ -1,7 +1,6 @@
-"""ProvinceController — 省份编辑模式控制器。
+"""ProvinceController — Province edit mode controller.
 
-处理省份合并、扩张、切割操作。
-"""
+Handle province merging, expansion, and cutting operations."""
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
@@ -19,7 +18,7 @@ if TYPE_CHECKING:
 
 
 class ProvinceController(BaseController):
-    """省份编辑模式：合并/扩张/切割。"""
+    """Province editing modes: merge/expand/cut."""
 
     def __init__(self, project: "Project", command_history: "CommandHistory") -> None:
         super().__init__(project, command_history)
@@ -29,20 +28,20 @@ class ProvinceController(BaseController):
         self.selected_province_id: int = 0
 
     def activate(self) -> None:
-        """进入省份模式。"""
+        """Enter province mode."""
         self.merge_mode = False
         self.merge_first_pid = 0
         self.expand_mode = False
-        self._emit_status("省份编辑模式", "Province editing mode")
+        self._emit_status("Province editing mode")
 
     def deactivate(self) -> None:
-        """离开省份模式，清理状态。"""
+        """Exit province mode and clean up the state."""
         self.merge_mode = False
         self.merge_first_pid = 0
         self.expand_mode = False
 
     def on_province_clicked(self, pid: int) -> None:
-        """左键点击省份：选择或合并。"""
+        """Left click on provinces: select or merge."""
         if pid <= 0:
             return
 
@@ -50,28 +49,28 @@ class ProvinceController(BaseController):
             self._handle_merge_click(pid)
             return
 
-        # 普通选择
+        # normal choice
         self.selected_province_id = pid
 
     def set_merge_mode(self, on: bool) -> None:
-        """开关合并模式。"""
+        """Toggle merge mode on and off."""
         self.merge_mode = on
         self.merge_first_pid = 0
         if on:
             self.expand_mode = False
-            self._emit_status("合并模式：点第一个省份，再点第二个", "Merge mode: click the first province, then the second")
+            self._emit_status("Merge mode: click the first province, then the second")
         else:
-            self._emit_status("回到查看模式", "Back to view mode")
+            self._emit_status("Back to view mode")
 
     def set_expand_mode(self, on: bool) -> None:
-        """开关扩张模式。"""
+        """Switch expansion mode."""
         self.expand_mode = on
         if on:
             self.merge_mode = False
             self.merge_first_pid = 0
-            self._emit_status("扩张模式：点击省份后拖动扩张", "Expand mode: click a province, then drag to expand it")
+            self._emit_status("Expand mode: click a province, then drag to expand it")
         else:
-            self._emit_status("回到查看模式", "Back to view mode")
+            self._emit_status("Back to view mode")
 
     def delete_provinces(self, province_ids) -> set[int]:
         """Delete existing province IDs and all references as one undo step."""
@@ -100,15 +99,15 @@ class ProvinceController(BaseController):
         return selected
 
     def split_selected(self, axis: str = "horizontal") -> bool:
-        """切割当前选中的省份。
-        axis: "horizontal"(上下切) / "vertical"(左右切)
-        返回是否成功。"""
+        """Cut the currently selected province.
+        axis: "horizontal" (cut up and down) / "vertical" (cut left and right)
+        Return whether successful."""
         import numpy as np
         from scipy.ndimage import label as _label
 
         pid = self.selected_province_id
         if pid <= 0:
-            self._emit_status("请先点击选中一个省份", "Click a province to select it first")
+            self._emit_status("Click a province to select it first")
             return False
 
         map_data = self.project.map_data
@@ -117,18 +116,18 @@ class ProvinceController(BaseController):
         mask = province_map == pid
         pixels = int(np.sum(mask))
         if pixels < 16:
-            self._emit_status("切割失败（省份太小，需至少16像素）", "Split failed (province is too small; at least 16 pixels required)")
+            self._emit_status("Split failed (province is too small; at least 16 pixels required)")
             return False
 
         ys, xs = np.where(mask)
 
-        # 优先使用空洞 ID，没有空洞则用 max+1
+        # Priority is given to using the hole ID. If there is no hole, use max+1.
         max_id = int(province_map.max())
         existing = set(np.unique(province_map)) - {0}
         gap_ids = sorted(set(range(1, max_id + 1)) - existing)
         new_pid = gap_ids[0] if gap_ids else max_id + 1
 
-        # 按轴切割
+        # Cut by axis
         if axis == "vertical":
             mid = int(np.median(xs))
             split_sel = xs <= mid
@@ -139,18 +138,18 @@ class ProvinceController(BaseController):
         split_mask = np.zeros_like(province_map, dtype=bool)
         split_mask[ys[split_sel], xs[split_sel]] = True
 
-        # 通过 Command 执行（内含连通性修复）
+        # Executed via Command (connectivity fixes included)
         cmd = SplitProvinceCommand(map_data, pid, new_pid, split_mask)
         self.history.execute(cmd)
 
         self.project.mark_dirty()
-        self._emit_status(f"省份 {pid} 已切割，新省份 ID: {new_pid}", f"Province {pid} split; new province ID: {new_pid}")
+        self._emit_status(f"Province {pid} split; new province ID: {new_pid}")
         self._emit_render(full=True)
 
         max_id = int(province_map.max())
         self.event_bus.emit("province_count_changed", count=max_id)
 
-        # 更新空洞列表
+        # Update hole list
         existing = set(np.unique(province_map)) - {0}
         remaining_gaps = sorted(set(range(1, max_id + 1)) - existing)
         self.event_bus.emit("province_gaps_changed", gap_ids=remaining_gaps)
@@ -158,9 +157,9 @@ class ProvinceController(BaseController):
 
 
     def split_by_line(self, pid: int, line_points: list[tuple[int, int]]) -> bool:
-        """用角度线切割省份。
-        line_points = [(cy, cx), (方向点), (鼠标点击位置)]。
-        鼠标点击的那一侧被切出成新省份。"""
+        """Cut provinces with angle lines.
+        line_points = [(cy, cx), (direction point), (mouse click position)].
+        The side clicked by the mouse is cut out into a new province."""
         import numpy as np
 
         map_data = self.project.map_data
@@ -169,32 +168,32 @@ class ProvinceController(BaseController):
         mask = province_map == pid
         pixels = int(np.sum(mask))
         if pixels < 16:
-            self._emit_status("切割失败（省份太小）", "Split failed (province is too small)")
+            self._emit_status("Split failed (province is too small)")
             return False
 
-        # 优先使用空洞 ID
+        # Prefer empty IDs
         max_id = int(province_map.max())
         existing = set(np.unique(province_map)) - {0}
         gap_ids = sorted(set(range(1, max_id + 1)) - existing)
         new_pid = gap_ids[0] if gap_ids else max_id + 1
 
-        # 解析线：质心 + 方向 + 鼠标位置
+        # Analytical line: center of mass + direction + mouse position
         cy, cx = line_points[0]
         dir_y, dir_x = float(line_points[1][0] - cy), float(line_points[1][1] - cx)
 
-        # 叉积判断每个像素在线的哪一侧
+        # Cross product determines which side of the line each pixel is on
         # cross = (px-cx)*dir_y - (py-cy)*dir_x
         ys, xs = np.where(mask)
         cross = (xs - cx).astype(np.float64) * dir_y - (ys - cy).astype(np.float64) * dir_x
 
-        # 判断鼠标点击的位置在哪一侧
+        # Determine which side the mouse click is on
         if len(line_points) >= 3:
             mouse_y, mouse_x = line_points[2]
             mouse_cross = float((mouse_x - cx) * dir_y - (mouse_y - cy) * dir_x)
         else:
             mouse_cross = 1.0
 
-        # 鼠标所在侧 → 切出去成新省份
+        # The side of the mouse → cut out to create a new province
         if mouse_cross > 0:
             split_sel = cross > 0
         else:
@@ -204,18 +203,18 @@ class ProvinceController(BaseController):
         count_keep = len(ys) - count_split
 
         if count_split < 4 or count_keep < 4:
-            self._emit_status("切割线没有将省份分成有效的两部分", "The split line did not divide the province into two valid parts")
+            self._emit_status("The split line did not divide the province into two valid parts")
             return False
 
         split_mask_arr = np.zeros_like(province_map, dtype=bool)
         split_mask_arr[ys[split_sel], xs[split_sel]] = True
 
-        # 通过 Command 执行
+        # Execute via Command
         cmd = SplitProvinceCommand(map_data, pid, new_pid, split_mask_arr)
         self.history.execute(cmd)
 
         self.project.mark_dirty()
-        self._emit_status(f"省份 {pid} 已切割，新省份 ID: {new_pid}", f"Province {pid} split; new province ID: {new_pid}")
+        self._emit_status(f"Province {pid} split; new province ID: {new_pid}")
         self._emit_render(full=True)
 
         max_id = int(province_map.max())
@@ -226,15 +225,15 @@ class ProvinceController(BaseController):
         return True
 
     def _handle_merge_click(self, pid: int) -> None:
-        """合并模式下点击省份。"""
+        """Click on a province in merge mode."""
         if self.merge_first_pid == 0:
             self.merge_first_pid = pid
-            self._emit_status(f"已选中省份 {pid}，点击要合并的目标省份", f"Province {pid} selected; click the province to merge into it")
+            self._emit_status(f"Province {pid} selected; click the province to merge into it")
         elif self.merge_first_pid == pid:
             self.merge_first_pid = 0
-            self._emit_status("取消选择，仍在合并模式", "Selection cleared; merge mode remains active")
+            self._emit_status("Selection cleared; merge mode remains active")
         else:
-            # 执行合并
+            # Perform merge
             cmd = MergeProvincesCommand(
                 self.project.map_data,
                 pid_keep=self.merge_first_pid,
@@ -249,16 +248,16 @@ class ProvinceController(BaseController):
             province_map = self.project.map_data.province_map
             max_id = int(province_map.max())
 
-            # 先发 gaps 和 count（UI 更新），再触发渲染
+            # Send gaps and count (UI updates) first, and then trigger rendering
             existing = set(np.unique(province_map)) - {0}
             gap_ids = sorted(set(range(1, max_id + 1)) - existing)
             print(f"[merge] {pid} → {self.merge_first_pid} | max_id={max_id} actual={len(existing)} gaps={gap_ids[:10]}")
             self.event_bus.emit("province_gaps_changed", gap_ids=gap_ids)
             self.event_bus.emit("province_count_changed", count=max_id)
             if gap_ids:
-                self._emit_status(f"已合并 {pid} → {self.merge_first_pid}，缺失ID: {gap_ids[:5]}...", f"Merged {pid} → {self.merge_first_pid}; missing IDs: {gap_ids[:5]}...")
+                self._emit_status(f"Merged {pid} → {self.merge_first_pid}; missing IDs: {gap_ids[:5]}...")
             else:
-                self._emit_status(f"已合并 {pid} → {self.merge_first_pid}（ID 无空洞）", f"Merged {pid} → {self.merge_first_pid} (no ID gaps)")
+                self._emit_status(f"Merged {pid} → {self.merge_first_pid} (no ID gaps)")
             self._emit_render(full=True)
 
-            # 不退出合并模式，重置等待下一对
+            # Does not exit merge mode, resets and waits for next pair

@@ -1,6 +1,4 @@
-"""
-RefineHeightRegionCommand — 局部精修高度图（支持 undo）。
-"""
+"""RefineHeightRegionCommand — Locally refined height map (supports undo)."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -14,7 +12,7 @@ from services.terrain_service import refine_heightmap_region
 
 @dataclass(frozen=True)
 class RefineParams:
-    """精修参数（对话框收集后传入 Command）。"""
+    """Refinement parameters (passed into Command after collection in dialog box)."""
     strength: float = 0.5
     enable_ridge: bool = True
     enable_erosion: bool = True
@@ -22,14 +20,14 @@ class RefineParams:
     enable_shrink: bool = False
     shrink_distance: float = 25.0
     seed: int = 42
-    # True = 选区内从零重新生成真实感地势 (忽略上面的精修开关)
+    # True = Regenerate realistic terrain from scratch in the selection (ignore the refinement switch above)
     regenerate: bool = False
 
 
 class RefineHeightRegionCommand(Command):
-    """把 refine_heightmap_region 的结果写入 map_data，支持 undo。"""
+    """Write the result of refine_heightmap_region into map_data, undo is supported."""
 
-    label = "局部精修高度"
+    label = "Refine regional height"
 
     def __init__(
         self,
@@ -44,7 +42,7 @@ class RefineHeightRegionCommand(Command):
 
     def execute(self) -> None:
         hm = self._map_data.height_map
-        # 只备份 mask 内原值（省内存）
+        # Only back up the original value in mask (save memory)
         self._old_heights = hm[self._mask].copy()
         new_hm = refine_heightmap_region(
             height_map=hm,
@@ -59,7 +57,7 @@ class RefineHeightRegionCommand(Command):
             seed=self._params.seed,
             regenerate=self._params.regenerate,
         )
-        # 把 mask 内新值写回（mask 外已和原图相同）
+        # Write back the new value inside the mask (the outside of the mask is the same as the original image)
         hm[self._mask] = new_hm[self._mask]
 
     def undo(self) -> None:

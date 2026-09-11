@@ -1,4 +1,4 @@
-"""河流编辑页面 — 新版 UI：🪄 一键生成 + ✏️ 手动 3 步引导。"""
+"""River Edit Page — New UI: 🪄 One-click generation + ✏️ Manual 3-step guide."""
 
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtWidgets import (
@@ -8,7 +8,7 @@ from PyQt5.QtWidgets import (
 
 from domain.managers.river import (
     RIVER_MARKER_TYPES, RIVER_WIDTH_TYPES, RIVER_PALETTE,
-    RIVER_WIDTH_4,  # 默认宽度：中河 (index 6)
+    RIVER_WIDTH_4,  # Default width: Middle River (index 6)
 )
 
 from ui.styles import (
@@ -20,9 +20,9 @@ from ui.i18n import tr
 
 
 class RiverPage(QWidget):
-    """河流编辑页面 — 新版布局（自动 + 手动 3 步）。"""
+    """River edit page - new layout (automatic + manual 3 steps)."""
 
-    # 输出信号
+    # Output signal
     tool_changed = pyqtSignal(str)
     brush_size_changed = pyqtSignal(int)
     river_type_changed = pyqtSignal(int)
@@ -50,11 +50,11 @@ class RiverPage(QWidget):
         auto_box.layout().addWidget(auto_btn)
         lay.addWidget(auto_box)
 
-        # ═══════════════════ ✏️ 手动画河流 ═══════════════════
+        # ═══════════════════ ✏️ Hand drawn river ═══════════════════
         manual_box = _make_section(tr("river_section_manual"))
         manual_layout = manual_box.layout()
 
-        # ── Step 1：选宽度 ──
+        # ── Step 1: Select width ──
         step1 = QLabel(tr("river_step1_title"))
         step1.setStyleSheet(f"color: {_TEXT}; font-size: 14px; padding: 2px;")
         step1.setTextFormat(Qt.TextFormat.RichText)
@@ -76,12 +76,12 @@ class RiverPage(QWidget):
             wgrid.addWidget(btn, i // 4, i % 4)
         manual_layout.addLayout(wgrid)
 
-        # 默认选"中河"
+        # "Middle River" is selected by default
         default_btn = self._width_group.button(RIVER_WIDTH_4)
         if default_btn:
             default_btn.setChecked(True)
 
-        # ── Step 2：画河流 ──
+        # ── Step 2: Draw the river ──
         step2 = QLabel(tr("river_step2_title"))
         step2.setStyleSheet(f"color: {_TEXT}; font-size: 14px; padding: 6px 2px 2px 2px;")
         step2.setTextFormat(Qt.TextFormat.RichText)
@@ -92,13 +92,13 @@ class RiverPage(QWidget):
         step2_hint.setWordWrap(True)
         manual_layout.addWidget(step2_hint)
 
-        # ── Step 3：加标记 ──
+        # ── Step 3: Add mark ──
         step3 = QLabel(tr("river_step3_title"))
         step3.setStyleSheet(f"color: {_TEXT}; font-size: 14px; padding: 6px 2px 2px 2px;")
         step3.setTextFormat(Qt.TextFormat.RichText)
         manual_layout.addWidget(step3)
 
-        # marker 按钮 + 对应 tooltip key
+        # marker button + corresponding tooltip key
         _MARKER_TIP_KEYS = {
             "river_marker_source": "river_marker_source_tip",
             "river_marker_confluence": "river_marker_confluence_tip",
@@ -126,7 +126,7 @@ class RiverPage(QWidget):
         step3_hint.setWordWrap(True)
         manual_layout.addWidget(step3_hint)
 
-        # 验证按钮 — 挪到手动 section 末尾（用户画完河流的自然位置）
+        # Validation button — moved to the end of the manual section (the natural position where the user has finished drawing the river)
         validate_btn = QPushButton(tr("river_btn_validate_new"))
         validate_btn.setStyleSheet(_SECONDARY_BTN_STYLE)
         validate_btn.setToolTip(tr("river_validate_tooltip"))
@@ -135,7 +135,7 @@ class RiverPage(QWidget):
 
         lay.addWidget(manual_box)
 
-        # ═══════════════════ 工具：画笔/橡皮（中键已支持平移，删 pan 按钮）═══════════════════
+        # ═══════════════════ Tools: Brush/Eraser (middle button already supports panning, pan deletion button) ═══════════════════
         tools_box = _make_section(tr("section_tools"))
         tl = QHBoxLayout()
         self._river_tool_group = QButtonGroup(self)
@@ -155,7 +155,7 @@ class RiverPage(QWidget):
         )
         tools_box.layout().addLayout(tl)
 
-        # 橡皮大小（画笔默认 1px 不可调 — HOI4 河流必须 1 像素宽）
+        # Eraser size (brush defaults to 1px, not adjustable - HOI4 rivers must be 1 pixel wide)
         size_row = QHBoxLayout()
         size_lbl = QLabel(tr("river_eraser_range"))
         size_lbl.setStyleSheet(_LABEL_STYLE)
@@ -168,7 +168,7 @@ class RiverPage(QWidget):
 
         self._river_brush_slider = QSlider(Qt.Orientation.Horizontal)
         self._river_brush_slider.setRange(1, 20)
-        self._river_brush_slider.setValue(1)  # 默认 1px（画笔也按 1px 画，只影响橡皮）
+        self._river_brush_slider.setValue(1)  # Default 1px (the brush is also drawn at 1px, which only affects the eraser)
         self._river_brush_slider.setStyleSheet(_SLIDER_STYLE)
         self._river_brush_slider.valueChanged.connect(self._on_river_brush)
         tools_box.layout().addWidget(self._river_brush_slider)
@@ -180,7 +180,7 @@ class RiverPage(QWidget):
 
         lay.addWidget(tools_box)
 
-        # 底部导航/快捷键提示
+        # Bottom navigation/shortcut key tips
         nav_tip = QLabel(tr("river_nav_tip"))
         nav_tip.setStyleSheet(f"color: {_DIM}; font-size: 11px; padding: 4px 2px;")
         nav_tip.setWordWrap(True)
@@ -189,7 +189,7 @@ class RiverPage(QWidget):
         lay.addStretch()
 
     def _on_width_clicked(self, idx: int) -> None:
-        """选了宽度按钮 → 取消标记组选中。"""
+        """Width button selected → Uncheck Mark Group."""
         checked = self._marker_group.checkedButton()
         if checked:
             self._marker_group.setExclusive(False)
@@ -198,7 +198,7 @@ class RiverPage(QWidget):
         self.river_type_changed.emit(idx)
 
     def _on_marker_clicked(self, idx: int) -> None:
-        """选了标记按钮 → 取消宽度组选中。"""
+        """Mark button selected → Uncheck Width group."""
         checked = self._width_group.checkedButton()
         if checked:
             self._width_group.setExclusive(False)
@@ -211,14 +211,14 @@ class RiverPage(QWidget):
         self.brush_size_changed.emit(size)
 
     def showEvent(self, event):
-        """每次切到河流 tab 都重置为默认宽度画笔（非源头）。"""
+        """Reset to default width brush (not source) every time you switch to river tab."""
         super().showEvent(event)
         if self._river_brush_slider.value() != 1:
             self._river_brush_slider.setValue(1)
         else:
-            # 值没变时 setValue 不发信号 → 手动同步, 否则画布残留其他模式的笔刷尺寸
+            # setValue does not send a signal when the value has not changed → manual synchronization, otherwise the brush size of other modes will remain on the canvas
             self.brush_size_changed.emit(1)
-        # 重置到宽度模式，取消标记组
+        # Reset to width mode, unmark group
         default_btn = self._width_group.button(RIVER_WIDTH_4)
         if default_btn and not default_btn.isChecked():
             default_btn.setChecked(True)
@@ -226,7 +226,7 @@ class RiverPage(QWidget):
 
 
 def _make_river_btn(name: str, r: int, g: int, b: int) -> QPushButton:
-    """创建河流类型按钮（选中有白框）"""
+    """Create river type button (selected with white box)"""
     btn = QPushButton(name)
     brightness = r * 0.299 + g * 0.587 + b * 0.114
     fg = "#000000" if brightness > 140 else "#ffffff"

@@ -1,11 +1,9 @@
-"""
-主窗口 — 薄壳，只做 UI 组装和信号路由。
-所有业务逻辑委托给 ApplicationController。
+"""Main window — a thin shell that only does UI assembly and signal routing.
+All business logic is delegated to the ApplicationController.
 
-文件操作/对话框拆分在:
-  - views/main_window_actions.py (省份生成/验证/国家/河流/地形/大陆/战略区/后勤)
-  - views/main_window_file_ops.py (新建/打开/保存/导入/导出)
-"""
+File operation/dialog split at:
+  - views/main_window_actions.py (province generation/verification/country/river/terrain/continent/strategic area/logistics)
+  - views/main_window_file_ops.py (new/open/save/import/export)"""
 from __future__ import annotations
 
 from PyQt5.QtWidgets import (
@@ -46,29 +44,29 @@ from data.constants import DEFAULT_PROVINCES
 
 
 class MainWindow(MainWindowActionsMixin, QMainWindow):
-    """主窗口 — 纯 UI 壳，逻辑在 ApplicationController。"""
+    """Main window — pure UI shell, logic in ApplicationController."""
 
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle(tr("app_title"))
         self.setMinimumSize(1200, 700)
 
-        # ── 核心对象 ──
+        # ── Core Object ──
         self._event_bus = EventBus()
         self._project = Project(event_bus=self._event_bus)
         self._cmd_history = CommandHistory(event_bus=self._event_bus)
 
-        # 选区模式标志
+        # selection mode flag
         self._batch_state_mode = False
         self._batch_state_pids: list[int] = []
         self._sr_from_states_mode = False
         self._sr_selected_states: list[int] = []
 
-        # 旧版 undo manager（画布 stroke 仍在用，阶段 4 统一后删除）
+        # Old version of undo manager (canvas stroke is still in use, deleted after unification in stage 4)
         from domain.undo_manager import UndoManager
         self._undo_mgr = UndoManager(max_steps=30)
 
-        # ── 12 个 Controller ──
+        # ── 12 Controllers ──
         self._controllers: dict[str, object] = {
             "land": LandController(self._project, self._cmd_history),
             "province": ProvinceController(self._project, self._cmd_history),
@@ -85,15 +83,15 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
             "default_map": DefaultMapController(self._project, self._cmd_history),
         }
 
-        # ── 快捷键管理器 ──
+        # ── Shortcut Key Manager ──
         self._shortcut_mgr = ShortcutManager()
 
-        # ── UI 组装 ──
+        # ── UI Assembly ──
         self._init_ui()
         self._init_menu()
         self._init_statusbar()
 
-        # ── ApplicationController（在 UI 组装后创建）──
+        # ──ApplicationController (created after UI assembly)──
         self._app = ApplicationController(
             self._project, self._canvas, self._tool_panel,
             self._cmd_history, self._controllers, self._undo_mgr,
@@ -103,38 +101,38 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
         self._subscribe_events()
         self._init_shortcuts()
 
-        # ── 右键上下文菜单 ──
+        # ──Right-click context menu──
         self._context_menu = ProvinceContextMenu(
             self._project, self._controllers, self._canvas,
             open_state_detail=self._on_state_detail_requested,
             delete_provinces=self._on_delete_provinces_requested,
         )
 
-        # 启动时显示欢迎页
+        # Show welcome page on startup
         self._show_welcome()
 
-        # 后台检查更新
+        # Check for updates in the background
         QTimer.singleShot(2000, self._check_for_update)
 
-        # 让 canvas 和 project 共享同一个 MapData 实例
+        # Let canvas and project share the same MapData instance
         self._canvas.set_map_data(self._project.map_data)
-        # 挂管理器到 canvas，让后勤 overlay 能读到数据
+        # Hang the manager to the canvas so that the logistics overlay can read the data
         self._canvas._supply_mgr = self._project.supply_mgr
         self._canvas._railway_mgr = self._project.railway_mgr
         self._refresh_feature_statuses()
 
-        # 初始模式
+        # initial mode
         self._on_mode_changed("land")
 
         QTimer.singleShot(100, self._canvas.fit_in_view)
 
-    # ═══════════════════════ UI 初始化 ═══════════════════════
+    # ═══════════════════════ UI initialization ═══════════════════════
 
     def _init_ui(self) -> None:
         self._stack = QStackedWidget()
         self.setCentralWidget(self._stack)
 
-        # 欢迎页
+        # Welcome page
         self._welcome_page = WelcomePage()
         self._welcome_page.new_project_requested.connect(self._on_welcome_new)
         self._welcome_page.open_project_requested.connect(self._on_open_project)
@@ -144,7 +142,7 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
         self._welcome_page.language_changed.connect(self._on_language_changed)
         self._stack.addWidget(self._welcome_page)
 
-        # 编辑器布局：左侧固定宽度工具面板 + 右侧画布
+        # Editor layout: fixed-width tool panel on the left + canvas on the right
         self._editor = QWidget()
         editor = self._editor
         editor_layout = QHBoxLayout(editor)
@@ -152,7 +150,7 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
         editor_layout.setSpacing(0)
 
         self._tool_panel = ToolPanel()
-        # 软约束: 最小 380px (中/英 设计宽度), 上限 480px 防俄语等长语言把侧栏吃满
+        # Soft constraints: keep the sidebar usable for localized text without letting it dominate the window.
         self._tool_panel.setMinimumWidth(380)
         self._tool_panel.setMaximumWidth(480)
         editor_layout.addWidget(self._tool_panel)
@@ -165,7 +163,7 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
     def _init_menu(self) -> None:
         menubar = self.menuBar()
 
-        # 文件
+        # File
         file_menu = menubar.addMenu(tr("menu_file"))
         self._add_action(file_menu, tr("action_new"), self._on_new_project, QKeySequence.StandardKey.New)
         self._add_action(file_menu, tr("action_open"), self._on_open_project, "Ctrl+O")
@@ -182,14 +180,14 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
         file_menu.addSeparator()
         self._add_action(file_menu, tr("action_exit"), self.close, QKeySequence.StandardKey.Quit)
 
-        # 编辑
+        # Edit
         edit_menu = menubar.addMenu(tr("menu_edit"))
         self._undo_action = self._add_action(edit_menu, tr("action_undo"), self._on_undo, "Ctrl+Z")
         self._redo_action = self._add_action(edit_menu, tr("action_redo"), self._on_redo, "Ctrl+Y")
         self._undo_action.setEnabled(False)
         self._redo_action.setEnabled(False)
 
-        # 视图
+        # view
         view_menu = menubar.addMenu(tr("menu_view"))
         self._add_action(view_menu, tr("action_zoom_fit"), self._canvas.fit_in_view, "Ctrl+0")
         act_ref = QAction(tr("action_show_ref"), self)
@@ -197,7 +195,7 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
         act_ref.setChecked(True)
         act_ref.triggered.connect(self._canvas.toggle_ref_image)
         view_menu.addAction(act_ref)
-        # 国家/州 归属叠加层 —— 全局开关，任意模式下都能看
+        # Country/State Attribution Overlay - Global switch, viewable in any mode
         act_cs = QAction(tr("action_show_country_state_overlay"), self)
         act_cs.setCheckable(True)
         act_cs.setChecked(False)
@@ -205,7 +203,7 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
         act_cs.triggered.connect(self._on_terrain_context_overlay)
         view_menu.addAction(act_cs)
         self._act_country_state_overlay = act_cs
-        # 地形底图（国家/州模式下做底，保留画边界时的地形参考）
+        # Topographic base map (base in country/state mode, retain the terrain reference when drawing borders)
         act_tu = QAction(tr("action_show_terrain_underlay"), self)
         act_tu.setCheckable(True)
         act_tu.setChecked(False)
@@ -213,7 +211,7 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
         act_tu.triggered.connect(self._on_terrain_underlay_toggle)
         view_menu.addAction(act_tu)
         self._act_terrain_underlay = act_tu
-        # 透明度滑块（嵌入菜单）
+        # Transparency slider (embedded menu)
         opacity_widget = QWidget()
         opacity_layout = QHBoxLayout(opacity_widget)
         opacity_layout.setContentsMargins(24, 2, 12, 2)
@@ -229,7 +227,7 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
         view_menu.addAction(act_opacity)
         self._terrain_underlay_slider = slider
 
-        # 地形底图源切换 (互斥: 高度图 / 地形图)
+        # Terrain basemap source switching (mutually exclusive: height map / terrain map)
         from PyQt5.QtWidgets import QActionGroup
         underlay_group = QActionGroup(self)
         underlay_group.setExclusive(True)
@@ -246,7 +244,7 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
         view_menu.addAction(act_src_terrain)
         underlay_group.addAction(act_src_terrain)
 
-        # 工具
+        # Tools
         tools_menu = menubar.addMenu(tr("menu_tools"))
         self._add_action(tools_menu, tr("action_generate_all_provinces"),
                          lambda: self._on_generate_provinces("all", DEFAULT_PROVINCES), "Ctrl+G")
@@ -254,7 +252,7 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
         tools_menu.addSeparator()
         self._add_action(tools_menu, tr("action_quick_init"), self._on_quick_init)
 
-        # 设置
+        # settings
         settings_menu = menubar.addMenu(tr("menu_settings"))
         self._add_action(
             settings_menu,
@@ -263,7 +261,7 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
         )
         self._add_action(settings_menu, tr("action_shortcut_settings"), self._on_shortcut_settings)
 
-        # 帮助
+        # help
         help_menu = menubar.addMenu(tr("menu_help"))
         self._add_action(help_menu, tr("action_guide"), self._show_guide_force)
         self._add_action(help_menu, tr("action_reset_hints"), self._reset_mode_hints)
@@ -292,27 +290,27 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
         sb.addPermanentWidget(self._status_pos)
         sb.addPermanentWidget(self._status_zoom)
 
-    # ═══════════════════════ 信号连接 ═══════════════════════
+    # ═══════════════════════ Signal connection ═══════════════════════
 
     def _connect_signals(self) -> None:
         tp = self._tool_panel
         cv = self._canvas
 
-        # 模式切换
+        # Mode switch
         tp.mode_changed.connect(self._on_mode_changed)
 
-        # 预览
+        # Preview
         tp.preview_refresh_requested.connect(self._on_preview_refresh)
         tp.preview_game_dir_changed.connect(self._on_preview_game_dir_changed)
         tp.preview_political_toggled.connect(self._on_preview_political_toggled)
         tp.preview_night_toggled.connect(self._on_preview_night_toggled)
 
-        # 工具/画笔 → 画布 (直通)
+        # Tools/Brushes → Canvas (pass-through)
         tp.tool_changed.connect(cv.set_tool)
         tp.tile_type_changed.connect(cv.set_tile_type)
         tp.brush_size_changed.connect(cv.set_brush_size)
         tp.terrain_index_changed.connect(cv.set_terrain_index)
-        # 按省份生成走 controller.on_province_clicked，必须同步 current_terrain_index
+        # To generate controller.on_province_clicked by province, current_terrain_index must be synchronized.
         tp.terrain_index_changed.connect(
             lambda idx: setattr(self._controllers["terrain"], "current_terrain_index", idx)
         )
@@ -321,7 +319,7 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
             lambda on: setattr(self._controllers["terrain"], "brush_mode", on)
         )
         tp.height_value_changed.connect(cv.set_height_value)
-        # 属性地形选择 → 属性地形 controller
+        # Attributed terrain selection → Attributed terrain controller
         tp.province_terrain_type_changed.connect(
             self._controllers["province_terrain"].set_type
         )
@@ -332,7 +330,7 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
             self._controllers["province_terrain"].sync_from_visual
         )
 
-        # 参考图控件 → 画布
+        # Reference Drawing Control → Canvas
         tp._vanilla_ref_opacity_slider.valueChanged.connect(
             lambda v: cv.set_vanilla_ref_opacity(v / 100.0)
         )
@@ -348,36 +346,36 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
         tp._ref_toggle.toggled.connect(
             lambda on: cv.toggle_ref_image(not on)
         )
-        # 原版参考: 缩放（与自定义图对称）
+        # Original reference: Zoom (symmetrical with custom graph)
         tp._vanilla_ref_scale_slider.valueChanged.connect(
             lambda v: cv.set_ref_layer_scale("vanilla", v / 100.0)
         )
-        # 打开原版参考（复用文件菜单动作）
+        # Open original reference (reuse File menu action)
         tp.open_vanilla_requested.connect(self._on_load_vanilla_ref)
-        # 调整参考图模式
+        # Adjust reference image mode
         def _on_ref_adjust_toggled(on: bool) -> None:
             cv.set_ref_adjust_mode(tp.current_adjust_target() if on else None)
             if on:
-                cv.setFocus()   # 焦点给画布, 让 ESC 直接可用（刚点完按钮时焦点在按钮上）
+                cv.setFocus()   # Give focus to the canvas, making ESC available directly (the focus is on the button when you just click the button)
         tp.ref_adjust_toggled.connect(_on_ref_adjust_toggled)
         tp.ref_adjust_target_changed.connect(cv.set_ref_adjust_mode)
         cv.ref_adjust_exited.connect(lambda: tp.set_ref_adjust_checked(False))
         cv.ref_adjust_scale_changed.connect(
             lambda t, s: tp.set_ref_scale_percent(t, int(round(s * 100)))
         )
-        # 已生成省份后画陆海 → 弹确认框（直连信号, 画布同步读结果）
+        # After generating the province, draw the land and sea → pop up the confirmation box (direct signal connection, simultaneous reading of the results on the canvas)
         cv.land_paint_confirm_requested.connect(self._on_land_paint_confirm)
 
-        # 操作按钮 → 本窗口处理（含 UI 交互）
+        # Operation button → Processing in this window (including UI interaction)
         tp.generate_provinces_requested.connect(self._on_generate_provinces)
         tp.validate_requested.connect(self._on_validate)
         tp.smooth_coast_requested.connect(self._on_smooth_coast)
-        # ① 参考底图卡片里的导入按钮 → 复用文件菜单的导入参考图动作
+        # ① Import button in the basemap card → Reuse the import reference map action in the file menu
         tp.import_ref_requested.connect(self._on_import_image)
         tp.auto_land_from_ref_requested.connect(self._on_auto_land_from_reference)
         tp.clear_new_land_mask_requested.connect(self._on_clear_new_land_mask)
-        # 新大陆信号
-        # 密度模式信号
+        # New World Signal
+        # Density mode signal
         tp.density_value_changed.connect(
             lambda v: setattr(self._canvas, '_density_paint_value', v))
         tp.density_brush_size_changed.connect(cv.set_density_brush_size)
@@ -412,14 +410,14 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
         tp.ridge_preview_requested.connect(self._on_ridge_preview)
         tp.ridge_confirmed.connect(self._on_ridge_confirm)
         tp.ridge_cancelled.connect(self._on_ridge_cancel)
-        # 保形精修（整图, 生成菜单第③项）
+        # Conformal finishing (whole image, generation menu item ③)
         tp.refine_whole_map_requested.connect(self._on_refine_whole_map)
         cv.province_gaps_detected.connect(
             lambda gaps: self._tool_panel.update_province_gaps(gaps)
         )
         tp.export_requested.connect(self._on_export_mod)
 
-        # Province 信号 → controller
+        # Province signal → controller
         tp.split_mode_toggled.connect(self._on_split_toggled)
         tp.lasso_province_toggled.connect(self._on_lasso_toggled)
         tp.merge_mode_toggled.connect(self._on_merge_toggled)
@@ -431,7 +429,7 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
         tp.random_split_requested.connect(self._on_random_split_selected)
         cv.split_line_drawn.connect(self._on_split_line_drawn)
 
-        # State 信号 → controller
+        # State signal → controller
         tp.auto_states_requested.connect(self._on_auto_states_with_confirm)
         tp.state_selected.connect(
             lambda sid: self._controllers["state"].select_state(sid)
@@ -453,13 +451,13 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
         )
         tp.state_resplit_requested.connect(self._on_resplit_state)
 
-        # Country 信号 → controller
+        # Country signal → controller
         tp.create_country_requested.connect(self._on_create_country)
         tp.quick_create_country_requested.connect(self._on_quick_create_country)
         tp.country_selected.connect(
             lambda tag: self._controllers["country"].select_country(tag)
         )
-        # 选中国家时, 在 canvas 上高亮该国所有领土像素
+        # When a country is selected, highlight all territorial pixels of that country on the canvas
         tp.country_selected.connect(self._on_country_highlight)
         tp.country_property_changed.connect(self._on_country_property_change)
         tp.country_color_change_requested.connect(self._on_country_color_change)
@@ -473,12 +471,12 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
             lambda on: self._controllers["country"].set_assign_mode(on)
         )
 
-        # River 信号
+        # River signal
         tp.river_type_changed.connect(cv.set_river_type)
         tp.validate_river_requested.connect(self._on_validate_river)
         tp.auto_hydrology_from_ref_requested.connect(self._on_auto_hydrology_from_reference)
 
-        # Logistics 信号 → controller
+        # Logistics signal → controller
         tp.open_adjacency_dialog_requested.connect(self._open_adjacency_dialog)
         tp.open_railway_list_requested.connect(self._open_railway_dialog)
         tp.generate_logistics_requested.connect(self._open_logistics_generation)
@@ -489,7 +487,7 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
             lambda on, erase: self._controllers["logistics"].toggle_supply_pick(on, erase)
         )
 
-        # Continent 信号 → controller
+        # Continent signal → controller
         tp.continent_pick_toggled.connect(self._on_continent_pick_toggled)
         tp.assign_by_state_changed.connect(
             lambda on: setattr(self._controllers["continent"], "assign_by_state", on)
@@ -504,7 +502,7 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
             lambda idx: self._on_continent_remove(idx)
         )
 
-        # Strategic region 信号 → controller
+        # strategic region signal → controller
         tp.strategic_region_auto_requested.connect(self._on_auto_sr_with_confirm)
         tp.auto_weather_requested.connect(
             lambda: (self._controllers["strategic_region"].auto_assign_weather(), self._refresh_sr_list())
@@ -523,7 +521,7 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
         tp.create_from_states_toggled.connect(self._on_sr_from_states_toggled)
         tp.create_from_states_confirmed.connect(self._on_sr_from_states_confirmed)
 
-        # Colormap 信号 → controller
+        # Colormap signal → controller
         tp.colormap_color_changed.connect(
             lambda attr, r, g, b: self._controllers["colormap"].change_color(attr, r, g, b)
         )
@@ -531,7 +529,7 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
             lambda: self._controllers["colormap"].reset()
         )
 
-        # Default map 信号 → controller
+        # Default map signal → controller
         tp.default_map_river_changed.connect(
             lambda lv: self._controllers["default_map"].set_river_level(lv)
         )
@@ -539,7 +537,7 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
         tp.default_map_tree_del_requested.connect(self._on_dm_tree_del)
         tp.default_map_tree_reset_requested.connect(self._on_dm_tree_reset)
 
-        # 画布信号
+        # canvas signal
         cv.province_clicked.connect(self._on_province_clicked)
         cv.province_double_clicked.connect(self._on_province_double_clicked)
         cv.province_right_clicked.connect(self._on_province_right_clicked)
@@ -554,11 +552,11 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
             lambda z: self._status_zoom.setText(tr("status_zoom", z))
         )
 
-    # ═══════════════════════ EventBus 订阅 ═══════════════════
+    # ═══════════════════════ EventBus Subscription ═══════════════════
 
     def _subscribe_events(self) -> None:
         bus = self._event_bus
-        # 只订阅纯 UI 更新事件，业务事件由 AppController 处理
+        # Only subscribe to pure UI update events, business events are handled by AppController
         bus.subscribe("status_message", self._on_evt_status)
         bus.subscribe("undo_state_changed", self._on_evt_undo_state)
         bus.subscribe("province_count_changed", self._on_evt_province_count)
@@ -577,7 +575,7 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
         self._redo_action.setEnabled(event.data.get("can_redo", False))
 
     def _on_evt_sr_select_in_list(self, event) -> None:
-        """点击省份查到所属战略区 → 在侧边栏列表中选中它。"""
+        """Click on the province to find the strategic area it belongs to → select it in the sidebar list."""
         rid = event.data.get("rid", 0)
         if rid <= 0:
             return
@@ -594,12 +592,12 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
         self._status_provinces.setText(tr("status_provinces", count))
 
     def _on_evt_vp_dialog(self, event) -> None:
-        """StateController 请求弹 VP 对话框。"""
+        """StateController requests to pop up the VP dialog box."""
         pid = event.data.get("pid", 0)
         if pid <= 0:
             return
 
-        # 读取当前值
+        # Read current value
         state_mgr = self._project.state_mgr
         sid = state_mgr.get_state_of_province(pid)
         state = state_mgr.get_state(sid) if sid > 0 else None
@@ -622,11 +620,11 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
             if self._adjacency_rule_dialog is not None:
                 self._adjacency_rule_dialog.receive_picked_province(pid)
 
-    # ═══════════════════════ 模式切换 ═══════════════════════
+    # ═══════════════════════ Mode switch ═══════════════════════
 
     def _on_mode_changed(self, mode: str) -> None:
         if mode == "preview":
-            # 首次进预览要整图合成 (大图数秒), 给用户等待反馈
+            # The first preview requires the whole image to be synthesized (a large image takes a few seconds), and the user is waiting for feedback.
             from PyQt5.QtWidgets import QApplication
             from PyQt5.QtCore import Qt
             QApplication.setOverrideCursor(Qt.WaitCursor)
@@ -642,12 +640,12 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
         elif mode == "logistics":
             self._refresh_logistics_counts()
         self._refresh_feature_statuses()
-        # 进入省份模式时检测 ID 空洞
+        # Detect ID holes when entering province mode
         if mode == "province":
             self._check_province_gaps()
 
     def _on_preview_refresh(self) -> None:
-        """预览页"刷新预览": 清合成缓存, 在预览模式则立即重新合成。"""
+        """"Refresh Preview" on the preview page: clears the synthesis cache and resynthesizes immediately in preview mode."""
         from PyQt5.QtWidgets import QApplication
         from PyQt5.QtCore import Qt
         from features.map.preview import renderer as preview_renderer
@@ -660,17 +658,17 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
                 QApplication.restoreOverrideCursor()
 
     def _on_preview_political_toggled(self, on: bool) -> None:
-        """预览页"政治视图"开关: 叠加/取消国家势力色。"""
+        """Preview page "Political View" switch: superimpose/cancel national power color."""
         self._canvas._preview_political = bool(on)
         if on:
-            # 预览模式下国家色平时不刷新, 开叠加前拉一次最新数据
+            # In preview mode, the national color is not refreshed normally, and the latest data is pulled before overlaying is enabled.
             self._app._refresh_country_colors()
         self._canvas._preview_political_cache = None
         if self._canvas.display_mode == "preview":
             self._canvas._full_render()
 
     def _on_preview_night_toggled(self, on: bool) -> None:
-        """预览页"夜景"开关: 压暗底图并点亮 urban 城市灯光。"""
+        """Preview page "night scene" switch: darken the base image and light up urban city lights."""
         self._canvas._preview_night = bool(on)
         self._canvas._preview_night_cache = None
         self._canvas._preview_night_src = None
@@ -678,14 +676,14 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
             self._canvas._full_render()
 
     def _on_preview_game_dir_changed(self, path: str) -> None:
-        """用户选择了游戏目录: 重建资产实例并作废预览缓存。"""
+        """User selected game directory: Rebuild asset instance and invalidate preview cache."""
         from services.game_assets import set_default_install_dir
         from features.map.preview import renderer as preview_renderer
         set_default_install_dir(path)
         preview_renderer.invalidate_cache(self._canvas)
 
     def _check_province_gaps(self) -> None:
-        """扫描省份 ID 空洞并更新提示。"""
+        """Scan for province ID holes and update hints."""
         import numpy as np
         pm = self._project.map_data.province_map
         if pm is None or int(pm.max()) == 0:
@@ -695,24 +693,24 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
         gap_ids = sorted(set(range(1, max_id + 1)) - existing)
         self._tool_panel.update_province_gaps(gap_ids)
 
-    # ═══════════════════════ 省份点击路由 ═══════════════════
+    # ═══════════════════════ Province click route ═══════════════════
 
     def _on_province_clicked(self, pid: int) -> None:
         if pid <= 0:
             return
 
-        # 批量建州模式
+        # Batch statehood model
         if self._batch_state_mode:
             if pid in self._batch_state_pids:
                 self._batch_state_pids.remove(pid)
             else:
                 self._batch_state_pids.append(pid)
             self._status_info.setText(tr("status_selected_provinces_state").format(n=len(self._batch_state_pids)))
-            # 画布高亮已选省份
+            # Canvas highlights selected provinces
             self._canvas.set_batch_selection_pids(self._batch_state_pids)
             return
 
-        # 选州创建战略区域模式
+        # Select states to create strategic regional models
         if self._sr_from_states_mode:
             sid = self._project.state_mgr.get_state_of_province(pid)
             if sid > 0:
@@ -720,7 +718,7 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
                     self._sr_selected_states.remove(sid)
                 else:
                     self._sr_selected_states.append(sid)
-                # 收集所有选中州的省份 → 高亮
+                # Collect provinces from all selected states → Highlight
                 all_pids: list[int] = []
                 for s in self._sr_selected_states:
                     state = self._project.state_mgr.get_state(s)
@@ -792,7 +790,7 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
         self._update_province_count()
         self._status_info.setText(tr("status_provinces_cleared"))
 
-    # ═══════════════════════ 撤销/重做 ═══════════════════════
+    # ═══════════════════════ Undo/Redo ═══════════════════════
 
     def _on_undo(self) -> None:
         msg = self._app.undo()
@@ -804,13 +802,13 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
         self._status_info.setText(msg)
         self._update_province_count()
 
-    # ═══════════════════════ Province 操作 ═══════════════════
+    # ═══════════════════════ Province Operation ═══════════════════
 
     def _on_split_toggled(self, on: bool) -> None:
         self._canvas._split_mode = on
         if on:
             self._status_info.setText(tr("province_hint_split"))
-            # 如果已有选中省份，直接显示切割线
+            # If a province has been selected, the cutting line will be displayed directly.
             pid = self._canvas._selected_province_id
             if pid > 0:
                 self._canvas._init_split_preview(pid)
@@ -820,19 +818,19 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
             self._status_info.setText(tr("status_view_mode"))
 
     def _on_split_line_drawn(self, pid: int, path: list) -> None:
-        """画线切割省份。"""
+        """Draw lines to cut provinces."""
         ctrl: ProvinceController = self._controllers["province"]
         ctrl.selected_province_id = pid
         ok = ctrl.split_by_line(pid, path)
         if ok:
             self._update_province_count()
-            # 刷新边界和高亮
+            # Refresh borders and highlights
             self._canvas._border_cache = None
             if hasattr(self._canvas, '_border_base_pixmap'):
                 self._canvas._border_base_pixmap = None
             self._canvas._full_render()
             self._canvas._render_province_overlay()
-            # 保持选中原省份，自动进入下一次切割预览
+            # Keep the original province selected and automatically enter the next cutting preview.
             if self._canvas._split_mode:
                 self._canvas._init_split_preview(pid)
 
@@ -895,7 +893,7 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
         self._status_info.setText(tr("province_status_new", pid=pid))
 
     def _on_find_province(self, pid: int) -> None:
-        """省份查找：跳转 + 高亮 + 同步信息条。"""
+        """Province search: jump + highlight + synchronize information bar."""
         import numpy as np
         if pid <= 0:
             return
@@ -910,24 +908,24 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
         cx = int(xs.mean())
         cy = int(ys.mean())
         self._canvas.centerOn(float(cx), float(cy))
-        # 复用省份模式的"选中"渲染做高亮
+        # Reuse the "selected" rendering of province mode for highlighting
         self._canvas.select_province(
             pid, int(self._canvas._tile_map[cy, cx]), additive=False
         )
         self._canvas._render_province_overlay()
-        # 通过 province controller 触发信息更新（让信息条/统计自动刷新）
+        # Trigger information update through province controller (let information bar/statistics refresh automatically)
         pctrl = self._controllers.get("province")
         if pctrl is not None and hasattr(pctrl, "on_province_clicked"):
             pctrl.on_province_clicked(pid)
         self._status_info.setText(tr("status_province_located").format(pid=pid))
 
-    # ═══════════════════════ 批量建州 ═══════════════════════
+    # ═══════════════════════ Batch state creation ═══════════════════════
 
     def _on_batch_state_toggled(self, on: bool) -> None:
-        """开关批量选省份建州模式。"""
+        """Switch batch selection of provinces to statehood mode."""
         self._batch_state_mode = on
         self._batch_state_pids = []
-        # 关闭模式时清除高亮
+        # Clear highlight when closing mode
         self._canvas.set_batch_selection_pids([])
         if on:
             self._status_info.setText(tr("status_batch_state_mode"))
@@ -935,7 +933,7 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
             self._status_info.setText(tr("status_view_mode"))
 
     def _on_batch_state_confirmed(self) -> None:
-        """确认用选中的省份创建新州。"""
+        """Confirm to create the new state with the selected province."""
         pids = self._batch_state_pids
         if not pids:
             QMessageBox.warning(self, tr("dlg_batch_state_title"), tr("dlg_batch_state_select_first"))
@@ -943,7 +941,7 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
         ctrl = self._controllers["state"]
         n = len(pids)
         new_sid = ctrl.create_state_from_provinces(pids)
-        # 重置模式 + 清除高亮
+        # Reset mode + clear highlights
         self._batch_state_mode = False
         self._batch_state_pids = []
         self._canvas.set_batch_selection_pids([])
@@ -951,10 +949,10 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
             self._canvas.refresh_display()
             QMessageBox.information(self, tr("dlg_batch_state_title"), tr("dlg_batch_state_done").format(sid=new_sid, n=n))
 
-    # ═══════════════════════ 战略区域从州创建 ═══════════════════
+    # ═══════════════════════ Strategic areas are created from states ═══════════════════
 
     def _on_sr_from_states_toggled(self, on: bool) -> None:
-        """开关选州创建战略区域模式。"""
+        """Switch selected states to create strategic region mode."""
         self._sr_from_states_mode = on
         self._sr_selected_states = []
         self._canvas.set_batch_selection_pids([])
@@ -965,7 +963,7 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
             self._status_info.setText(tr("status_view_mode"))
 
     def _on_sr_from_states_confirmed(self) -> None:
-        """确认用选中的州创建战略区域。"""
+        """Confirm to create strategic areas with selected states."""
         sids = self._sr_selected_states
         if not sids:
             QMessageBox.warning(self, tr("dlg_sr_from_states_title"), tr("dlg_sr_from_states_select_first"))
@@ -973,22 +971,22 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
         ctrl = self._controllers["strategic_region"]
         n = len(sids)
         new_rid = ctrl.create_from_states(sids)
-        # 重置模式
+        # reset mode
         self._sr_from_states_mode = False
         self._sr_selected_states = []
         self._canvas.set_batch_selection_pids([])
         self._canvas.show_state_borders(False)
         if new_rid > 0:
-            # 刷新战略区域颜色图 + 列表
+            # Refresh strategic area color map + list
             self._app._refresh_sr_colors()
             self._canvas.refresh_display()
             self._refresh_sr_list()
             QMessageBox.information(self, tr("dlg_sr_from_states_title"), tr("dlg_sr_from_states_done").format(rid=new_rid, n=n))
 
-    # ═══════════════════════ State 管理 ═══════════════════════
+    # ═══════════════════════ State Management ═══════════════════════
 
     def _on_resplit_state(self, state_id: int, target_count: int) -> None:
-        """重新分割州内省份: 确认 → 命令执行 (Ctrl+Z 可撤销) → 刷新。"""
+        """Re-divide the provinces within the state: Confirm → Execute command (Ctrl+Z can be undone) → Refresh."""
         state = self._project.state_mgr.get_state(state_id)
         if not state or not state.provinces:
             return
@@ -1036,29 +1034,29 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
             self._app._refresh_state_list()
             self._status_info.setText(tr("status_state_updated").format(sid=state_id))
 
-    # ═══════════════════════ 省份计数 ═══════════════════════
+    # ═══════════════════════ Province Count ═══════════════════════
 
     def _update_province_count(self) -> None:
         count = self._app.update_province_count()
         self._status_provinces.setText(tr("status_provinces", count))
 
-    # ═══════════════════════ 欢迎页 ═══════════════════════════
+    # ═══════════════════════ Welcome page ═══════════════════════════
 
     def _check_for_update(self) -> None:
-        """后台检查 GitHub 是否有新版本。"""
+        """Check GitHub in the background to see if there is a new version."""
         import threading
 
         def _check():
             from services.update_checker import check_for_update
             result = check_for_update()
             if result:
-                # 回到主线程弹窗
+                # Return to the main thread pop-up window
                 QTimer.singleShot(0, lambda: self._show_update_dialog(result))
 
         threading.Thread(target=_check, daemon=True).start()
 
     def _show_update_dialog(self, info: dict) -> None:
-        """显示更新提示对话框。"""
+        """Displays the update prompt dialog box."""
         import webbrowser
         from version import VERSION
         reply = QMessageBox.information(
@@ -1080,7 +1078,7 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
         QTimer.singleShot(100, self._canvas.fit_in_view)
 
     def _on_language_changed(self, lang: str) -> None:
-        """语言切换后刷新整个 UI。"""
+        """Refresh the entire UI after language switching."""
         self._retranslate_ui()
 
     def _on_welcome_new(self, width: int, height: int) -> None:
@@ -1089,20 +1087,20 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
         self._maybe_show_guide()
 
     def _maybe_show_guide(self) -> None:
-        """新建项目后弹出新手引导（除非用户勾了不再显示）。"""
+        """After creating a new project, a novice guide will pop up (unless the user checks not to display it again)."""
         from views.guide_dialog import should_show_guide, GuideDialog
         if should_show_guide():
             dlg = GuideDialog(self)
             dlg.exec_()
 
     def _show_guide_force(self) -> None:
-        """从帮助菜单强制打开引导。"""
+        """Force boot from the help menu."""
         from views.guide_dialog import GuideDialog
         dlg = GuideDialog(self)
         dlg.exec_()
 
     def _reset_mode_hints(self) -> None:
-        """重置所有模式操作提示。"""
+        """Reset all mode operation prompts."""
         from ui.mode_hint_bar import ModeHintBar
         ModeHintBar.reset_all_hints()
         QMessageBox.information(self, tr("action_reset_hints"), tr("guide_reset_done"))
@@ -1117,7 +1115,7 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
         self._show_editor()
 
     def _on_welcome_import_mod(self) -> None:
-        """欢迎页的导入MOD按钮：直接选文件夹 → 导入 → 进编辑器。"""
+        """Import MOD button on the welcome page: directly select the folder → Import → Enter the editor."""
         from PyQt5.QtWidgets import QFileDialog
 
         mod_dir = QFileDialog.getExistingDirectory(
@@ -1129,16 +1127,15 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
         self._import_mod_dir_with_progress(mod_dir)
 
     def _on_open_vanilla_reference(self) -> None:
-        """打开原版游戏地图作为只读参考项目。
+        """Open the original game map as a read-only reference project.
 
-        游戏目录只在导入时被读取, 永远不会被写入; 导入结果不绑定任何
-        项目文件, 保存时自动走"另存为" — 想保留修改只能存成自己的新项目,
-        所以"原版不可被改坏"的语义天然成立。
-        """
+        The game directory is only read during import, never written; the import result is not bound to any
+        Project files will automatically go to "Save As" when saving - if you want to keep the changes, you can only save them as your own new project.
+        Therefore, the semantics of "the original version cannot be modified" is naturally established."""
         from PyQt5.QtWidgets import QFileDialog
         from services.game_assets import find_hoi4_install
 
-        # 编辑器里已开着项目时, 先确认替换
+        # When the project is already open in the editor, confirm the replacement first
         if self._stack.currentWidget() is self._editor:
             reply = QMessageBox.question(
                 self, tr("dlg_confirm"), tr("vanilla_confirm_replace"))
@@ -1159,7 +1156,7 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
 
     def _import_mod_dir_with_progress(
             self, mod_dir: str, vanilla_note: bool = False) -> None:
-        """带进度框的导入流程 (欢迎页导入MOD / 打开原版参考共用)。"""
+        """Import process with progress box (welcome page to import MOD / open the original version for reference sharing)."""
         from PyQt5.QtWidgets import QProgressDialog
         from services.import_service import validate_mod_directory, import_mod_map
 
@@ -1171,7 +1168,7 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
             )
             return
 
-        # 显示进度提示
+        # Show progress prompt
         progress = QProgressDialog(tr("import_reading_files"), None, 0, 0, self)
         progress.setWindowTitle(tr("import_title"))
         progress.setMinimumDuration(0)
@@ -1197,7 +1194,7 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
         from data.constants import set_map_size
         set_map_size(new_w, new_h)
 
-        # 构建 MapData（不走 new_project 避免浪费 250MB 临时数组）
+        # Build MapData (do not use new_project to avoid wasting 250MB temporary array)
         from domain.map_data import MapData
         md = MapData()
         md.tile_map = result["tile_map"]
@@ -1216,15 +1213,15 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
         self._project.supply_mgr.clear()
         self._project.adjacency_mgr.clear()
 
-        # 保留导入的美术资产
+        # Preserve imported art assets
         self._project.assets = dict(result.get("assets", {}))
         self._project.dirty_assets = set()
 
-        # 填充导入的 states/strategic_regions/countries/railways/supply
+        # Populate imported states/strategic_regions/countries/railways/supply
         from views.main_window_file_ops import _populate_imported_data
         _populate_imported_data(self._project, result)
         self._project._dirty = False
-        # 导入的项目不绑定项目文件 (原版参考尤其不能写回), 保存走另存为
+        # The imported project is not bound to the project file (especially the original reference cannot be written back), save it and save it as
         self._current_project_path = None
 
         self._canvas.set_map_data(md)
@@ -1236,11 +1233,11 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
         self._show_editor()
         self._canvas.refresh_display()
         self._update_province_count()
-        # 刷新着色（不然切到 state/country 模式看不到颜色）
+        # Refresh coloring (otherwise you won’t be able to see the color when you switch to state/country mode)
         self._app._refresh_state_colors()
         self._app._refresh_country_colors()
         self._app._refresh_sr_colors()
-        # 预计算质心缓存（VP 渲染和导出都需要）
+        # Precomputed centroid cache (required for both VP rendering and export)
         self._project.map_data.build_centroid_cache()
         self._app._refresh_vp_data()
         self._app._refresh_country_list()
@@ -1263,7 +1260,7 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
         QMessageBox.information(
             self, tr("import_done_title"), info_text + extra_text + warnings_text)
 
-    # ═══════════════════════ 快捷键 ═══════════════════════════
+    # ═══════════════════════ Shortcut keys ═══════════════════════════
 
     def _init_shortcuts(self) -> None:
         mgr = self._shortcut_mgr
@@ -1276,14 +1273,14 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
         mgr.register("export", self._on_export_mod)
         mgr.register("zoom_fit", self._canvas.fit_in_view)
 
-        # 模式切换
+        # Mode switch
         modes = ["land", "province", "terrain", "height",
                  "river", "state", "country", "continent"]
         for mode_name in modes:
             key = f"mode_{mode_name}"
             mgr.register(key, lambda m=mode_name: self._on_mode_changed(m))
 
-        # 工具切换
+        # Tool switching
         tools = ["brush", "eraser", "fill", "transform", "pan"]
         for tool_name in tools:
             key = f"tool_{tool_name}"

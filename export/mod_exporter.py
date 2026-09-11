@@ -1,7 +1,5 @@
-"""
-MOD 完整导出器 — 一键生成完整可用的 HOI4 MOD
-参考 KR（Kaiserreich）的文件结构
-"""
+"""MOD Complete Exporter — Generate a complete and usable HOI4 MOD with one click
+Reference file structure of KR (Kaiserreich)"""
 import os
 import struct
 import numpy as np
@@ -44,11 +42,10 @@ def export_full_mod(
     assets: dict[str, bytes] | None = None,
     dirty_assets: set[str] | None = None,
 ) -> None:
-    """一键导出完整 MOD。scope 控制导出范围，None=全部导出。
+    """Export complete MOD in one click. scope controls the export scope, None=export all.
 
-    assets/dirty_assets: 美术资产系统。导入的 MOD 原始美术文件保存在 assets 中，
-    未被编辑触发 dirty 的资产在导出时直接写回原字节（保留原美术）。
-    """
+    assets/dirty_assets: Art asset system. The imported MOD original art files are saved in assets.
+    Assets that have not been edited and triggered dirty will be directly written back to the original bytes during export (the original art will be retained)."""
     if assets is None:
         assets = {}
     if dirty_assets is None:
@@ -56,19 +53,19 @@ def export_full_mod(
     if int(province_map.max()) == 0:
         raise ValueError("No province data; generate provinces first")
 
-    # 防御性刷新全局尺寸：用户可能加载了非默认尺寸项目但没触发 set_map_size,
-    # 或某些 writer 在文件顶部 import MAP_* 已绑定旧值（lazy import 的会刷新）
+    # Defensive refresh of global sizes: The user may have loaded a non-default size item but not triggered set_map_size,
+    # Or some writers import MAP_* at the top of the file and have bound old values (lazy import ones will refresh)
     from data.constants import set_map_size as _set_map_size
     _set_map_size(province_map.shape[1], province_map.shape[0])
 
-    # scope 默认全部开启
+    # scope is all enabled by default
     if scope is None:
         scope = {}
     def _enabled(key: str) -> bool:
         return scope.get(key, True)
 
-    # 清理 < 8 像素的碎屑省份，合并到最大相邻省份（只改导出副本）。
-    # 必须在压实之前做：碎屑被吞掉本身会产生新的 ID 空洞
+    # Clean up detritus provinces < 8 pixels and merge into the largest adjacent province (repair only).
+    # Must be done before compaction: the swallowing of debris itself will create new ID cavities
     province_map = _merge_tiny_provinces(province_map, min_pixels=8)
 
     # The engine rejects a province box that reaches one eighth of the map
@@ -83,10 +80,10 @@ def export_full_mod(
             + ", ".join(str(pid) for pid in repaired_bbox_ids)
         )
 
-    # 压实省份 ID（可选，导入 MOD 时建议关闭以保留原 ID）。
-    # 只作用于导出副本：province_map 上一步已是拷贝，引用省份 ID 的
-    # manager 深拷贝后再重编号——项目本体（含撤销历史）不受影响。
-    # 即使 ID 已连续也要跑：mapping 同时清掉指向已删省份的死引用
+    # Compact province ID (optional, it is recommended to turn it off when importing MOD to retain the original ID).
+    # Only applies to exported copies: province_map has been copied in the previous step and refers to the province ID.
+    # Manager renumbers after deep copying - the project itself (including undo history) is not affected.
+    # Even if the IDs are consecutive, run: mapping and clear dead references to deleted provinces.
     if _enabled("compact_ids"):
         import copy as _copy
         state_mgr = _copy.deepcopy(state_mgr)
@@ -114,38 +111,38 @@ def export_full_mod(
 
     colors = generate_province_colors(province_count)
 
-    # 向量化分类省份（陆地 / 海洋 / 湖泊），避免逐省份全图扫描
+    # Vectorize classified provinces (land/ocean/lake) to avoid scanning the entire map province by province
     land_ids, sea_ids, lake_ids = _classify_provinces_fast(
         province_count, province_map, tile_map
     )
 
-    # === 同步 tile_map 到 province 分类 ===
-    # _classify_provinces_fast 按"像素多数表决"分类 province，必然有少量像素
-    # tile ≠ province type（例：60% LAND+40% SEA 的 province 被归为 land，但那
-    # 40% SEA 像素在 tile_map 里还是 SEA）。若不同步：
-    #   - buildings writer 坐标验证用 tile_map，找不到 LAND 像素 → 写错坐标
-    #   - HOI4 判 coastal 看 provinces.bmp + type，和 tile_map 判定分歧
-    # 同步后保证：tile_map[y,x] 类型 = pid_map[y,x] 所属 province 的 type
+    # === Synchronize tile_map to province category ===
+    # _classify_provinces_fast classifies provinces according to "pixel majority voting", there must be a small number of pixels
+    # tile ≠ province type (example: 60% LAND+40% SEA province is classified as land, but that
+    # 40% SEA pixels in tile_map are still SEA). If not synchronized:
+    # - Buildings writer uses tile_map for coordinate verification, and cannot find LAND pixels → Wrong coordinates are written
+    # - HOI4 determines coastal by looking at provinces.bmp + type, which is different from tile_map.
+    # Guaranteed after synchronization: tile_map[y,x] type = pid_map[y,x] type of the province to which it belongs
     _sync_tile_with_province_class(tile_map, province_map, land_ids, sea_ids, lake_ids)
 
-    # === BMP 文件 ===
+    # === BMP files ===
     write_provinces_bmp(province_map, output_dir, colors)
 
-    # 高度图：优先用用户编辑的，否则自动生成
+    # Height map: User-edited ones are given priority, otherwise they are automatically generated.
     if height_map is not None and int(height_map.max()) != int(height_map.min()):
         heightmap = height_map
     else:
         heightmap = _gen_heightmap(tile_map)
     write_heightmap_bmp(heightmap, output_dir)
 
-    # 地形图：优先用用户编辑的，否则自动生成
+    # Topographic maps: User-edited ones are given priority, otherwise they are automatically generated.
     if terrain_map is not None and int(terrain_map.max()) > 0:
         write_terrain_bmp(terrain_map, output_dir)
     else:
         write_terrain_bmp(_gen_terrain(tile_map), output_dir)
 
     write_rivers_bmp(output_dir, river_map, shape=tile_map.shape)
-    # trees.bmp: 从 terrain_map 自动生成树木分布 (A8)
+    # trees.bmp: Automatically generate tree distribution from terrain_map (A8)
     from export.writers.map.trees_bmp import (
         write_trees_bmp as _write_trees_new,
         auto_generate_tree_map,
@@ -153,18 +150,18 @@ def export_full_mod(
     _tm_for_trees = terrain_map if terrain_map is not None else _gen_terrain(tile_map)
     _tree_map = auto_generate_tree_map(_tm_for_trees)
     _write_trees_new(output_dir, tree_map=_tree_map)
-    # cities.bmp: 从 urban terrain 生成城市标记 (Feature 11)
+    # cities.bmp: Generate city markers from urban terrain (Feature 11)
     from export.writers.map.cities_bmp import write_cities_bmp as _write_cities_new
     _write_cities_new(output_dir, terrain_map=terrain_map)
-    # world_normal.bmp — 法线贴图，可被导入的原版本替代
+    # world_normal.bmp — normal map, can be replaced by the imported original version
     from export.asset_helper import write_or_restore
     write_or_restore(
         "map/world_normal.bmp", output_dir, assets, dirty_assets,
         lambda: _write_normal_map(heightmap, output_dir),
     )
 
-    # colormap_rgb_cityemissivemask_a.dds 战略视角总览贴图
-    # (不覆盖会看到 vanilla 地球大陆)
+    # colormap_rgb_cityemissivemask_a.dds strategic perspective overview map
+    # (Without coverage you will see the vanilla Earth continent)
     from export.writers.map.colormap_dds import write_colormap_dds
     write_or_restore(
         "map/terrain/colormap_rgb_cityemissivemask_a.dds",
@@ -173,13 +170,13 @@ def export_full_mod(
                                    terrain_map=terrain_map, height_map=heightmap),
     )
 
-    # colormap_water_0/1/2.dds 海洋着色贴图 — 三个 MIP 都视作一组
+    # colormap_water_0/1/2.dds Ocean shading map - three MIPs are considered a group
     from export.writers.map.colormap_dds import write_water_colormap_dds
 
     def _gen_water_colormap():
         write_water_colormap_dds(tile_map, output_dir)
 
-    # 只要有一个 MIP 是 clean 就用整组原字节；否则重新生成三个
+    # As long as one MIP is clean, use the entire set of original bytes; otherwise regenerate three
     water_paths = [
         "map/terrain/colormap_water_0.dds",
         "map/terrain/colormap_water_1.dds",
@@ -194,8 +191,8 @@ def export_full_mod(
     else:
         _gen_water_colormap()
 
-    # fow_rgb_waterspec_a.dds 战争迷雾明暗 + 水面反射
-    # (不覆盖会回退 vanilla 的地球形状贴图 → 反光/迷雾按地球海陆分布走)
+    # fow_rgb_waterspec_a.dds fog of war light and shade + water reflection
+    # (Not covering it will fall back to the vanilla earth shape map → reflection/fog will follow the distribution of the earth's sea and land)
     from export.writers.map.colormap_dds import write_fow_dds
     write_or_restore(
         "map/terrain/fow_rgb_waterspec_a.dds",
@@ -203,14 +200,14 @@ def export_full_mod(
         lambda: write_fow_dds(tile_map, output_dir, height_map=heightmap),
     )
 
-    # ambient_object.txt — 地图边框 (frame_border_top/bottom 挡住上下空白)
+    # ambient_object.txt — map border (frame_border_top/bottom blocks the top and bottom spaces)
     from export.writers.map.ambient_object import write_ambient_object_txt
     write_ambient_object_txt(output_dir)
 
-    # seasons.txt — 季节视觉定义（必须有，否则崩溃）
+    # seasons.txt — Visual definition of seasons (required, otherwise it will crash)
     _write_seasons_txt(output_dir)
 
-    # default.map 引擎配置文件 (A3, 用户可通过菜单调整 tree palette / river_max_level)
+    # default.map engine configuration file (A3, users can adjust tree palette / river_max_level through the menu)
     from export.writers.map.default_map import write_default_map
     write_default_map(
         output_dir,
@@ -218,34 +215,34 @@ def export_full_mod(
         province_count=int(province_map.max()),
     )
 
-    # === 同步 terrain_map 与 tile_map ===
-    # 用户可能扩张/缩小陆地后没重新生成地形，导致 terrain_map 与 tile_map 不一致。
-    # 修正：陆地上的 ocean 地形→plains，海洋上的陆地地形→ocean
-    # （与 gen_from_project.py 相同的修正逻辑）
+    # === Synchronize terrain_map and tile_map ===
+    # The user may not regenerate the terrain after expanding/shrinking the land, resulting in inconsistent terrain_map and tile_map.
+    # Correction: ocean terrain on land → plains, land terrain on ocean → ocean
+    # (Same correction logic as gen_from_project.py)
     if terrain_map is not None:
         _sync_terrain_with_tile(terrain_map, tile_map)
 
-    # === 一次性计算海岸线（definition.csv + buildings.txt 共享）===
-    # **省级邻接**判定 — 和 HOI4 完全一致（按 definition.csv 的 type 字段判）
-    # 不能用 tile_map 像素级判定，因为 _classify_provinces_fast 按像素多数表决
-    # 分类，与 tile_map 像素级邻接不等价 → HOI4 判 coastal 但 buildings.txt 没
-    # 写 port → "Province X coastal but no port" → start_game 崩溃
+    # === Calculate coastline in one go (shared by definition.csv + buildings.txt) ===
+    # **Provincial adjacency** determination - exactly the same as HOI4 (determined according to the type field of definition.csv)
+    # Cannot use tile_map pixel-level determination, because _classify_provinces_fast votes by pixel majority
+    # Classification, not equivalent to tile_map pixel-level adjacency → HOI4 determines coastal but buildings.txt does not
+    # Write port → "Province X coastal but no port" → start_game crashes
     coastal_set, land_to_sea = _compute_coastal_once(province_map, land_ids, sea_ids)
 
-    # definition.csv 延后到 states 构建完成后写（coastal 必须与 buildings 对齐）
+    # definition.csv is deferred to be written after states are built (coastal must be aligned with buildings)
     _write_continent(output_dir, continent_mgr=continent_mgr)
-    # Adjacencies: 有用户数据用新 writer, 否则写仅含 header+sentinel
+    # Adjacencies: If there is user data, use a new writer, otherwise the write only contains header+sentinel
     if adjacency_mgr is not None and adjacency_mgr.count() > 0:
         from export.writers.map.adjacencies import write_adjacencies_csv
         write_adjacencies_csv(output_dir, adjacency_mgr=adjacency_mgr)
     else:
         _write_adjacencies(output_dir)
 
-    # adjacency_rules.txt (A6, 海峡通行规则)
+    # adjacency_rules.txt (A6, Strait Passage Rules)
     from export.writers.map.adjacency_rules import write_adjacency_rules_txt
     write_adjacency_rules_txt(output_dir, rule_mgr=adjacency_rule_mgr)
 
-    # === 预计算质心（一次性，供后续所有 writer 共用）===
+    # === Precomputed centroid (one-time, shared by all subsequent writers) ===
     flat_pm_g = province_map.ravel()
     n_g = province_count + 1
     pid_count_g = np.bincount(flat_pm_g, minlength=n_g)
@@ -253,10 +250,10 @@ def export_full_mod(
     ys_g, xs_g = np.mgrid[0:h_g, 0:w_g]
     sum_y_g = np.bincount(flat_pm_g, weights=ys_g.ravel().astype(np.float64), minlength=n_g)
     sum_x_g = np.bincount(flat_pm_g, weights=xs_g.ravel().astype(np.float64), minlength=n_g)
-    del ys_g, xs_g  # 释放 ~175MB
+    del ys_g, xs_g  # Free ~175MB
 
-    # === 先 finalize states + 孤儿 land 省份补领养 ===
-    # HOI4 要求每个 land province 都属于一个 state，否则 MAP_ERROR "land province has no state"
+    # === First finalize states + orphan land and province for adoption ===
+    # HOI4 requires that each land province belongs to a state, otherwise MAP_ERROR "land province has no state"
     land_id_set = set(land_ids)
     if state_mgr and state_mgr.states:
         states = {}
@@ -265,8 +262,8 @@ def export_full_mod(
             if land_provs:
                 states[sid] = land_provs
 
-        # 孤儿领养：把 _classify_provinces_fast 视为 land 但没在任何 state 的省份
-        # 分配到地理上最近的 state
+        # Orphan adoption: treat _classify_provinces_fast as land but not in any state province
+        # assigned to the geographically closest state
         all_in_states = set()
         for provs in states.values():
             all_in_states.update(provs)
@@ -294,19 +291,19 @@ def export_full_mod(
                     state_mgr.get_state(best_sid).provinces.append(orphan)
             print(f"  [orphan adoption] Assigned {len(orphans)} orphaned land provinces")
     else:
-        states = None  # 稍后用 region 拆 state
+        states = None  # Use region to split the state later
 
-    # === 过滤 coastal：只保留确实在 states 里的省份 ===
-    # buildings.txt 只为 pid_to_state 里的 coastal 省份写 naval_base_spawn，
-    # definition.csv 的 coastal 必须与之完全对齐，否则 HOI4 崩溃：
+    # === Filter coastal: Only keep provinces that are indeed in states ===
+    # buildings.txt only writes naval_base_spawn for the coastal province in pid_to_state,
+    # definition.csv's coastal must be perfectly aligned with it, otherwise HOI4 crashes:
     # "Province X is setup as coastal but has no port building"
     if states is not None:
         all_state_pids = set()
         for provs in states.values():
             all_state_pids.update(provs)
-        # **孤儿 coastal 陆地省份转为海** — HOI4 的 coastal 判定靠 CSV 里
-        # land-adjacent-to-sea, 所以这些没 state 的陆地省份必须变海, 不然
-        # HOI4 会把它们识别为 coastal 但 buildings.txt 没港口 → 崩溃
+        # **Orphan coastal land provinces are converted to sea** — HOI4’s coastal determination is based on CSV
+        # land-adjacent-to-sea, so these land provinces without state must become sea, otherwise
+        # HOI4 will recognize them as coastal but buildings.txt has no port → crash
         orphan_coastal = {p for p in coastal_set if p not in all_state_pids}
         if orphan_coastal:
             land_ids = [p for p in land_ids if p not in orphan_coastal]
@@ -315,9 +312,9 @@ def export_full_mod(
             print(f"  [coastal] Converted {len(orphan_coastal)} coastal provinces without a state to sea")
         land_to_sea = {p: s for p, s in land_to_sea.items() if p in coastal_set}
 
-    # definition.csv 延后到 buildings 之后写（需要 buildings 的坐标验证结果）
+    # definition.csv is deferred to be written after buildings (needs the coordinate verification results of buildings)
 
-    # === 战略区域 ===
+    # === Strategic Areas ===
     region_list = None
     if _enabled("strategic_regions"):
         if strategic_region_mgr is not None and strategic_region_mgr.count() > 0:
@@ -332,7 +329,7 @@ def export_full_mod(
             )
             _write_weatherpositions(region_list, province_map, output_dir)
 
-    # === 写 state 文件 ===
+    # === Write state file ===
     if _enabled("states"):
         if state_mgr and state_mgr.states:
             _write_states_from_mgr(state_mgr, country_mgr, province_map, output_dir, tile_map,
@@ -343,7 +340,7 @@ def export_full_mod(
             if states is not None:
                 _write_states(states, tag, province_map, output_dir)
 
-    # === 补给系统 ===
+    # === Supply System ===
     if _enabled("supply") and states is not None:
         if supply_mgr is not None and supply_mgr.count() > 0:
             from export.writers.map.supply_nodes import write_supply_nodes_txt
@@ -358,14 +355,14 @@ def export_full_mod(
             _write_railways(states, province_map, output_dir)
         _write_supply_areas(states, output_dir)
 
-    # === map 文件（BMP 已写，这里写剩余的 map 配置）===
+    # === map file (BMP has been written, write the remaining map configuration here) ===
     if _enabled("map"):
         failed_coastal = _write_buildings(states, province_map, tile_map, output_dir, sea_ids,
                          land_to_sea=land_to_sea,
                          pid_count=pid_count_g, sum_x=sum_x_g, sum_y=sum_y_g)
         if failed_coastal:
-            # 这些坐标不可靠的 coastal 省份必须从 CSV 的 land 改成 sea,
-            # 否则 HOI4 会重新检测出 coastal 但 buildings.txt 没 port → 崩溃
+            # These coastal provinces whose coordinates are unreliable must be changed from CSV land to sea,
+            # Otherwise HOI4 will re-detect coastal but buildings.txt has no port → crash
             coastal_set -= failed_coastal
             land_ids = [p for p in land_ids if p not in failed_coastal]
             sea_ids = sorted(set(sea_ids) | failed_coastal)
@@ -380,7 +377,7 @@ def export_full_mod(
         _write_positions(province_map, tile_map, output_dir,
                          pid_count=pid_count_g, sum_x=sum_x_g, sum_y=sum_y_g)
 
-    # === 国家 ===
+    # === Country ===
     if _enabled("countries"):
         if country_mgr and country_mgr.countries:
             _write_countries_from_mgr(country_mgr, output_dir, states)
@@ -388,12 +385,12 @@ def export_full_mod(
             first_state_id = min(states.keys()) if states else 1
             _write_country(tag, first_state_id, output_dir)
 
-    # === 国旗 ===
+    # === Flag ===
     if _enabled("gfx"):
         all_tags = list(country_mgr.countries.keys()) if country_mgr and country_mgr.countries else [tag]
         _write_country_flags(all_tags, output_dir, country_mgr)
 
-    # === 本地化 ===
+    # === Localization ===
     if _enabled("localisation"):
         region_count = len(region_list) if region_list else 24
         _write_localisation_full(mod_name, state_mgr, country_mgr, states, output_dir,
@@ -405,15 +402,15 @@ def export_full_mod(
         country_tags = list(country_mgr.countries.keys()) if country_mgr and country_mgr.countries else [tag]
         _write_bookmark(mod_name, country_tags, output_dir)
 
-    # === NDefines 覆盖（防止 AI 除零崩溃）===
+    # === NDefines override (prevents AI divide-by-zero crashes) ===
     from export.writers.common.defines import write_defines_lua
     write_defines_lua(output_dir, province_count=province_count)
 
-    # === descriptor (独立开关 — 已有自己 MOD 框架的用户可关掉, 只取内容文件) ===
+    # === descriptor (independent switch - users who already have their own MOD framework can turn it off and only take the content files) ===
     if _enabled("descriptor"):
         _write_descriptor(mod_name, output_dir)
 
-    # === replace_path 目录 ===
+    # === replace_path directory ===
     if _enabled("replace_path"):
         from export.writers.replace_path.scrubber import (
             write_ai_strategy_overrides,
@@ -422,13 +419,13 @@ def export_full_mod(
         write_replace_path_dirs(output_dir)
         write_ai_strategy_overrides(output_dir)
 
-    # === 导出后校验（只检查已启用模块的文件）===
+    # === Post-export verification (only checks files with enabled modules) ===
     if _enabled("map"):
         _verify_non_empty(output_dir, scope)
 
 
 def _verify_non_empty(output_dir, scope=None):
-    """校验关键文件存在且非空。只检查已启用模块的文件。"""
+    """Verify that the key file exists and is not empty. Only files with enabled modules are checked."""
     _s = scope or {}
     def _on(key): return _s.get(key, True)
 
@@ -455,7 +452,7 @@ def _verify_non_empty(output_dir, scope=None):
             + "\n  - ".join(missing)
         )
 
-    # 至少一个 strategicregion 和一个 state
+    # At least one strategicregion and one state
     sr_dir = os.path.join(output_dir, "map", "strategicregions")
     if not os.path.isdir(sr_dir) or not any(
         f.endswith(".txt") for f in os.listdir(sr_dir)
@@ -469,9 +466,8 @@ def _verify_non_empty(output_dir, scope=None):
 
 
 def _compute_coastal_province_level(province_map, land_ids, sea_ids):
-    """用省份级邻接计算 coastal land province 集合（与 HOI4 内部一致）。
-    任何 land province 只要在像素图上与某个 sea province 像素相邻，即为 coastal。
-    """
+    """Compute coastal land province sets using province-level adjacency (internally consistent with HOI4).
+    Any land province is considered coastal as long as it is adjacent to a sea province pixel on the pixel map."""
     n = int(province_map.max()) + 1
     is_land = np.zeros(n, dtype=bool)
     is_sea = np.zeros(n, dtype=bool)
@@ -483,7 +479,7 @@ def _compute_coastal_province_level(province_map, land_ids, sea_ids):
             is_sea[int(sp)] = True
 
     coastal = set()
-    # 水平邻接
+    # horizontal adjacency
     left = province_map[:, :-1].ravel()
     right = province_map[:, 1:].ravel()
     m1 = is_land[left] & is_sea[right]
@@ -501,7 +497,7 @@ def _compute_coastal_province_level(province_map, land_ids, sea_ids):
         coastal.update(int(x) for x in np.unique(wrap_lr[m_wrap_lr]))
     if m_wrap_rl.any():
         coastal.update(int(x) for x in np.unique(wrap_rl[m_wrap_rl]))
-    # 垂直邻接
+    # vertical adjacency
     up = province_map[:-1, :].ravel()
     down = province_map[1:, :].ravel()
     m3 = is_land[up] & is_sea[down]
@@ -514,11 +510,10 @@ def _compute_coastal_province_level(province_map, land_ids, sea_ids):
 
 
 def _compute_coastal_once(province_map, land_ids, sea_ids):
-    """一次性计算海岸线数据，返回 (coastal_set, land_to_sea)。
-    coastal_set: 沿海陆地省份 ID 集合
-    land_to_sea: {land_pid: sea_pid} 每个沿海陆地省份对应的一个相邻海洋省份
-    供 definition.csv (coastal 字段) 和 buildings.txt (naval_base_spawn) 共享。
-    """
+    """Calculate coastline data in one go and return (coastal_set, land_to_sea).
+    coastal_set: Coastal land province ID set
+    land_to_sea: {land_pid: sea_pid} An adjacent sea province corresponding to each coastal land province
+    Shared by definition.csv (coastal fields) and buildings.txt (naval_base_spawn)."""
     n = int(province_map.max()) + 1
     is_land = np.zeros(n, dtype=bool)
     is_sea = np.zeros(n, dtype=bool)
@@ -533,7 +528,7 @@ def _compute_coastal_once(province_map, land_ids, sea_ids):
     land_to_sea: dict[int, int] = {}
 
     def _scan_dir(land_pm, sea_pm):
-        """扫描一个方向的 land-sea 邻接，纯 numpy 无 Python 循环。"""
+        """Scan land-sea adjacencies in one direction, pure numpy without Python loops."""
         land_arr = land_pm.ravel()
         sea_arr = sea_pm.ravel()
         m = is_land[land_arr] & is_sea[sea_arr]
@@ -541,7 +536,7 @@ def _compute_coastal_once(province_map, land_ids, sea_ids):
             return
         lp_hits = land_arr[m]
         sp_hits = sea_arr[m]
-        # 用 unique 只取每个 land_pid 的第一个 sea_pid
+        # Use unique to get only the first sea_pid of each land_pid
         _, first_idx = np.unique(lp_hits, return_index=True)
         for i in first_idx:
             lp = int(lp_hits[i])
@@ -549,17 +544,17 @@ def _compute_coastal_once(province_map, land_ids, sea_ids):
             if lp not in land_to_sea:
                 land_to_sea[lp] = int(sp_hits[i])
 
-    # 4 个方向
-    _scan_dir(province_map[:, :-1], province_map[:, 1:])   # 右
-    _scan_dir(province_map[:, 1:], province_map[:, :-1])   # 左
+    # 4 directions
+    _scan_dir(province_map[:, :-1], province_map[:, 1:])   # right
+    _scan_dir(province_map[:, 1:], province_map[:, :-1])   # left
     # The Clausewitz map wraps horizontally: the left and right bitmap edges
     # are neighbours.  Omitting this pair marks edge provinces coastal in the
     # game but leaves them without a naval_base_spawn, which can crash during
     # map initialisation.
     _scan_dir(province_map[:, -1:], province_map[:, :1])   # right edge -> left edge
     _scan_dir(province_map[:, :1], province_map[:, -1:])   # left edge -> right edge
-    _scan_dir(province_map[:-1, :], province_map[1:, :])   # 下
-    _scan_dir(province_map[1:, :], province_map[:-1, :])   # 上
+    _scan_dir(province_map[:-1, :], province_map[1:, :])   # down
+    _scan_dir(province_map[1:, :], province_map[:-1, :])   # on
 
     return coastal_set, land_to_sea
 
@@ -571,11 +566,11 @@ def _write_definition_csv(count, colors, pm, tm, output_dir,
                           continent_mgr=None, terrain_map=None,
                           provincial_terrain=None,
                           coastal_set=None):
-    """写 definition.csv。"""
+    """Write definition.csv."""
     d = os.path.join(output_dir, "map")
     os.makedirs(d, exist_ok=True)
 
-    # 预建类型查找表
+    # Pre-built type lookup table
     type_map = {}
     if land_ids is not None and sea_ids is not None and lake_ids is not None:
         for pid in land_ids:
@@ -588,7 +583,7 @@ def _write_definition_csv(count, colors, pm, tm, output_dir,
     if coastal_set is None:
         coastal_set = set()
 
-    # 批量预计算所有省份的主要地形类型（一次 pass，不逐省份扫描）
+    # Batch precalculate the main terrain types of all provinces (one pass, no province-by-province scanning)
     dominant_terrain = _batch_resolve_terrain(
         count, pm, terrain_map, provincial_terrain)
 
@@ -619,14 +614,14 @@ def _write_definition_csv(count, colors, pm, tm, output_dir,
 
 def _batch_resolve_terrain(province_count, province_map, terrain_map,
                            provincial_terrain=None):
-    """批量计算所有省份的主要地形类型。
-    返回 list，索引=省份ID，值=地形字符串。
-    一次 np.add.at pass，替代之前的逐省份全图扫描。"""
+    """Batch calculation of the main terrain types for all provinces.
+    Return list, index = province ID, value = terrain string.
+    One np.add.at pass, replacing the previous province-by-province full map scan."""
     from data.terrain_types import PALETTE_TO_TYPE
 
     result = ["plains"] * (province_count + 1)
 
-    # 显式设定的优先
+    # Explicitly set priority
     if provincial_terrain:
         for pid, ttype in provincial_terrain.items():
             if pid <= province_count:
@@ -635,21 +630,21 @@ def _batch_resolve_terrain(province_count, province_map, terrain_map,
     if terrain_map is None:
         return result
 
-    # 单次 pass 计算 (province_id, terrain_index) 的像素数直方图
+    # Histogram of the number of pixels calculated in a single pass (province_id, terrain_index)
     flat_pid = province_map.ravel()
     flat_ter = terrain_map.ravel()
     n_ter = int(terrain_map.max()) + 1
     n_pid = province_count + 1
 
-    # 编码为 pid * n_ter + ter_idx，一次 bincount
+    # Encoded as pid * n_ter + ter_idx, one bincount
     combined = flat_pid.astype(np.int64) * n_ter + flat_ter.astype(np.int64)
     hist = np.bincount(combined, minlength=n_pid * n_ter).reshape(n_pid, n_ter)
 
-    # 每个省份取出现最多的地形索引
+    # Get the most common terrain index for each province
     dominant_idx = hist.argmax(axis=1)  # shape (n_pid,)
 
     for pid in range(1, n_pid):
-        # 跳过已由 provincial_terrain 设定的
+        # Skip those already set by provincial_terrain
         if provincial_terrain and pid in provincial_terrain:
             continue
         if hist[pid].sum() == 0:
@@ -659,8 +654,8 @@ def _batch_resolve_terrain(province_count, province_map, terrain_map,
     return result
 
 
-# 注意：不再生成 default.map — 用原版的（EaW 验证做法）
-# 我们的 BMP/CSV 文件会按文件名自动覆盖原版对应文件
+# Note: default.map is no longer generated - use the original one (EaW verification method)
+# Our BMP/CSV files will automatically overwrite the original corresponding files by file name.
 
 
 # ────────────────── continent.txt ──────────────────
@@ -668,15 +663,15 @@ def _batch_resolve_terrain(province_count, province_map, terrain_map,
 def _write_continent(output_dir, continent_mgr=None):
     d = os.path.join(output_dir, "map")
     os.makedirs(d, exist_ok=True)
-    # vanilla 的 portraits / 国家文件 / 部分 modifier 硬编码引用这 7 个大陆名,
-    # MOD 不写就会触发 "unknown continent" → portraitdatabase 空 bucket → 除零崩溃.
-    # 即使用户自定义大陆, 也必须把 vanilla 名字保留, 否则 vanilla 资源加载就崩.
+    # Vanilla's portraits/country files/some modifiers are hard-coded to reference these 7 continent names,
+    # If MOD is not written, it will trigger "unknown continent" → portraitdatabase empty bucket → divide by zero crash.
+    # Even if the user customizes the continent, the vanilla name must be retained, otherwise the vanilla resource loading will crash.
     VANILLA_CONTINENTS = [
         "europe", "north_america", "south_america",
         "australia", "africa", "asia", "middle_east",
     ]
     user_names = list(continent_mgr.names) if continent_mgr is not None and continent_mgr.count() > 0 else []
-    # 合并并去重, vanilla 7 个先写以保证它们的 ID (1..7) 与 vanilla 一致
+    # Merge and remove duplicates, vanilla 7 are written first to ensure that their IDs (1..7) are consistent with vanilla
     seen = set()
     names = []
     for n in VANILLA_CONTINENTS + user_names:
@@ -697,12 +692,12 @@ def _write_adjacencies(output_dir):
     os.makedirs(d, exist_ok=True)
     with open(os.path.join(d, "adjacencies.csv"), "w", encoding="utf-8") as f:
         f.write("From;To;Type;Through;start_x;start_y;stop_x;stop_y;adjacency_rule_name;Comment\n")
-        # vanilla 末行格式：-1;-1;;-1;-1;-1;-1;-1;-1
+        # vanilla last line format: -1;-1;;-1;-1;-1;-1;-1;-1
         f.write("-1;-1;;-1;-1;-1;-1;-1;-1\n")
 
 
 def _write_seasons_txt(output_dir):
-    """写 map/seasons.txt — 季节视觉（颜色/树叶变化）。用 vanilla 默认值。"""
+    """Write map/seasons.txt — Season visual (color/leaf changes). Use vanilla default."""
     d = os.path.join(output_dir, "map")
     os.makedirs(d, exist_ok=True)
     with open(os.path.join(d, "seasons.txt"), "w", encoding="utf-8") as f:
@@ -757,15 +752,15 @@ tree_autumn2 = { start_date=00.10.25 end_date=00.11.01 }
 """)
 
 
-# 注意：不再生成 adjacency_rules/ambient_object/weatherpositions/unitstacks/rocket_sites
+# NOTE: adjacency_rules/ambient_object/weatherpositions/unitstacks/rocket_sites is no longer generated
 
 
-# ────────────────── State 拆分 ──────────────────
+# ────────────────── State split ──────────────────
 
 def _auto_split_states(land_ids, province_map, per_state=15):
     if not land_ids:
         return {}
-    # 向量化计算质心
+    # Vectorized calculation of centroid
     flat_pm = province_map.ravel()
     n = int(province_map.max()) + 1
     pid_count = np.bincount(flat_pm, minlength=n)
@@ -786,26 +781,24 @@ def _auto_split_states(land_ids, province_map, per_state=15):
 
 
 def _split_states_by_region(region_list, land_id_set, max_per_state=15):
-    """
-    从 region_list 按地区拆分 State。
-    每个 state 的省份必须完全在同一个 strategic region 内（HOI4 强制要求）。
+    """Split State by region from region_list.
+    The provinces of each state must be completely within the same strategic region (mandatory requirement for HOI4).
 
-    参数:
-        region_list: _write_strategic_regions 返回的 [(region_id, [pid...])] 列表
-        land_id_set: 所有陆地省份的集合
-        max_per_state: 每个 state 最多多少省份（太大的话拆分）
+    Parameters:
+        region_list: [(region_id, [pid...])] list returned by _write_strategic_regions
+        land_id_set: The set of all land provinces
+        max_per_state: The maximum number of provinces in each state (if too large, split it)
 
-    返回:
-        {state_id: [land_pid, ...]}
-    """
+    Return:
+        {state_id: [land_pid, ...]}"""
     states = {}
     sid = 1
     for region_id, region_provs in region_list:
-        # 只取这个 region 里的陆地省份
+        # Only take the land provinces in this region
         region_land = [p for p in region_provs if p in land_id_set]
         if not region_land:
             continue
-        # 如果太多则拆成多个 state，都在同一个 region 内
+        # If there are too many, it will be split into multiple states, all in the same region.
         for i in range(0, len(region_land), max_per_state):
             states[sid] = region_land[i:i + max_per_state]
             sid += 1
@@ -817,7 +810,7 @@ def _write_states(states, tag, province_map, output_dir):
     write_states_fallback(states, tag, province_map, output_dir)
 
 
-# ────────────────── 补给系统 ──────────────────
+# ───────────────── Supply system ──────────────────
 
 def _write_supply_nodes(states, province_map, output_dir):
     from export.writers.map.supply import write_supply_nodes
@@ -847,7 +840,7 @@ def _write_supply_areas(states, output_dir):
     return write_supply_areas(states, output_dir)
 
 
-# ────────────────── 战略区域（多区域自动拆分）──────────────────
+# ────────────────── Strategic area (automatic splitting of multiple areas) ──────────────────
 
 def _write_weatherpositions(region_list, province_map, output_dir):
     from export.writers.map.strategic_regions import write_weatherpositions
@@ -867,7 +860,7 @@ def _write_positions(province_map, tile_map, output_dir,
                                pid_count=pid_count, sum_x=sum_x, sum_y=sum_y)
 
 
-# ────────────────── 国家 ──────────────────
+# ───────────────── Country ──────────────────
 
 def _write_country_flags(tags, output_dir, country_mgr=None):
     from export.writers.gfx.flags import write_country_flags
@@ -904,14 +897,14 @@ def _write_country(tag, capital_state_id, output_dir):
     return write_country(tag, capital_state_id, output_dir)
 
 
-# ────────────────── 本地化 ──────────────────
+# ───────────────── Localization ──────────────────
 
 def _write_localisation(mod_name, tag, states, output_dir, region_count=24):
     from export.writers.localisation.yml import write_localisation_simple
     return write_localisation_simple(mod_name, tag, states, output_dir, region_count)
 
 
-# ────────────────── descriptor.mod + 空目录 ──────────────────
+# ────────────────── descriptor.mod + empty directory ──────────────────
 
 def _write_descriptor(mod_name, output_dir):
     from export.writers.map.descriptor import write_descriptor
@@ -924,11 +917,11 @@ def _write_bookmark(mod_name, country_tags, output_dir):
     return write_bookmark(mod_name, country_tags, output_dir)
 
 
-# 注意：不再生成 ideologies 和 state_category — 用原版的（EaW 验证做法）
-# 原版的 common/ideologies 和 common/state_category 已经足够完整
+# Note: ideologies and state_category are no longer generated - use the original ones (EaW verification practices)
+# The original common/ideologies and common/state_category are complete enough
 
 
-# ────────────────── 使用管理器数据导出 ──────────────────
+# ─────────────────── Using Manager Data Export ───────────────────
 
 def _write_states_from_mgr(state_mgr, country_mgr, province_map, output_dir, tile_map=None,
                            land_id_set=None, coastal_set=None):
@@ -959,10 +952,10 @@ def _write_localisation_full(mod_name, state_mgr, country_mgr, states, output_di
                                     region_count=region_count, region_mgr=region_mgr)
 
 
-# ────────────────── 辅助函数 ──────────────────
+# ────────────────── Auxiliary functions ──────────────────
 
 def _is_land(pid, pm, tm):
-    """与 _classify_provinces_fast 保持一致：land_n >= sea_n AND land_n >= lake_n"""
+    """Consistent with _classify_provinces_fast: land_n >= sea_n AND land_n >= lake_n"""
     mask = pm == pid
     if not np.any(mask):
         return False
@@ -974,7 +967,7 @@ def _is_land(pid, pm, tm):
 
 
 def _get_province_type(pid, pm, tm):
-    """返回省份类型: 'land', 'sea', 'lake'"""
+    """Return province type: 'land', 'sea', 'lake'"""
     mask = pm == pid
     if not np.any(mask):
         return "sea"
@@ -990,37 +983,36 @@ def _get_province_type(pid, pm, tm):
 
 
 def _merge_tiny_provinces(province_map: np.ndarray, min_pixels: int = 8) -> np.ndarray:
-    """将面积 < min_pixels 的碎屑省份合并到最大相邻省份。
+    """Merge crumb provinces with area < min_pixels into the largest adjacent province.
 
-    返回新数组，不修改原始 province_map。
-    使用 numpy 向量化：bincount 统计面积，边界像素批量提取邻居。
-    """
+    Returns a new array without modifying the original province_map.
+    Use numpy vectorization: bincount statistical area, boundary pixel batch extraction neighbors."""
     pm = province_map.copy()
     h, w = pm.shape
 
-    # 统计每个省份的像素数
+    # Count the number of pixels in each province
     max_id = int(pm.max())
     areas = np.bincount(pm.ravel(), minlength=max_id + 1)
 
-    # 找出所有 < min_pixels 的省份（跳过 ID 0 = 未分配）
+    # Find all provinces < min_pixels (skip ID 0 = not assigned)
     tiny_ids = np.where((areas > 0) & (areas < min_pixels))[0]
     tiny_ids = tiny_ids[tiny_ids > 0]
     if len(tiny_ids) == 0:
         return pm
 
-    # 按面积从小到大处理（最小的先合并，避免两个碎块互相指向）
+    # Process them in ascending order of area (the smallest ones are merged first to avoid two fragments pointing at each other)
     tiny_ids = tiny_ids[np.argsort(areas[tiny_ids])]
 
     for pid in tiny_ids:
-        # 该省份可能已被前一轮合并消灭
+        # The province may have been wiped out by a previous round of mergers
         mask = (pm == pid)
         if not np.any(mask):
             continue
 
-        # 找边界像素的坐标
+        # Find the coordinates of the boundary pixel
         ys, xs = np.where(mask)
 
-        # 收集所有相邻像素的省份 ID（上下左右四方向）
+        # Collect the province IDs of all adjacent pixels (up, down, left, and right)
         neighbor_ids = []
         for dy, dx in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
             ny = ys + dy
@@ -1028,7 +1020,7 @@ def _merge_tiny_provinces(province_map: np.ndarray, min_pixels: int = 8) -> np.n
             valid = (ny >= 0) & (ny < h) & (nx >= 0) & (nx < w)
             if np.any(valid):
                 n_vals = pm[ny[valid], nx[valid]]
-                # 排除自身和 ID 0
+                # Exclude self and ID 0
                 n_vals = n_vals[(n_vals != pid) & (n_vals != 0)]
                 if len(n_vals) > 0:
                     neighbor_ids.append(n_vals)
@@ -1037,16 +1029,16 @@ def _merge_tiny_provinces(province_map: np.ndarray, min_pixels: int = 8) -> np.n
             continue
 
         all_neighbors = np.concatenate(neighbor_ids)
-        # 统计每个邻居出现次数，再按邻居面积选最大的
+        # Count the number of occurrences of each neighbor, and then select the largest neighbor based on its area.
         unique_neighbors, counts = np.unique(all_neighbors, return_counts=True)
-        # 用邻居面积作为主排序键（选最大邻居）
+        # Use neighbor area as primary sort key (select the largest neighbor)
         neighbor_areas = areas[unique_neighbors]
         best_idx = int(np.argmax(neighbor_areas))
         target = unique_neighbors[best_idx]
 
-        # 把碎块像素改为目标省份
+        # Change fragment pixels to target province
         pm[mask] = target
-        # 更新面积缓存
+        # Update area cache
         areas[target] += areas[pid]
         areas[pid] = 0
 
@@ -1243,11 +1235,11 @@ def _repair_too_large_provinces(
 
 
 def _classify_provinces_fast(province_count, province_map, tile_map):
-    """向量化批量分类所有省份，避免逐省份全图扫描"""
+    """Vectorize batch classification of all provinces to avoid scanning the entire map province by province"""
     flat_pm = province_map.ravel()
     flat_tm = tile_map.ravel()
 
-    # 用 bincount 一次性统计每个省份中各地块类型的像素数
+    # Use bincount to count the number of pixels of each block type in each province at one time
     n = province_count + 1
     land_counts = np.bincount(flat_pm, weights=(flat_tm == TILE_LAND), minlength=n)
     sea_counts = np.bincount(flat_pm, weights=(flat_tm == TILE_SEA), minlength=n)
@@ -1259,7 +1251,7 @@ def _classify_provinces_fast(province_count, province_map, tile_map):
     total_counts = land_counts + sea_counts + lake_counts
     for pid in range(1, province_count + 1):
         if total_counts[pid] == 0:
-            # 0像素的幽灵省份 — 归入海洋（不需要State/战略区域）
+            # 0 pixel ghost province — classified as ocean (no state/strategic area required)
             sea_ids.append(pid)
             continue
         l, s, k = land_counts[pid], sea_counts[pid], lake_counts[pid]
@@ -1280,16 +1272,15 @@ def _sync_tile_with_province_class(
     sea_ids: list[int],
     lake_ids: list[int],
 ) -> None:
-    """就地同步 tile_map，使每个像素的 tile 类型 = 该像素所属 province 的类型。
+    """Synchronize tile_map in place so that the tile type of each pixel = the type of the province to which the pixel belongs.
 
-    _classify_provinces_fast 按像素多数表决分类 province：一个 60% LAND / 40% SEA
-    的 province 被归为 land，但那 40% SEA 像素在 tile_map 里仍是 SEA。这些"少数派"
-    像素会导致:
-      - HOI4 按 definition.csv 判该 province coastal 但 buildings writer 在 tile_map
-        里找不到 LAND 像素 → naval_base 坐标写到 SEA 上 → HOI4 "not over the land"
-        → port 被忽略 → coastal but no port → 崩溃
-    同步后保证 tile_map、provinces.bmp、definition.csv 三者一致。
-    """
+    _classify_provinces_fast Classify province by pixel majority vote: a 60% LAND / 40% SEA
+    The province is classified as land, but the 40% SEA pixels are still SEA in the tile_map. These "minorities"
+    Pixels will result in:
+      - HOI4 determines the province coastal according to definition.csv but the buildings writer is in tile_map
+        LAND pixel not found in → naval_base coordinates are written to SEA → HOI4 "not over the land"
+        → port ignored → coastal but no port → crash
+    After synchronization, ensure that tile_map, provinces.bmp, and definition.csv are consistent."""
     n = int(province_map.max()) + 1
     new_tile = np.zeros(n, dtype=np.uint8)
     for pid in land_ids:
@@ -1301,40 +1292,39 @@ def _sync_tile_with_province_class(
     for pid in lake_ids:
         if 0 < pid < n:
             new_tile[pid] = TILE_LAKE
-    # pid==0 是背景，保持原值
+    # pid==0 is the background, keep the original value
     new_tile[0] = tile_map.ravel()[0] if tile_map.size else TILE_SEA
     np.copyto(tile_map, new_tile[province_map])
 
 
 def _sync_terrain_with_tile(terrain_map: np.ndarray, tile_map: np.ndarray) -> None:
-    """同步 terrain_map 与 tile_map，就地修改 terrain_map。
+    """Synchronize terrain_map and tile_map, modify terrain_map in place.
 
-    - 陆地像素上 terrain==ocean(15) → 改为 plains(0)
-    - 海洋像素上 terrain!=ocean(15) → 改为 ocean(15)
-    - 湖泊像素上 terrain!=lakes(14) → 改为 lakes(14)
+    - terrain==ocean(15) → changed to plains(0) for land pixels
+    - terrain!=ocean(15) → changed to ocean(15) on ocean pixels
+    - lake pixels on terrain!=lakes(14) → changed to lakes(14)
 
-    注意：这里直接修改 terrain_map（mutation），因为是导出前的一次性修正，
-    不影响用户编辑器里的数据（导出器拿到的是独立 array）。
-    """
+    Note: The terrain_map (mutation) is modified directly here because it is a one-time correction before exporting.
+    It does not affect the data in the user editor (the exporter gets an independent array)."""
     ocean_idx = TERRAIN_PALETTE_INDEX["ocean"]   # 15
     plains_idx = TERRAIN_PALETTE_INDEX["plains"]  # 0
     lakes_idx = TERRAIN_PALETTE_INDEX["lakes"]    # 14
 
-    # 陆地上不应有 ocean 地形
+    # There should be no ocean terrain on land
     land_bad = (tile_map == TILE_LAND) & (terrain_map == ocean_idx)
     count_land = int(np.sum(land_bad))
     if count_land > 0:
         terrain_map[land_bad] = plains_idx
         print(f"  [terrain sync] Changed {count_land:,} land pixels from ocean terrain to plains")
 
-    # 海洋上不应有陆地地形
+    # There should be no landforms on the ocean
     sea_bad = (tile_map == TILE_SEA) & (terrain_map != ocean_idx)
     count_sea = int(np.sum(sea_bad))
     if count_sea > 0:
         terrain_map[sea_bad] = ocean_idx
         print(f"  [terrain sync] Changed {count_sea:,} sea pixels to ocean terrain")
 
-    # 湖泊上地形应为 lakes
+    # The terrain on the lake should be lakes
     lake_bad = (tile_map == TILE_LAKE) & (terrain_map != lakes_idx)
     count_lake = int(np.sum(lake_bad))
     if count_lake > 0:
@@ -1343,88 +1333,85 @@ def _sync_terrain_with_tile(terrain_map: np.ndarray, tile_map: np.ndarray) -> No
 
 
 def _gen_heightmap(tm):
-    """基于距离场生成自然渐变的 heightmap（接近 vanilla）。
+    """Generates a naturally gradient heightmap based on a distance field (close to vanilla).
 
-    旧算法：固定值 + 高斯模糊 + 强制拉回 → 海岸像悬崖（80-110 过渡带几乎为 0）
-    新算法：用距离场让高度随到对方的距离平滑变化
-        - 陆地：距海越远越高（海岸 96 → 内陆 130+）
-        - 海洋：距陆越远越深（浅海 94 → 深海 70-83）
-    预期效果：80-110 过渡带占 70%+，接近 vanilla 的 85%
-    """
+    Old algorithm: fixed value + Gaussian blur + force pullback → coast like cliff (80-110 transition zone is almost 0)
+    New algorithm: Use distance field to make the height change smoothly with the distance to the opponent
+        - Land: The farther away from the sea, the higher (coast 96 → inland 130+)
+        - Ocean: The farther away from the land, the deeper (shallow sea 94 → deep sea 70-83)
+    Expected effect: 80-110 transition zone accounts for 70%+, close to vanilla's 85%"""
     from scipy.ndimage import distance_transform_edt, gaussian_filter
 
     is_land = (tm == TILE_LAND)
     is_sea = (tm == TILE_SEA)
     is_lake = (tm == TILE_LAKE)
 
-    # 距离场：每个像素到最近"对方"的像素距离
-    dist_to_land = distance_transform_edt(~is_land)  # 海洋像素到最近陆地的距离
-    dist_to_sea = distance_transform_edt(~is_sea)    # 陆地像素到最近海洋的距离
+    # Distance field: the pixel distance from each pixel to the nearest "other"
+    dist_to_land = distance_transform_edt(~is_land)  # Distance from ocean pixel to nearest land
+    dist_to_sea = distance_transform_edt(~is_sea)    # Distance from land pixel to nearest ocean
 
     hm = np.full((MAP_HEIGHT, MAP_WIDTH), SEA_LEVEL, dtype=np.float32)
 
-    # 陆地高度：海岸 96 → 内陆最高 160
-    # 系数 1.5/像素，封顶 +65（即最高 95+65=160）
+    # Land height: Coast 96 → Inland up to 160
+    # Coefficient 1.5/pixel, capped at +65 (i.e. maximum 95+65=160)
     hm[is_land] = SEA_LEVEL + np.clip(dist_to_sea[is_land] * 1.5, 1, 65)
 
-    # 海洋高度：浅海 94 → 深海最低 70
-    # 系数 0.8/像素，封顶 -25（即最深 95-25=70）
+    # Ocean height: shallow sea 94 → deep sea minimum 70
+    # Coefficient 0.8/pixel, capped at -25 (ie the deepest 95-25=70)
     hm[is_sea] = SEA_LEVEL - np.clip(dist_to_land[is_sea] * 0.8, 1, 25)
 
-    # 陆地加随机起伏让山地不那么平坦（±20 范围）
+    # Land plus random undulations makes mountains less flat (±20 range)
     rng = np.random.RandomState(42)
     noise = gaussian_filter(rng.rand(MAP_HEIGHT, MAP_WIDTH), sigma=30) * 40
     hm[is_land] += noise[is_land] - 20
 
-    # 小尺度柔化（避免锯齿断阶）
+    # Small-scale softening (avoiding jagged steps)
     hm = gaussian_filter(hm, sigma=1.5)
 
-    # 守底线（保证 HOI4 海陆判定正确）
-    hm[is_land] = np.maximum(hm[is_land], SEA_LEVEL + 1)  # 陆地至少 96
-    hm[is_sea] = np.minimum(hm[is_sea], SEA_LEVEL - 1)    # 海至少 94
+    # Stick to the bottom line (make sure HOI4 sea and land determination is correct)
+    hm[is_land] = np.maximum(hm[is_land], SEA_LEVEL + 1)  # Land at least 96
+    hm[is_sea] = np.minimum(hm[is_sea], SEA_LEVEL - 1)    # sea at least 94
     hm[is_lake] = SEA_LEVEL - 3
 
     return np.clip(hm, 30, 255).astype(np.uint8)
 
 
 def _gen_terrain(tm):
-    """生成 terrain.bmp。陆地海岸 1-2 像素用 desert（黄沙色）模拟沙滩。
+    """Generate terrain.bmp. Land Coast 1-2 pixels use desert (yellow sand color) to simulate a beach.
 
-    HOI4 的 desert 地形渲染颜色就是沙黄色，铺在海岸 1-2 像素上视觉效果
-    类似 vanilla 的沙滩带。只影响视觉（渲染），不影响 gameplay（因为
-    province 的主导地形是几十上百像素的 plains/forest，不会变沙漠）。
-    """
+    The desert terrain rendering color of HOI4 is sandy yellow, and the visual effect is spread on 1-2 pixels on the coast.
+    Similar to vanilla beach strips. It only affects the visual (rendering), not the gameplay (because
+    The dominant terrain of the province is plains/forest with dozens or hundreds of pixels, which will not turn into a desert)."""
     from scipy.ndimage import distance_transform_edt
 
     t = np.zeros((MAP_HEIGHT, MAP_WIDTH), dtype=np.uint8)
     for tile_type, name in DEFAULT_TERRAIN_FOR_TILE.items():
         t[tm == tile_type] = TERRAIN_PALETTE_INDEX[name]
 
-    # 海岸沙滩：距海 ≤ 2 像素的陆地用 desert（索引 3 = 沙黄色）
+    # Coastal beaches: land ≤ 2 pixels from the sea uses desert (index 3 = sandy yellow)
     is_land = (tm == TILE_LAND)
     is_sea = (tm == TILE_SEA)
     dist_to_sea = distance_transform_edt(~is_sea)
     beach_mask = is_land & (dist_to_sea <= 2)
-    t[beach_mask] = TERRAIN_PALETTE_INDEX["desert"]  # vanilla desert 渲染为沙黄色
+    t[beach_mask] = TERRAIN_PALETTE_INDEX["desert"]  # vanilla desert is rendered as sandy yellow
 
     return t
 
 
 def _write_normal_map(hm, output_dir):
-    """写 world_normal.bmp 光照法线图（半尺寸）。
-    先缩小到半尺寸再计算法线，省4倍计算量，视觉差异忽略不计。
-    """
+    """Write world_normal.bmp lighting normal map (half size).
+    First reduce to half size and then calculate the normal, saving 4 times the calculation amount, and the visual difference is ignored."""
     d = os.path.join(output_dir, "map")
     os.makedirs(d, exist_ok=True)
 
     full_h, full_w = hm.shape
     NW, NH = full_w // 2, full_h // 2
 
-    # 先缩到半尺寸再算法线（而不是算完再缩）
+    # Shrink to half size first and then calculate the line (instead of calculating and then shrinking)
     h_small = hm.reshape(NH, 2, NW, 2).mean(axis=(1, 3)).astype(np.float32) / 255.0
 
-    # 用 scipy.sobel 算梯度（标准做法，比中心差分平滑）
-    # 新 heightmap 渐变范围更大，strength 降到 6（旧的 12 会过度起伏）
+    # Use scipy.sobel to calculate the gradient (standard practice, smoother than central difference)
+    # The new heightmap gradient range is larger, and the strength is reduced to 6 (the old 12 will be too undulating)
     from scipy.ndimage import sobel
     strength = 6.0
     dx = sobel(h_small, axis=1) * strength
@@ -1439,7 +1426,7 @@ def _write_normal_map(hm, output_dir):
     g = ((ny + 1) * 127.5).clip(0, 255).astype(np.uint8)
     b = ((nz + 1) * 127.5).clip(0, 255).astype(np.uint8)
 
-    # 整块写入 BMP
+    # Whole block write to BMP
     row = NW * 3
     pad = (4 - (row % 4)) % 4
     pix = (row + pad) * NH

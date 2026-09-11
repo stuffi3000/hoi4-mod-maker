@@ -1,12 +1,10 @@
-"""
-Colormap DDS 颜色设置.
+"""Colormap DDS color settings.
 
-控制 map/terrain/colormap_rgb_cityemissivemask_a.dds 的陆/海/湖三色.
-HOI4 缩到战略视角时显示这张总览贴图. 用户可自定义颜色让架空世界
-看起来不像地球.
+Controls the land/sea/lake colors of map/terrain/colormap_rgb_cityemissivemask_a.dds.
+HOI4 displays this overview map when zoomed to the strategic perspective. Users can customize the color to make the overhead world
+It doesn't look like Earth.
 
-存的是 RGB (用户友好), 写 DDS 时再转 BGRA.
-"""
+It is stored in RGB (user-friendly) and then converted to BGRA when writing DDS."""
 
 from __future__ import annotations
 
@@ -15,26 +13,26 @@ from dataclasses import dataclass
 
 @dataclass
 class ColormapColor:
-    """RGB 0-255 三个分量."""
+    """RGB 0-255 three components."""
     r: int
     g: int
     b: int
 
     def to_bgra(self) -> tuple[int, int, int, int]:
-        """转 DDS 用的 (B, G, R, A)."""
+        """Used to convert DDS (B, G, R, A)."""
         return (self.b, self.g, self.r, 0)
 
 
 @dataclass
 class ColormapSettings:
-    """战略总览贴图的三色配置."""
+    """Three-color configuration of strategic overview map."""
     land: ColormapColor
     sea: ColormapColor
     lake: ColormapColor
 
     @classmethod
     def default(cls) -> "ColormapSettings":
-        # 暖土褐 / 深靛蓝 / 浅蓝灰 (与原 colormap_dds.py 硬编码值一致)
+        # Warm earthy brown / dark indigo / light blue gray (consistent with the original colormap_dds.py hard-coded value)
         return cls(
             land=ColormapColor(95, 90, 60),
             sea=ColormapColor(30, 55, 90),

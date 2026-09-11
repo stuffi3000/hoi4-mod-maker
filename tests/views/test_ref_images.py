@@ -1,4 +1,4 @@
-"""参考图层双图结构测试 — RefLayer + 通用接口 + 旧接口兼容。"""
+"""Reference layer dual-image structure test - RefLayer + common interface + old interface compatibility."""
 
 import pytest
 from PyQt5.QtWidgets import QApplication
@@ -13,7 +13,7 @@ def qapp():
 
 @pytest.fixture()
 def canvas(qapp):
-    """与 tests/views/test_render_registry.py 相同的尺寸对齐套路。"""
+    """Same size alignment routine as tests/views/test_render_registry.py."""
     import views.canvas.widget as widget_mod
     import data.constants as constants
     from data.constants import set_map_size
@@ -40,23 +40,23 @@ def test_load_custom_centers_at_original_size(canvas, tmp_path):
     layer = canvas._ref_layers["custom"]
     assert layer.scale == 1.0
     assert layer.item.pixmap().width() == 64
-    # 默认居中
+    # Centered by default
     assert layer.item.pos().x() == (canvas.map_w - 64) / 2
     assert layer.item.pos().y() == (canvas.map_h - 32) / 2
 
 
 def test_load_vanilla_fit_contains_no_stretch(canvas, tmp_path):
-    """fit 加载 = 等比缩放放进地图并居中, 不拉伸变形（铺满功能已删除）。"""
-    path = _make_png(tmp_path, 4096, 2048)   # 2:1 大图, 避开缩放钳位
+    """fit loading = scale proportionally into the map and center it, without stretching or deformation (the filling function has been deleted)."""
+    path = _make_png(tmp_path, 4096, 2048)   # 2:1 large image, avoid zoom clamp
     assert canvas.load_ref_layer("vanilla", path, fit=True)
     layer = canvas._ref_layers["vanilla"]
     pm = layer.item.pixmap()
-    # 等比: 宽高比保持 2:1（允许 1-2 像素取整误差）
+    # Proportional: aspect ratio remains 2:1 (1-2 pixel rounding error allowed)
     assert abs(pm.width() - 2 * pm.height()) <= 2
-    # 放得进地图, 且至少一边基本贴满
+    # It can be placed on the map, and at least one side is basically covered
     assert pm.width() <= canvas.map_w and pm.height() <= canvas.map_h
     assert max(pm.width() / canvas.map_w, pm.height() / canvas.map_h) > 0.99
-    # 居中
+    # center
     assert layer.item.pos().x() == (canvas.map_w - pm.width()) / 2
     assert layer.item.pos().y() == (canvas.map_h - pm.height()) / 2
 
@@ -67,7 +67,7 @@ def test_scale_layers_independent(canvas, tmp_path):
     canvas.set_ref_layer_scale("custom", 2.0)
     assert canvas._ref_layers["custom"].scale == 2.0
     assert canvas._ref_layers["custom"].item.pixmap().width() == 128
-    # vanilla 不受影响
+    # vanilla is not affected
     assert canvas._ref_layers["vanilla"].scale == 1.0
 
 
@@ -105,8 +105,8 @@ def test_adjust_mode_blocks_drawing(canvas, tmp_path):
     canvas.load_ref_layer("custom", _make_png(tmp_path))
     canvas.set_ref_adjust_mode("custom")
     canvas.mousePressEvent(_left_press())
-    assert canvas._is_drawing is False          # 画笔没有启动
-    assert canvas._ref_dragging is True         # 变成拖参考图
+    assert canvas._is_drawing is False          # Paintbrush is not starting
+    assert canvas._ref_dragging is True         # Turn into drag reference image
     assert canvas._ref_adjust_border.isVisible()
 
 
@@ -116,7 +116,7 @@ def test_adjust_mode_off_restores_drawing(canvas, tmp_path):
     canvas.set_ref_adjust_mode(None)
     assert not canvas._ref_adjust_border.isVisible()
     canvas.mousePressEvent(_left_press())
-    assert canvas._is_drawing is True           # 画笔恢复
+    assert canvas._is_drawing is True           # Brush recovery
 
 
 def test_esc_exits_adjust_and_emits(canvas, tmp_path):
@@ -142,12 +142,12 @@ def test_wheel_scales_adjust_target(canvas, tmp_path):
     canvas.wheelEvent(ev)
     assert canvas._ref_layers["vanilla"].scale == pytest.approx(1.1)
     assert got == [("vanilla", pytest.approx(1.1))]
-    # 自定义图不动
+    # Custom graphics don’t move
     assert canvas._ref_layers["custom"].scale == 1.0
 
 
 def test_esc_during_drag_stops_dragging(canvas, tmp_path):
-    """拖拽中途 ESC: _ref_dragging 必须复位, 不得 fallback 错拖自定义图。"""
+    """ESC: _ref_dragging must be reset during dragging, and fallback must not be used to drag a custom image by mistake."""
     canvas.load_ref_layer("vanilla", _make_png(tmp_path))
     canvas.load_ref_layer("custom", _make_png(tmp_path))
     canvas.set_ref_adjust_mode("vanilla")
@@ -157,7 +157,7 @@ def test_esc_during_drag_stops_dragging(canvas, tmp_path):
     canvas.keyPressEvent(esc)
     assert canvas._ref_adjust_target is None
     assert canvas._ref_dragging is False
-    # 后续鼠标移动不得移动任何参考图
+    # Subsequent mouse movements must not move any reference image
     pos_before = canvas._ref_layers["custom"].item.pos()
     move = QMouseEvent(QEvent.MouseMove, QPointF(80, 80),
                        Qt.LeftButton, Qt.LeftButton, Qt.NoModifier)
@@ -166,7 +166,7 @@ def test_esc_during_drag_stops_dragging(canvas, tmp_path):
 
 
 def test_fit_load_emits_scale_changed(canvas, tmp_path):
-    """fit 加载改变 scale 后必须回写页面滑条（否则滑条停在旧值, 下次拖动突跳）。"""
+    """After fit loads and changes the scale, the page slider must be written back (otherwise the slider will stop at the old value and jump suddenly next time you drag it)."""
     got = []
     canvas.ref_adjust_scale_changed.connect(lambda t, s: got.append((t, s)))
     canvas.load_ref_layer("vanilla", _make_png(tmp_path, 4096, 2048), fit=True)
@@ -184,34 +184,34 @@ def test_adjust_mode_blocks_double_click(canvas, tmp_path):
     dbl = QMouseEvent(QEvent.MouseButtonDblClick, QPointF(50, 50),
                       Qt.LeftButton, Qt.LeftButton, Qt.NoModifier)
     canvas.mouseDoubleClickEvent(dbl)
-    assert fired == []                       # 调整模式下不触发
+    assert fired == []                       # Not triggered in adjustment mode
     canvas.set_ref_adjust_mode(None)
     canvas.mouseDoubleClickEvent(dbl)
-    assert fired == [5]                      # 退出后恢复
+    assert fired == [5]                      # Restore after exiting
 
 
 def test_land_paint_blocked_until_confirmed(canvas):
-    """已生成省份: 画笔第一笔先发确认信号, 未确认不画; 确认后放行。"""
+    """Generated provinces: The first stroke of the brush will send a confirmation signal first. If it is not confirmed, it will not be drawn; it will be released after confirmation."""
     canvas._province_map[:, :] = 1
-    canvas.province_map = canvas._province_map  # 走 setter 刷 _has_provinces
+    canvas.province_map = canvas._province_map  # Go setter brush _has_provinces
     asked = []
     canvas.land_paint_confirm_requested.connect(lambda: asked.append(1))
     canvas.mousePressEvent(_left_press())
     assert asked == [1]
-    assert canvas._is_drawing is False          # 未确认 → 不画
-    # 模拟 MainWindow 弹框里用户点了"是"
+    assert canvas._is_drawing is False          # Unconfirmed → Do not draw
+    # Simulate the user clicking "Yes" in the MainWindow pop-up box
     canvas.land_paint_confirm_requested.connect(
         lambda: setattr(canvas, '_land_paint_confirmed', True))
     canvas.mousePressEvent(_left_press())
-    assert canvas._is_drawing is True           # 确认后放行
+    assert canvas._is_drawing is True           # Release after confirmation
     canvas._is_drawing = False
     canvas.mousePressEvent(_left_press())
-    assert canvas._is_drawing is True           # 本会话不再问
-    assert asked == [1, 1]                      # 第三笔没有再发信号
+    assert canvas._is_drawing is True           # Don’t ask again in this conversation
+    assert asked == [1, 1]                      # No more signals were sent in the third transaction
 
 
 def test_land_paint_no_prompt_without_provinces(canvas):
-    """无省份: 画笔直接画, 不发确认信号。"""
+    """No province: The brush draws directly without sending a confirmation signal."""
     asked = []
     canvas.land_paint_confirm_requested.connect(lambda: asked.append(1))
     canvas.mousePressEvent(_left_press())

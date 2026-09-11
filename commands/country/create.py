@@ -1,6 +1,4 @@
-"""
-CreateCountryCommand — 创建/删除国家。
-"""
+"""CreateCountryCommand — Create/delete countries."""
 
 from __future__ import annotations
 
@@ -8,9 +6,9 @@ from commands.base import Command
 
 
 class CreateCountryCommand(Command):
-    """创建国家，undo 时删除。"""
+    """Create a country and delete it on undo."""
 
-    label = "创建国家"
+    label = "Create country"
 
     def __init__(
         self,
@@ -20,14 +18,12 @@ class CreateCountryCommand(Command):
         color: tuple[int, int, int] = (100, 100, 200),
         ruling_party: str = "neutrality",
     ) -> None:
-        """
-        参数:
-            country_mgr: CountryManager 实例
-            tag: 3 字母国家代码
-            name: 国家显示名
-            color: RGB 颜色
-            ruling_party: 执政党
-        """
+        """Parameters:
+            country_mgr: CountryManager instance
+            tag: 3 letter country code
+            name: country display name
+            color: RGB color
+            ruling_party: ruling party"""
         self._country_mgr = country_mgr
         self._tag = tag.upper()[:3]
         self._name = name or self._tag
@@ -35,7 +31,7 @@ class CreateCountryCommand(Command):
         self._ruling_party = ruling_party
 
     def execute(self) -> None:
-        """创建国家。"""
+        """Create a country."""
         country = self._country_mgr.create_country(
             self._tag, self._name, self._color
         )
@@ -43,5 +39,5 @@ class CreateCountryCommand(Command):
             self._country_mgr.set_ruling_party(self._tag, self._ruling_party)
 
     def undo(self) -> None:
-        """删除国家。"""
+        """Delete country."""
         self._country_mgr.remove_country(self._tag)

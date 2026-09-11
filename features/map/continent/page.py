@@ -1,7 +1,6 @@
-"""大陆分区 page — 独立 QWidget, 不依赖 ToolPanel.
+"""Continental partition page — independent QWidget, does not depend on ToolPanel.
 
-功能: 大陆列表 CRUD + 拾取省份指派.
-"""
+Function: Continent list CRUD + pick up province assignment."""
 
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtWidgets import (
@@ -17,9 +16,9 @@ from ui.styles import (
 
 
 class ContinentPage(QWidget):
-    """大陆分区页面."""
+    """Mainland division page."""
 
-    # 输出信号
+    # Output signal
     continent_pick_toggled = pyqtSignal(bool)
     continent_add_requested = pyqtSignal(str)
     continent_rename_requested = pyqtSignal(int, str)
@@ -45,7 +44,7 @@ class ContinentPage(QWidget):
         tip.setStyleSheet(_DIM_LABEL_STYLE)
         lay.addWidget(tip)
 
-        # ── 大陆列表 ──
+        # ── Continent list ──
         list_box = _make_section(tr("continent_list_section"))
         ll = list_box.layout()
 
@@ -67,7 +66,7 @@ class ContinentPage(QWidget):
         ll.addLayout(btn_row)
         lay.addWidget(list_box)
 
-        # ── 指派省份 ──
+        # ── Assign provinces ──
         assign_box = _make_section(tr("continent_assign_section"))
         al = assign_box.layout()
 
@@ -95,7 +94,7 @@ class ContinentPage(QWidget):
         root.setContentsMargins(0, 0, 0, 0)
         root.addWidget(scroll)
 
-    # ── 槽函数 ──
+    # ── Slot function ──
     def _on_add_continent(self) -> None:
         name, ok = QInputDialog.getText(self, tr("continent_add_dlg_title"), tr("continent_add_dlg_label"))
         if ok and name.strip():
@@ -105,7 +104,7 @@ class ContinentPage(QWidget):
         item = self._continent_list.currentItem()
         if item is None:
             return
-        # 优先读 UserRole (refresh 时存的真实名)，回退到旧的文本解析
+        # Read UserRole (the real name saved during refresh) first and fall back to the old text parsing.
         old = item.data(Qt.UserRole)
         if not old:
             old = item.text().split(".")[1].strip().split("(")[0].strip() if "." in item.text() else ""

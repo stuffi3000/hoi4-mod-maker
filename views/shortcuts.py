@@ -1,6 +1,4 @@
-"""
-可配置快捷键管理器 — 支持持久化到 QSettings。
-"""
+"""Configurable shortcut manager — supports persistence to QSettings."""
 from __future__ import annotations
 
 from typing import Callable
@@ -16,7 +14,7 @@ from PyQt5.QtGui import QKeySequence
 from ui.i18n import tr
 
 
-# ── 默认快捷键映射 ──
+# ──Default shortcut key mapping──
 _DEFAULTS: dict[str, str] = {
     "undo": "Ctrl+Z",
     "redo": "Ctrl+Y",
@@ -41,7 +39,7 @@ _DEFAULTS: dict[str, str] = {
     "zoom_fit": "Ctrl+0",
 }
 
-# 显示用名称 (tr key)
+# Display name (tr key)
 _LABELS: dict[str, str] = {
     "undo": "shortcut_undo",
     "redo": "shortcut_redo",
@@ -68,7 +66,7 @@ _LABELS: dict[str, str] = {
 
 
 class ShortcutManager:
-    """可配置快捷键管理器。"""
+    """Configurable shortcut key manager."""
 
     DEFAULTS = _DEFAULTS
 
@@ -79,24 +77,24 @@ class ShortcutManager:
         self._load_from_settings()
 
     def register(self, name: str, callback: Callable) -> None:
-        """注册一个动作回调。"""
+        """Register an action callback."""
         self._callbacks[name] = callback
 
     def rebind(self, name: str, key: str) -> None:
-        """修改快捷键绑定。"""
+        """Modify shortcut key bindings."""
         self._bindings[name] = key
         self._save_to_settings()
 
     def get_binding(self, name: str) -> str:
-        """获取当前绑定的按键。"""
+        """Get the currently bound keys."""
         return self._bindings.get(name, "")
 
     def get_all_bindings(self) -> dict[str, str]:
-        """返回所有绑定（副本）。"""
+        """Returns all bindings (copies)."""
         return dict(self._bindings)
 
     def apply_to_window(self, window: QWidget) -> None:
-        """将所有快捷键绑定到窗口上。先清除旧的。"""
+        """Bind all shortcut keys to the window. Clear out the old ones first."""
         for sc in self._shortcuts:
             sc.setEnabled(False)
             sc.deleteLater()
@@ -125,7 +123,7 @@ class ShortcutManager:
 
 
 def show_shortcut_dialog(parent: QWidget, shortcut_mgr: ShortcutManager) -> None:
-    """弹出快捷键设置对话框，允许编辑并保存。"""
+    """The shortcut key setting dialog box pops up, allowing editing and saving."""
     dlg = QDialog(parent)
     dlg.setWindowTitle(tr("shortcut_dlg_title"))
     dlg.resize(480, 520)
@@ -148,18 +146,18 @@ def show_shortcut_dialog(parent: QWidget, shortcut_mgr: ShortcutManager) -> None
     editors: list[tuple[str, QKeySequenceEdit]] = []
 
     for row, name in enumerate(names):
-        # 功能名
+        # Function name
         label_text = tr(_LABELS.get(name, name))
         label_item = QTableWidgetItem(label_text)
         label_item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
         table.setItem(row, 0, label_item)
 
-        # 当前按键
+        # Current key
         key_item = QTableWidgetItem(bindings[name])
         key_item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
         table.setItem(row, 1, key_item)
 
-        # 编辑器
+        # Editor
         editor = QKeySequenceEdit()
         editor.setKeySequence(QKeySequence(bindings[name]))
         table.setCellWidget(row, 2, editor)
@@ -190,5 +188,5 @@ def show_shortcut_dialog(parent: QWidget, shortcut_mgr: ShortcutManager) -> None
         for name, editor in editors:
             new_key = editor.keySequence().toString()
             shortcut_mgr.rebind(name, new_key)
-        # 重新应用到窗口
+        # reapply to window
         shortcut_mgr.apply_to_window(parent)

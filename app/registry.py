@@ -1,14 +1,12 @@
-"""
-Feature 注册表 — 应用启动时收集所有 Feature, 按 category 分组供 UI 查询.
+"""Feature registry — collects all Features when the application starts, and groups them by category for UI query.
 
-使用:
+Use:
     from app.registry import FeatureRegistry
     registry = FeatureRegistry()
     registry.register(LandFeature())
     registry.register(StateFeature())
     ...
-    map_features = registry.by_category('map')
-"""
+    map_features = registry.by_category('map')"""
 
 from __future__ import annotations
 
@@ -16,7 +14,7 @@ from features.base import Feature
 
 
 class FeatureRegistry:
-    """全局 Feature 注册表. 按 id 去重, 按 category 分组."""
+    """Global Feature registry. Remove duplicates by id and group by category."""
 
     def __init__(self) -> None:
         self._features: dict[str, Feature] = {}
@@ -45,7 +43,7 @@ class FeatureRegistry:
 
 
 class ExporterRegistry:
-    """导出 writer 注册表. 每个 writer 有 order 决定执行顺序, group 决定分组."""
+    """Export the writer registry. Each writer has order to determine the execution order, and group to determine the grouping."""
 
     def __init__(self) -> None:
         self._writers: list = []  # list of (order, group, name, callable)
@@ -60,7 +58,7 @@ class ExporterRegistry:
         self._writers.sort(key=lambda x: (x[0], x[2]))
 
     def all(self) -> list:
-        """返回按 order 排序的 [(name, group, callable), ...]"""
+        """Returns [(name, group, callable), ...] sorted by order"""
         return [(name, group, w) for order, group, name, w in self._writers]
 
     def by_group(self, group: str) -> list:

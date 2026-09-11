@@ -1,7 +1,6 @@
-"""Height 模式渲染: height_map → 彩色 (复用 views.canvas.luts._HEIGHT_COLOR_LUT).
+"""Height mode rendering: height_map → color (reuse views.canvas.luts._HEIGHT_COLOR_LUT).
 
-编辑器用彩色地形图方便区分高低，导出的 heightmap.bmp 仍为灰度。
-"""
+The editor uses colored terrain maps to easily distinguish height from low, and the exported heightmap.bmp is still grayscale."""
 
 from views.canvas.luts import _HEIGHT_COLOR_LUT
 
