@@ -135,11 +135,18 @@ def export_full_mod(
         heightmap = _gen_heightmap(tile_map)
     write_heightmap_bmp(heightmap, output_dir)
 
-    # Topographic maps: User-edited ones are given priority, otherwise they are automatically generated.
+    # Topographic maps: user-edited terrain is preferred when it contains data;
+    # otherwise derive one map and use that same map for every visual raster.
+    # Keeping terrain.bmp, trees.bmp, cities.bmp, and the colormap in sync is
+    # important: previously cities.bmp received ``None`` even when terrain.bmp
+    # had been generated as a fallback, and an all-zero terrain layer was used
+    # for trees/colormap.
     if terrain_map is not None and int(terrain_map.max()) > 0:
-        write_terrain_bmp(terrain_map, output_dir)
+        terrain_for_export = terrain_map
+        _sync_terrain_with_tile(terrain_for_export, tile_map)
     else:
-        write_terrain_bmp(_gen_terrain(tile_map), output_dir)
+        terrain_for_export = _gen_terrain(tile_map)
+    write_terrain_bmp(terrain_for_export, output_dir)
 
     write_rivers_bmp(output_dir, river_map, shape=tile_map.shape)
     # trees.bmp: Automatically generate tree distribution from terrain_map (A8)
@@ -147,12 +154,11 @@ def export_full_mod(
         write_trees_bmp as _write_trees_new,
         auto_generate_tree_map,
     )
-    _tm_for_trees = terrain_map if terrain_map is not None else _gen_terrain(tile_map)
-    _tree_map = auto_generate_tree_map(_tm_for_trees)
+    _tree_map = auto_generate_tree_map(terrain_for_export)
     _write_trees_new(output_dir, tree_map=_tree_map)
     # cities.bmp: Generate city markers from urban terrain (Feature 11)
     from export.writers.map.cities_bmp import write_cities_bmp as _write_cities_new
-    _write_cities_new(output_dir, terrain_map=terrain_map)
+    _write_cities_new(output_dir, terrain_map=terrain_for_export)
     # world_normal.bmp — normal map, can be replaced by the imported original version
     from export.asset_helper import write_or_restore
     write_or_restore(
@@ -167,7 +173,7 @@ def export_full_mod(
         "map/terrain/colormap_rgb_cityemissivemask_a.dds",
         output_dir, assets, dirty_assets,
         lambda: write_colormap_dds(tile_map, output_dir, settings=colormap_settings,
-                                   terrain_map=terrain_map, height_map=heightmap),
+                                   terrain_map=terrain_for_export, height_map=heightmap),
     )
 
     # colormap_water_0/1/2.dds Ocean shading map - three MIPs are considered a group
@@ -215,13 +221,7 @@ def export_full_mod(
         province_count=int(province_map.max()),
     )
 
-    # === Synchronize terrain_map and tile_map ===
-    # The user may not regenerate the terrain after expanding/shrinking the land, resulting in inconsistent terrain_map and tile_map.
-    # Correction: ocean terrain on land → plains, land terrain on ocean → ocean
-    # (Same correction logic as gen_from_project.py)
-    if terrain_map is not None:
-        _sync_terrain_with_tile(terrain_map, tile_map)
-
+    # Terrain was synchronized before the visual rasters were written above.
     # === Calculate coastline in one go (shared by definition.csv + buildings.txt) ===
     # **Provincial adjacency** determination - exactly the same as HOI4 (determined according to the type field of definition.csv)
     # Cannot use tile_map pixel-level determination, because _classify_provinces_fast votes by pixel majority

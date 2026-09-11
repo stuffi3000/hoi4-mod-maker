@@ -153,14 +153,12 @@ def write_buildings(states, province_map, tile_map, output_dir, sea_ids=None,
 
 
 def write_empty_unitstacks(output_dir):
-    """Write empty map/*.txt files to overwrite the original ones to avoid vanilla's 13000+ province ID reference crash.
+    """Write safe map entity files and the cosmetic city configuration.
 
-    These files in the original map/ directory reference coordinates/rules by province ID; vanilla IDs are in our
-    Everything in the map is invalid and will trigger the map.cpp:1135 error. An empty file lets HOI4 use default values.
-
-    [Special case cities.txt] cannot be empty! It is the configuration file (metadata pointing to cities.bmp),
-    The first line types_source = "map/cities.bmp" tells HOI4 where the city mask is. empty file
-    "Missing cities mask bitmap" will be triggered → the image will crash. Just write the minimum configuration."""
+    Unit/airport/rocket files reference vanilla province IDs, so those files
+    are intentionally empty for a generated map. ``cities.txt`` is different:
+    it describes the meshes used by ``cities.bmp`` and must not be empty.
+    """
     d = os.path.join(output_dir, "map")
     os.makedirs(d, exist_ok=True)
     # adjacency_rules.txt is written separately by writers/map/adjacency_rules.py. An empty file is no longer created here.
@@ -171,9 +169,7 @@ def write_empty_unitstacks(output_dir):
     ):
         open(os.path.join(d, name), "w").close()
 
-    # cities.txt: Minimal configuration, only points to cities.bmp, does not define any city_group
-    # → HOI4 finds the mask file but does not render any 3D city model (no city buildings on the map)
-    with open(os.path.join(d, "cities.txt"), "w", encoding="utf-8") as f:
-        f.write('types_source = "map/cities.bmp"\n')
-        f.write("pixel_step_x = 2\n")
-        f.write("pixel_step_y = 2\n")
+    # cities.txt: Include the city_group meshes so Urban pixels render models.
+    from export.writers.map.cities_bmp import write_cities_txt
+
+    write_cities_txt(output_dir)
