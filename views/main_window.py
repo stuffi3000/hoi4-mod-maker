@@ -316,7 +316,7 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
         )
         tp.terrain_brush_mode_changed.connect(cv.set_terrain_brush_mode)
         tp.terrain_vp_overlay_toggled.connect(
-            lambda on: cv.set_vp_overlay_visible("terrain", on)
+            lambda on: self._app.set_vp_overlay_visible("terrain", on)
         )
         tp.terrain_brush_mode_changed.connect(
             lambda on: setattr(self._controllers["terrain"], "brush_mode", on)
@@ -327,7 +327,7 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
             self._controllers["province_terrain"].set_type
         )
         tp.province_terrain_vp_overlay_toggled.connect(
-            lambda on: cv.set_vp_overlay_visible("province_terrain", on)
+            lambda on: self._app.set_vp_overlay_visible("province_terrain", on)
         )
         tp.province_terrain_assign_mode_changed.connect(
             self._controllers["province_terrain"].set_assign_mode

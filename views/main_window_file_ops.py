@@ -298,6 +298,7 @@ class MainWindowFileOpsMixin:
             self._update_province_count()
             self._app._refresh_state_list()
             self._app._refresh_country_list()
+            self._app._refresh_vp_data()
             self._refresh_sr_list()
             self._refresh_logistics_counts()
             if gap_count > 0:

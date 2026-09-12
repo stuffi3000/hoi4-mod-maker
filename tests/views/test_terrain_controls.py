@@ -1,5 +1,8 @@
 """UI and canvas tests for terrain-mode VP controls."""
 
+from types import SimpleNamespace
+from unittest.mock import MagicMock
+
 import numpy as np
 import pytest
 from PyQt5.QtWidgets import QApplication
@@ -54,6 +57,10 @@ def test_vp_overlay_can_be_enabled_per_terrain_mode(qapp, qtbot):
         canvas._display_mode = "terrain"
         canvas.set_vp_overlay_visible("terrain", True)
         assert canvas._vp_overlay_item.isVisible()
+        assert (
+            canvas._vp_overlay_item.zValue()
+            > canvas._terrain_context_overlay.zValue()
+        )
 
         canvas._display_mode = "province_terrain"
         canvas.set_vp_overlay_visible("province_terrain", False)
@@ -62,3 +69,31 @@ def test_vp_overlay_can_be_enabled_per_terrain_mode(qapp, qtbot):
         assert canvas._vp_overlay_item.isVisible()
     finally:
         set_map_size(old_w, old_h)
+
+
+def test_enabling_terrain_vp_overlay_hydrates_project_vps_first():
+    """Opening terrain directly must not leave the overlay with an empty cache."""
+    from controllers.app_controller import ApplicationController
+
+    state = SimpleNamespace(
+        victory_points={7: 15},
+        vp_names={7: "Test City"},
+    )
+    project = SimpleNamespace(
+        event_bus=MagicMock(),
+        state_mgr=SimpleNamespace(states={1: state}),
+    )
+    canvas = MagicMock()
+    controller = ApplicationController(
+        project=project,
+        canvas=canvas,
+        tool_panel=MagicMock(),
+        cmd_history=MagicMock(),
+        controllers={},
+        undo_mgr=MagicMock(),
+    )
+
+    controller.set_vp_overlay_visible("terrain", True)
+
+    canvas.set_vp_data.assert_called_once_with({7: 15}, {7: "Test City"})
+    canvas.set_vp_overlay_visible.assert_called_once_with("terrain", True)

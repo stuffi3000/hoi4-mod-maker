@@ -329,7 +329,8 @@ class MapCanvas(InputMixin, OverlayMixin, NameLabelsMixin, RefImageMixin, QGraph
 
         # VP Marker Overlay (Feature 10)
         self._vp_overlay_item = QGraphicsPixmapItem()
-        self._vp_overlay_item.setZValue(5)
+        # Keep VP markers above the optional country/state context overlay.
+        self._vp_overlay_item.setZValue(7)
         self._vp_overlay_item.setVisible(False)
         self._scene.addItem(self._vp_overlay_item)
         self._vp_data: dict[int, int] = {}  # {province_id: vp_value}

@@ -311,6 +311,12 @@ class ApplicationController:
                     name_dict[pid] = name
         self._canvas.set_vp_data(vp_dict, name_dict)
 
+    def set_vp_overlay_visible(self, mode: str, visible: bool) -> None:
+        """Hydrate the canvas VP layer before a terrain editor shows it."""
+        if visible:
+            self._refresh_vp_data()
+        self._canvas.set_vp_overlay_visible(mode, visible)
+
     def _refresh_country_list(self) -> None:
         self._panel.update_country_list(self._project.country_mgr.get_country_list())
 
