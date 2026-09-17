@@ -187,12 +187,6 @@ def write_terrain_bmp(
     if _install is None and game_target is not None:
         _install = getattr(game_target, "install_dir", None)
     if _install is None and not _explicit_source:
-        try:
-            from services.game_assets import find_hoi4_install as _find_install
-            _install = _find_install()
-        except Exception:
-            _install = None
-    if _install is None and not _explicit_source:
         from data.constants import DEFAULT_HOI4_PATH as _fallback_path
         _install = _fallback_path
     vanilla_terrain = os.path.join(_install, "map", "terrain.bmp") if _install else ""

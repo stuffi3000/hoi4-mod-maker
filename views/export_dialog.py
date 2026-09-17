@@ -13,7 +13,7 @@ from PyQt5.QtCore import Qt, QThread, pyqtSignal
 from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QProgressBar, QFileDialog, QGroupBox, QCheckBox,
-    QTextEdit, QMessageBox, QWidget,
+    QTextEdit, QMessageBox, QWidget, QComboBox,
 )
 
 from data.constants import DEFAULT_MOD_OUTPUT_PATH, DEFAULT_MOD_NAME
@@ -101,52 +101,72 @@ class ExportWorker(QThread):
     def __init__(
         self, output_dir: str, canvas, project,
         scope: dict[str, bool] | None = None, parent=None,
+        profile_name: str = "legacy_full", repair_policy: str = "apply-safe",
+        overwrite: bool = False, backup: bool = False,
     ) -> None:
         super().__init__(parent)
         self.output_dir = output_dir
         self.canvas = canvas
         self.project = project
         self.scope = scope or {}
+        self.profile_name = profile_name or "legacy_full"
+        self.repair_policy = repair_policy or "apply-safe"
+        self.overwrite = bool(overwrite)
+        self.backup = bool(backup)
         self.game_target = None
         self.profile = None
         self.dimensions = None
+        self.plan = None
+        self.plan_summary = ""
+        self.export_result = None
 
     def run(self) -> None:
         try:
             self.progress.emit(tr("export_worker_pre_check"))
-            from services.export_service import export_mod
+            from services.export_planner import format_plan_summary, plan_export_from_project
+            from services.export_service import ExportReport, export_planned_mod
             from services.game_profile_service import load_profile_for_target
 
             self.game_target = self.project.resolve_game_target()
             self.profile = load_profile_for_target(self.game_target)
             map_height, map_width = self.canvas.province_map.shape[:2]
             self.dimensions = (int(map_width), int(map_height))
-            report = export_mod(
-                self.output_dir,
+            self.plan = plan_export_from_project(
+                self.project,
                 self.canvas,
-                self.project.state_mgr,
-                self.project.country_mgr,
-                self.project.continent_mgr,
-                adjacency_mgr=self.project.adjacency_mgr,
-                railway_mgr=self.project.railway_mgr,
-                supply_mgr=self.project.supply_mgr,
-                colormap_settings=self.project.colormap_settings,
-                default_map_settings=self.project.default_map_settings,
-                adjacency_rule_mgr=self.project.adjacency_rule_mgr,
-                strategic_region_mgr=self.project.strategic_region_mgr,
-                scope=self.scope,
-                assets=self.project.assets,
-                dirty_assets=self.project.dirty_assets,
+                profile_name=self.profile_name,
                 game_target=self.game_target,
-                profile=self.profile,
+                game_profile=self.profile,
+                repair_policy=self.repair_policy,
+                scope=self.scope,
                 dimensions=self.dimensions,
+            )
+            self.plan_summary = format_plan_summary(self.plan)
+            self.progress.emit(self.plan_summary)
+            self.export_result = export_planned_mod(
+                self.plan,
+                self.output_dir,
+                overwrite=self.overwrite,
+                backup=self.backup,
+            )
+            plan = self.plan
+            stats = {
+                "provinces": int(plan.snapshot.province_map.max()),
+                "states": len(getattr(plan.snapshot.state_mgr, "states", {}) or {}),
+                "countries": len(getattr(plan.snapshot.country_mgr, "countries", {}) or {}),
+                "files": len(self.export_result.written_files),
+            }
+            report = ExportReport(
+                warnings=[note.message for note in plan.findings
+                          if note.severity in ("warning", "error", "blocker")],
+                fixed=["[%s] %s" % (repair.safety, repair.summary)
+                       for repair in plan.applied_repairs],
+                stats=stats,
             )
             self.finished.emit(report)
         except Exception as e:
             self.failed.emit(f"{e}\n\n{traceback.format_exc()}")
 
-
-# ──Dialog ────────────────────────────────────────
 
 class ExportDialog(QDialog):
     """Export preflight dialog - Check → Autocomplete → Select Directory → Export."""
@@ -221,6 +241,35 @@ class ExportDialog(QDialog):
             self._scope_checks[key] = cb
         layout.addWidget(scope_group)
 
+        # Export profile selection (M2.5/M2.6: planner profile plus repair policy)
+        profile_group = QGroupBox("Export profile")
+        profile_layout = QHBoxLayout(profile_group)
+        self._profile_combo = QComboBox()
+        self._profile_combo.addItems(["legacy_full", "foundation", "acceptance", "scaffold"])
+        self._profile_combo.setCurrentText("legacy_full")
+        self._profile_combo.currentTextChanged.connect(self._on_profile_changed)
+        profile_layout.addWidget(QLabel("Profile:"))
+        profile_layout.addWidget(self._profile_combo)
+        self._repair_combo = QComboBox()
+        self._repair_combo.addItems(["apply-safe", "propose", "off"])
+        self._repair_combo.setCurrentText("apply-safe")
+        self._repair_combo.currentTextChanged.connect(lambda _text: self._run_check())
+        profile_layout.addWidget(QLabel("Repair:"))
+        profile_layout.addWidget(self._repair_combo)
+        self._overwrite_check = QCheckBox("Overwrite existing output")
+        self._overwrite_check.setChecked(False)
+        profile_layout.addWidget(self._overwrite_check)
+        self._backup_check = QCheckBox("Backup existing output")
+        self._backup_check.setChecked(False)
+        profile_layout.addWidget(self._backup_check)
+        profile_layout.addStretch()
+        layout.addWidget(profile_group)
+
+        self._plan_label = QLabel("")
+        self._plan_label.setWordWrap(True)
+        layout.addWidget(self._plan_label)
+
+
         # Log area (initially hidden)
         self._log_box = QGroupBox(tr("export_log"))
         log_layout = QVBoxLayout(self._log_box)
@@ -283,6 +332,8 @@ class ExportDialog(QDialog):
             child = self._check_layout.takeAt(0)
             if child.widget():
                 child.widget().deleteLater()
+        self._btn_auto.setEnabled(True)
+        self._btn_export_direct.setEnabled(True)
 
         try:
             from services.game_profile_service import load_profile_for_target
@@ -346,6 +397,7 @@ class ExportDialog(QDialog):
         if not has_missing:
             self._btn_auto.setText(tr("export_btn_export"))
             self._btn_export_direct.setVisible(False)
+        self._refresh_plan_summary()
 
     # ── Default ──
 
@@ -366,21 +418,52 @@ class ExportDialog(QDialog):
             elif preset == "map_only":
                 cb.setChecked(key in self._MAP_ONLY_KEYS)
 
+    def _on_profile_changed(self, profile_name: str) -> None:
+        """Keep the visible layer selection valid for the selected profile."""
+        foundation = str(profile_name) == "foundation"
+        for key in ("countries", "localisation", "gfx"):
+            check = self._scope_checks.get(key)
+            if check is None:
+                continue
+            if foundation:
+                check.setChecked(False)
+            check.setEnabled(not foundation)
+        self._run_check()
+
+    def _refresh_plan_summary(self) -> None:
+        try:
+            from services.export_planner import format_plan_summary, plan_export_from_project
+            from services.game_profile_service import load_profile_for_target
+            game_target = self.project.resolve_game_target()
+            profile = load_profile_for_target(game_target)
+            map_height, map_width = self.canvas.province_map.shape[:2]
+            scope = {k: cb.isChecked() for k, cb in self._scope_checks.items()}
+            plan = plan_export_from_project(
+                self.project, self.canvas,
+                profile_name=str(self._profile_combo.currentText()),
+                game_target=game_target, game_profile=profile,
+                repair_policy=str(self._repair_combo.currentText()),
+                scope=scope, dimensions=(int(map_width), int(map_height)))
+            self._plan_label.setText(format_plan_summary(plan).replace("\n", " | "))
+            if plan.blocked:
+                self._btn_auto.setEnabled(False)
+                self._btn_export_direct.setEnabled(False)
+        except Exception as exc:
+            self._plan_label.setText("Export plan unavailable: %s" % exc)
+            self._btn_auto.setEnabled(False)
+            self._btn_export_direct.setEnabled(False)
+
+
     # ── Export action ──
 
     def _on_auto_export(self) -> None:
-        """Export after auto-completion."""
-        # Perform autocomplete first
-        log = auto_complete_project(self.project, self.canvas)
-        if log:
-            self._log_box.setVisible(True)
-            self._log_text.setPlainText("\n".join(
-                f"[{tr('export_log_prefix')}] {l}" for l in log))
-
-        # refresh check
-        self._run_check()
-
-        # Select directory and export
+        """Export with planner-approved safe repairs on the export snapshot."""
+        if self._repair_combo.currentText() != "apply-safe":
+            self._repair_combo.setCurrentText("apply-safe")
+        self._log_box.setVisible(True)
+        self._log_text.setPlainText(
+            "Planner safe repairs will be applied to the export snapshot; the live project is unchanged."
+        )
         self._do_export()
 
     def _on_direct_export(self) -> None:
@@ -432,7 +515,11 @@ class ExportDialog(QDialog):
         self._output_dir = output_dir
         scope = {k: cb.isChecked() for k, cb in self._scope_checks.items()}
         self._worker = ExportWorker(output_dir, self.canvas, self.project,
-                                    scope=scope, parent=self)
+                                    scope=scope, parent=self,
+                                    profile_name=str(self._profile_combo.currentText()),
+                                    repair_policy=str(self._repair_combo.currentText()),
+                                    overwrite=self._overwrite_check.isChecked(),
+                                    backup=self._backup_check.isChecked())
         self._worker.progress.connect(self._on_progress)
         self._worker.finished.connect(self._on_export_done)
         self._worker.failed.connect(self._on_export_failed)

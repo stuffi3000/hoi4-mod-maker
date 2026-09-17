@@ -701,3 +701,82 @@ def export_mod(
         fixed=report.fixed,
         stats=stats,
     )
+
+
+def export_planned_mod(plan, destination: str, overwrite: bool = False, backup: bool = False,
+                       keep_failed: bool = False, with_manifest: bool = True):
+    """Export an approved ExportPlan through transactional staging (M2.3/M2.6)."""
+    from domain.export_contract import ExportResult
+    from export.stages.base import build_context_from_plan
+    from export.stages.pipeline import run_pipeline
+    from services.export_manifest import (
+        collect_written_files,
+        validate_staged_artifacts,
+        write_lock_file,
+        write_manifest,
+        write_report,
+    )
+    from services.export_transaction import StagingPolicy, run_staged_export
+    if plan is None or getattr(plan, "snapshot", None) is None:
+        raise ValueError("export_planned_mod requires a complete ExportPlan with a snapshot")
+    if getattr(plan, "blocked", False):
+        raise ValueError("export plan is blocked: %s" % "; ".join(getattr(plan, "blockers", []) or []))
+    policy = StagingPolicy.from_options(overwrite=overwrite, backup=backup, keep_failed=keep_failed)
+    staged: dict = {}
+
+    def _worker(staging_dir: str) -> None:
+        staged["staging_dir"] = staging_dir
+        ctx = build_context_from_plan(plan, staging_dir)
+        results = run_pipeline(ctx)
+        artifact_errors = validate_staged_artifacts(staging_dir, plan)
+        if artifact_errors:
+            raise ValueError("staged artifact validation failed: %s" % "; ".join(artifact_errors))
+        written = list(ctx.written)
+        placeholders = list(ctx.placeholders)
+        provenance = list(ctx.provenance)
+        manifest_path = ""
+        report_path = ""
+        lock_path = ""
+        if with_manifest:
+            manifest_path = write_manifest(staging_dir, plan, written, results, placeholders, provenance)
+            report_path = write_report(staging_dir, plan, written, manifest_path)
+            if plan.profile_name == "foundation":
+                lock_path = write_lock_file(staging_dir, plan)
+        staged["results"] = results
+        staged["written"] = collect_written_files(staging_dir)
+        staged["manifest_path"] = manifest_path
+        staged["report_path"] = report_path
+        staged["lock_path"] = lock_path
+        staged["placeholders"] = placeholders
+        staged["provenance"] = provenance
+
+    import os as _os
+    final_dir = run_staged_export(destination, _worker, policy)
+    stray_mod = "%s.mod" % (staged.get("staging_dir") or "")
+    try:
+        if stray_mod != ".mod" and _os.path.isfile(stray_mod):
+            _os.remove(stray_mod)
+    except OSError:
+        pass
+    if bool((plan.scope or {}).get("descriptor", True)):
+        from export.mod_exporter import _write_descriptor
+        _write_descriptor(plan.mod_name, final_dir, game_target=plan.game_target,
+                          profile=plan.game_profile)
+    manifest_path = _os.path.join(final_dir, "foundation_manifest.json") if with_manifest else ""
+    report_path = _os.path.join(final_dir, "foundation_report.md") if with_manifest else ""
+    if with_manifest and not _os.path.isfile(manifest_path):
+        manifest_path = ""
+    if with_manifest and not _os.path.isfile(report_path):
+        report_path = ""
+    return ExportResult(
+        output_dir=final_dir,
+        profile_name=plan.profile_name,
+        manifest_path=manifest_path,
+        report_path=report_path,
+        written_files=staged.get("written", []),
+        repairs_applied=[r.code for r in (plan.applied_repairs or [])],
+        findings=[f.to_dict() if hasattr(f, "to_dict") else dict(f) for f in (plan.findings or [])],
+        fingerprint=getattr(plan.snapshot, "fingerprint", ""),
+        success=True,
+        message="exported %d files with profile %s" % (len(staged.get("written", [])), plan.profile_name),
+    )

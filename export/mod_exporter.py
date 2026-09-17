@@ -933,12 +933,15 @@ def _write_localisation(mod_name, tag, states, output_dir, region_count=24):
 
 # ────────────────── descriptor.mod + empty directory ──────────────────
 
-def _write_descriptor(mod_name, output_dir, game_target=None, supported_version=None, profile=None):
+def _write_descriptor(mod_name, output_dir, game_target=None, supported_version=None,
+                      profile=None, write_outer=True):
     from export.writers.map.descriptor import write_descriptor
     replace = list(profile.replace_paths) if profile is not None and getattr(profile, "replace_paths", None) else None
     if supported_version is None and profile is not None:
         supported_version = getattr(profile, "supported_version_pattern", None)
-    return write_descriptor(mod_name, output_dir, supported_version=supported_version, game_target=game_target, replace_paths=replace)
+    return write_descriptor(mod_name, output_dir, supported_version=supported_version,
+                            game_target=game_target, replace_paths=replace,
+                            write_outer=write_outer)
 
 
 
@@ -1482,3 +1485,65 @@ def _write_normal_map(hm, output_dir):
             for y in range(NH):
                 f.write(bgr[y].tobytes())
                 f.write(pb)
+
+
+def export_with_profile(profile_name: str, output_dir: str, tile_map: np.ndarray,
+                        province_map: np.ndarray, mod_name: str = "WorldTest", tag: str = "AAA",
+                        state_mgr=None, country_mgr=None, river_map: np.ndarray | None = None,
+                        terrain_map: np.ndarray | None = None, height_map: np.ndarray | None = None,
+                        continent_mgr=None, adjacency_mgr=None, railway_mgr=None, supply_mgr=None,
+                        colormap_settings=None, default_map_settings=None, adjacency_rule_mgr=None,
+                        strategic_region_mgr=None, provincial_terrain: dict | None = None,
+                        scope: dict | None = None, assets: dict | None = None,
+                        dirty_assets: set | None = None, game_target=None, profile=None,
+                        dimensions=None, repair_policy: str = "apply-safe", lifecycle=None,
+                        project_meta=None, acceptance_count: int = 2,
+                        with_manifest: bool = True):
+    """Planner-driven staged export (M2.4/M2.5/M2.6 compatibility facade).
+
+    Builds an ExportPlan without touching the caller's managers or arrays,
+    then runs the ordered export stages directly into output_dir. For
+    transactional guarantees (staging, backup, atomic promotion) use
+    services.export_service.export_planned_mod instead.
+    """
+    import os as _os
+    from services.export_planner import plan_export
+    plan = plan_export(
+        tile_map, province_map, terrain_map, height_map, river_map,
+        state_mgr=state_mgr, country_mgr=country_mgr, continent_mgr=continent_mgr,
+        adjacency_mgr=adjacency_mgr, railway_mgr=railway_mgr, supply_mgr=supply_mgr,
+        adjacency_rule_mgr=adjacency_rule_mgr, strategic_region_mgr=strategic_region_mgr,
+        provincial_terrain=provincial_terrain, colormap_settings=colormap_settings,
+        default_map_settings=default_map_settings, assets=assets, dirty_assets=dirty_assets,
+        project_meta=project_meta, profile_name=profile_name, game_target=game_target,
+        game_profile=profile, repair_policy=repair_policy, lifecycle=lifecycle, scope=scope,
+        dimensions=dimensions, mod_name=mod_name, tag=tag, acceptance_count=acceptance_count,
+    )
+    if plan.blocked:
+        raise ValueError("export plan is blocked: %s" % "; ".join(plan.blockers))
+    from export.stages.base import build_context_from_plan
+    from export.stages.pipeline import run_pipeline
+    from services.export_manifest import collect_written_files, write_lock_file, write_manifest, write_report
+    _os.makedirs(output_dir, exist_ok=True)
+    ctx = build_context_from_plan(plan, output_dir)
+    results = run_pipeline(ctx)
+    # The stage writes descriptor.mod inside the output.  Create the launcher
+    # sidecar only after direct (non-transactional) generation has succeeded.
+    if bool((plan.scope or {}).get("descriptor", True)):
+        _write_descriptor(plan.mod_name, output_dir, game_target=plan.game_target,
+                          profile=plan.game_profile)
+    manifest_path = ""
+    report_path = ""
+    if with_manifest:
+        manifest_path = write_manifest(output_dir, plan, list(ctx.written), results,
+                                       list(ctx.placeholders), list(ctx.provenance))
+        report_path = write_report(output_dir, plan, list(ctx.written), manifest_path)
+        if profile_name == "foundation":
+            write_lock_file(output_dir, plan)
+    return {
+        "plan": plan,
+        "results": results,
+        "written": collect_written_files(output_dir),
+        "manifest_path": manifest_path,
+        "report_path": report_path,
+    }

@@ -124,6 +124,59 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Clear the output directory before exporting",
     )
+    parser.add_argument(
+        "--profile",
+        choices=("foundation", "acceptance", "scaffold", "legacy_full"),
+        default="legacy_full",
+        help="Export profile; GUI and CLI share the same planner (default: legacy_full)",
+    )
+    parser.add_argument(
+        "--game-dir",
+        default=None,
+        help="Hearts of Iron IV installation directory (overrides project metadata)",
+    )
+    parser.add_argument(
+        "--repair",
+        choices=("off", "propose", "apply-safe"),
+        default="apply-safe",
+        help="Repair policy for planner exports (default: apply-safe)",
+    )
+    parser.add_argument(
+        "--manifest",
+        default=None,
+        help="Copy the generated foundation manifest to PATH",
+    )
+    parser.add_argument(
+        "--compare-lock",
+        default=None,
+        help="Compare the planned artifact with a foundation lock file before exporting",
+    )
+    parser.add_argument(
+        "--json-report",
+        default=None,
+        help="Write the plan/result JSON report to PATH",
+    )
+    parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="Replace an existing destination during staged promotion",
+    )
+    parser.add_argument(
+        "--backup",
+        action="store_true",
+        help="Move an existing destination to a timestamped backup during promotion",
+    )
+    parser.add_argument(
+        "--keep-staging",
+        action="store_true",
+        help="Keep failed staging output for diagnostics",
+    )
+    parser.add_argument(
+        "--acceptance-count",
+        type=int,
+        default=2,
+        help="Number of deterministic test tags for the acceptance profile (default: 2)",
+    )
     return parser
 
 
@@ -153,6 +206,9 @@ def main(argv: list[str] | None = None) -> int:
     # protected, including the Unicode status separators used by older output.
     print = _safe_print
     args = build_parser().parse_args(argv)
+
+    if _uses_planner_path(args):
+        return run_planner_export(args)
 
     if not os.path.isfile(args.project):
         print(f"Error: project file not found: {args.project}", file=sys.stderr)
@@ -366,6 +422,171 @@ def main(argv: list[str] | None = None) -> int:
         f"countries: {len(country_mgr.countries)}"
     )
     print("[VALIDATION PASSED] All critical files are present and ready for an in-game test.")
+    return EXIT_SUCCESS
+
+
+PLANNER_REQUIRED_BY_PROFILE = {
+    "foundation": (
+        "map/default.map",
+        "map/provinces.bmp",
+        "map/definition.csv",
+        "map/terrain.bmp",
+        "map/heightmap.bmp",
+        "map/rivers.bmp",
+        "descriptor.mod",
+    ),
+    "acceptance": (
+        "map/default.map",
+        "map/provinces.bmp",
+        "map/definition.csv",
+        "map/terrain.bmp",
+        "map/heightmap.bmp",
+        "map/rivers.bmp",
+        "descriptor.mod",
+        "common/country_tags/99_acceptance_tags.txt",
+    ),
+    "scaffold": None,
+    "legacy_full": None,
+}
+
+
+def _uses_planner_path(args) -> bool:
+    if getattr(args, "profile", "legacy_full") != "legacy_full":
+        return True
+    for flag in ("game_dir", "manifest", "compare_lock", "json_report"):
+        if getattr(args, flag, None):
+            return True
+    for flag in ("overwrite", "backup", "keep_staging"):
+        if getattr(args, flag, False):
+            return True
+    return False
+
+
+def _verify_planned_export(output_dir: str, profile_name: str) -> list:
+    required = PLANNER_REQUIRED_BY_PROFILE.get(profile_name)
+    if required is None:
+        return verify_export(output_dir)
+    missing = []
+    for relative_path in required:
+        path = os.path.join(output_dir, relative_path)
+        if not os.path.isfile(path) or os.path.getsize(path) == 0:
+            missing.append(relative_path)
+    launcher_mod = output_dir + ".mod"
+    if not os.path.isfile(launcher_mod) or os.path.getsize(launcher_mod) == 0:
+        missing.append(launcher_mod)
+    return missing
+
+
+def run_planner_export(args) -> int:
+    configure_console_streams()
+    print = _safe_print
+    if not os.path.isfile(args.project):
+        print(f"Error: project file not found: {args.project}", file=sys.stderr)
+        return EXIT_COMMAND_ERROR
+    try:
+        print(f"Loading project: {args.project}")
+        state_mgr = StateManager()
+        country_mgr = CountryManager()
+        continent_mgr = ContinentManager()
+        adjacency_mgr = AdjacencyManager()
+        railway_mgr = RailwayManager()
+        supply_mgr = SupplyNodeManager()
+        adjacency_rule_mgr = AdjacencyRuleManager()
+        strategic_region_mgr = StrategicRegionManager()
+        (
+            tile_map,
+            province_map,
+            terrain_map,
+            height_map,
+            river_map,
+            provincial_terrain,
+            _tile_snapshot,
+        ) = load_project(
+            args.project,
+            state_mgr,
+            country_mgr,
+            continent_mgr=continent_mgr,
+            adjacency_mgr=adjacency_mgr,
+            railway_mgr=railway_mgr,
+            supply_mgr=supply_mgr,
+            adjacency_rule_mgr=adjacency_rule_mgr,
+            strategic_region_mgr=strategic_region_mgr,
+        )
+        try:
+            project_meta = read_project_meta(args.project)
+        except Exception:
+            project_meta = None
+        from services.export_planner import format_plan_summary, plan_export
+        height, width = tile_map.shape
+        plan = plan_export(
+            tile_map,
+            province_map,
+            terrain_map,
+            height_map,
+            river_map,
+            state_mgr=state_mgr,
+            country_mgr=country_mgr,
+            continent_mgr=continent_mgr,
+            adjacency_mgr=adjacency_mgr,
+            railway_mgr=railway_mgr,
+            supply_mgr=supply_mgr,
+            adjacency_rule_mgr=adjacency_rule_mgr,
+            strategic_region_mgr=strategic_region_mgr,
+            provincial_terrain=provincial_terrain,
+            project_meta=project_meta,
+            profile_name=args.profile,
+            game_dir=args.game_dir,
+            repair_policy=args.repair,
+            dimensions=(int(width), int(height)),
+            mod_name=args.mod_name,
+            tag="AAA",
+            acceptance_count=int(args.acceptance_count or 0),
+        )
+        print(format_plan_summary(plan))
+        if args.compare_lock:
+            from services.export_manifest import build_manifest_dict, compare_with_lock
+            comparison = compare_with_lock(
+                build_manifest_dict(plan, []), args.compare_lock)
+            for difference in comparison["differences"]:
+                print(f"  [LOCK] {difference['field']}: lock={difference['lock']} "
+                      f"manifest={difference['manifest']}")
+            if comparison["breaking"]:
+                print("Lock comparison found breaking differences; export refused",
+                      file=sys.stderr)
+                return EXIT_VALIDATION_ERROR
+        if plan.blocked:
+            for blocker in plan.blockers:
+                print(f"  [BLOCKER] {blocker}", file=sys.stderr)
+            return EXIT_VALIDATION_ERROR
+        from services.export_service import export_planned_mod
+        result = export_planned_mod(
+            plan,
+            args.output_dir,
+            overwrite=bool(args.overwrite or args.clean),
+            backup=bool(args.backup),
+            keep_failed=bool(args.keep_staging),
+        )
+        print(f"\nExport wrote {len(result.written_files)} files to: {result.output_dir}")
+        if result.manifest_path:
+            print(f"Manifest: {result.manifest_path}")
+        if args.manifest and result.manifest_path:
+            shutil.copy2(result.manifest_path, args.manifest)
+            print(f"Manifest copied to: {args.manifest}")
+        if args.json_report:
+            import json
+            payload = {"plan": plan.to_dict(), "result": result.to_dict()}
+            with open(args.json_report, "w", encoding="utf-8") as handle:
+                json.dump(payload, handle, ensure_ascii=False, indent=2)
+            print(f"JSON report: {args.json_report}")
+    except Exception as exc:
+        print(f"[ERROR] Export failed: {exc}", file=sys.stderr)
+        return EXIT_COMMAND_ERROR
+    missing = _verify_planned_export(args.output_dir, args.profile)
+    if missing:
+        for relative_path in missing:
+            print(f"  [MISSING/EMPTY] {relative_path}")
+        return EXIT_VALIDATION_ERROR
+    print("Final verification passed")
     return EXIT_SUCCESS
 
 

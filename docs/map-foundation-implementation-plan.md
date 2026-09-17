@@ -448,6 +448,16 @@ Add CLI options similar to:
 
 The exact option spelling can follow the existing CLI style, but GUI and CLI must call the same planner/service.
 
+### M2 implementation tracking
+
+- [x] **M2.1 — immutable export contracts and planning:** typed profiles, snapshots, findings, repairs, asset resolutions, lifecycle policy, target/profile resolution, and no-write planning are implemented in `domain/export_contract.py` and `services/export_planner.py`.
+- [x] **M2.2 — snapshot repair actions:** automatic map repairs are represented as stable typed actions, policy/lifecycle gated, applied only to deep-copied export state, with nested manager mutation fingerprints and read-only snapshot arrays.
+- [x] **M2.3 — transactional staging:** planner exports write below the destination parent, validate staged products, preserve existing destinations by default, support recoverable backup/overwrite promotion, and clean or retain failed staging according to policy.
+- [x] **M2.4 — ordered exporter stages:** raster, region, logistics, placement, metadata, geography, acceptance/scaffold content, asset, and descriptor stages share a snapshot context and declare ownership/profile applicability.
+- [x] **M2.5 — separated profiles:** foundation omits gameplay ownership/content and records placeholders; acceptance uses deterministic collision-free tags after vanilla/project exclusion; scaffold gameplay helpers carry provenance and stay outside the foundation lock.
+- [x] **M2.6 — CLI/GUI integration:** profile, target, repair, manifest, lock, JSON-report, and transaction options are exposed; both entry points call the shared planner/service and advanced scope controls remain profile-valid.
+- [x] **M2 verification:** focused M2 tests (22), targeted service/readiness/CLI/export regressions (37), export format regressions (7), and the full non-game suite pass; engine/Workshop acceptance remains an opt-in follow-up.
+
 ## M3 — shared validation, manifest, and determinism
 
 ### M3.1 Define typed findings and gate policy
