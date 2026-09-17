@@ -1,4 +1,4 @@
-﻿"""Shared validation findings, registry, and gate policy (M3.1).
+"""Shared validation findings, registry, reports, and gate policy (M3.1/M3.2a).
 
 This module defines the typed contract used by every map-foundation
 validator, a small deterministic validator registry, and explicit
@@ -13,7 +13,7 @@ from __future__ import annotations
 import ntpath
 import posixpath
 import re
-from collections.abc import Callable, Container, Iterable, Mapping
+from collections.abc import Callable, Container, Iterable, Iterator, Mapping
 from dataclasses import dataclass, field, replace
 from typing import Any, Union
 
@@ -550,3 +550,178 @@ def evaluate_gate(
         visible_warnings=tuple(visible),
         waived=tuple(waived),
     )
+
+
+@dataclass(frozen=True)
+class ValidationReport:
+    """Deterministic aggregate of findings for one source and gate context.
+
+    The report normalizes any iterable of finding-like values
+    (ValidationFinding, legacy ValidationNote, or plain mappings) into an
+    immutable finding tuple in caller order, so repeated builds from equal
+    inputs produce equal reports. Caller inputs are copied, never mutated.
+    Counts, severity helpers, JSON-compatible serialization, and gate
+    evaluation delegate to the shared finding and gate-policy contracts
+    without duplicating their logic.
+    """
+
+    findings: tuple[ValidationFinding, ...] = ()
+    source: str = ""
+    context: str = "draft_preview"
+
+    def __post_init__(self) -> None:
+        raw = self.findings
+        if raw is None:
+            items: list[Any] = []
+        elif isinstance(raw, (ValidationFinding, Mapping)):
+            items = [raw]
+        elif isinstance(raw, (str, bytes)):
+            raise ValueError("report findings must be an iterable of finding-like values")
+        elif isinstance(raw, Iterable):
+            if hasattr(raw, "code") and hasattr(raw, "severity"):
+                items = [raw]
+            else:
+                items = list(raw)
+        else:
+            items = [raw]
+        normalized = tuple(coerce_finding(item) for item in items)
+        object.__setattr__(self, "findings", normalized)
+        object.__setattr__(self, "source", str(self.source).strip() if self.source else "")
+        context_text = str(self.context).strip() if self.context else ""
+        if context_text not in GATE_CONTEXTS:
+            raise ValueError(
+                "unknown gate context %r; expected one of %s" % (context_text, ", ".join(GATE_CONTEXTS))
+            )
+        object.__setattr__(self, "context", context_text)
+
+    def __len__(self) -> int:
+        return len(self.findings)
+
+    def __iter__(self) -> Iterator[ValidationFinding]:
+        return iter(self.findings)
+
+    def __getitem__(self, index: Any) -> Any:
+        return self.findings[index]
+
+    @property
+    def total(self) -> int:
+        """Return the total number of findings in the report."""
+        return len(self.findings)
+
+    @property
+    def counts(self) -> dict[str, int]:
+        """Return finding counts keyed by severity in stable severity order."""
+        tallies = {severity: 0 for severity in FINDING_SEVERITIES}
+        for finding in self.findings:
+            tallies[finding.severity] += 1
+        return tallies
+
+    @property
+    def info_count(self) -> int:
+        """Return the number of info findings."""
+        return self.counts["info"]
+
+    @property
+    def warning_count(self) -> int:
+        """Return the number of warning findings."""
+        return self.counts["warning"]
+
+    @property
+    def error_count(self) -> int:
+        """Return the number of error findings."""
+        return self.counts["error"]
+
+    @property
+    def blocker_count(self) -> int:
+        """Return the number of blocker findings."""
+        return self.counts["blocker"]
+
+    @property
+    def has_info(self) -> bool:
+        """Return True when the report holds at least one info finding."""
+        return self.info_count > 0
+
+    @property
+    def has_warnings(self) -> bool:
+        """Return True when the report holds at least one warning."""
+        return self.warning_count > 0
+
+    @property
+    def has_errors(self) -> bool:
+        """Return True when the report holds at least one error."""
+        return self.error_count > 0
+
+    @property
+    def has_blockers(self) -> bool:
+        """Return True when the report holds at least one blocker."""
+        return self.blocker_count > 0
+
+    @property
+    def infos(self) -> tuple[ValidationFinding, ...]:
+        """Return info findings in report order."""
+        return self.by_severity("info")
+
+    @property
+    def warnings(self) -> tuple[ValidationFinding, ...]:
+        """Return warning findings in report order."""
+        return self.by_severity("warning")
+
+    @property
+    def errors(self) -> tuple[ValidationFinding, ...]:
+        """Return error findings in report order."""
+        return self.by_severity("error")
+
+    @property
+    def blockers(self) -> tuple[ValidationFinding, ...]:
+        """Return blocker findings in report order."""
+        return self.by_severity("blocker")
+
+    def by_severity(self, severity: str) -> tuple[ValidationFinding, ...]:
+        """Return findings of one severity in report order."""
+        if severity not in SEVERITY_RANK:
+            raise ValueError(
+                "unknown severity %r; expected one of %s" % (severity, ", ".join(FINDING_SEVERITIES))
+            )
+        return tuple(finding for finding in self.findings if finding.severity == severity)
+
+    def evaluate(
+        self,
+        context: GateContext | None = None,
+        *,
+        accepted: AcceptedInput = (),
+    ) -> GateDecision:
+        """Evaluate this report against the shared gate policy.
+
+        Delegates to evaluate_gate without duplicating its rules. A None
+        context reuses the report context, and accepted carries recorded
+        exception keys in the same shapes evaluate_gate accepts.
+        """
+        return evaluate_gate(
+            self.findings,
+            self.context if context is None else context,
+            accepted=accepted,
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return a JSON-compatible mapping with source, context, and findings."""
+        return {
+            "source": self.source,
+            "context": self.context,
+            "total": len(self.findings),
+            "counts": self.counts,
+            "findings": [finding.to_dict() for finding in self.findings],
+        }
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> ValidationReport:
+        """Rebuild a report from a mapping produced by to_dict."""
+        if not isinstance(data, Mapping):
+            raise ValueError("report payload must be a mapping")
+        findings_value = data.get("findings", ())
+        if findings_value is None:
+            findings_value = ()
+        return cls(
+            findings=findings_value,
+            source=str(data.get("source", "") or ""),
+            context=str(data.get("context", "") or "draft_preview"),
+        )

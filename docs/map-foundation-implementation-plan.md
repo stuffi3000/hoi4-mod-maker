@@ -576,6 +576,16 @@ Given the same snapshot, target profile, exporter version, and options, all foun
 
 Add a test that exports the same synthetic project twice and compares the complete file inventory and hashes.
 
+### M3 implementation tracking
+
+- [x] **M3.1a — typed findings and gate policy:** shared `ValidationFinding`, deterministic registry, and lifecycle gate policy are implemented in `domain/validation.py` with focused tests.
+- [x] **M3.2a — shared report foundation:** immutable `ValidationReport` and legacy readiness/verifier adapters are implemented in `domain/validation.py` and `services/validation_service.py`.
+- [ ] **M3.2b — readiness/export-service clients:** make live readiness and pre-write export checks consume the shared report while preserving legacy return compatibility.
+- [ ] **M3.2c — artifact/CLI/UI clients:** make artifact verification, export progress/dialog, and CLI reports consume the shared report.
+- [ ] **M3.3 — validation suites:** implement and register the raster, terrain/river/mask, geography/reference, logistics, placement, and asset/integration suites.
+- [ ] **M3.4 — foundation manifest:** extend the manifest with path-independent identity, full inventory/provenance, validation, acceptance, and lock metadata.
+- [ ] **M3.5 — deterministic output:** enforce and test byte-identical foundation output for identical snapshots and options.
+
 ## M4 — special adjacencies and logistics semantics
 
 ### M4.1 Add explicit adjacency review state

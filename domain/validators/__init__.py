@@ -1,10 +1,11 @@
-"""Validator package with shared M3.1 contracts."""
+"""Validator package with shared M3.1/M3.2a contracts."""
 from domain.validation import (
     GATE_CONTEXTS,
     FINDING_SEVERITIES,
     SEVERITY_RANK,
     GateDecision,
     ValidationFinding,
+    ValidationReport,
     ValidatorRegistry,
     coerce_finding,
     evaluate_gate,
@@ -16,6 +17,7 @@ __all__ = [
     "SEVERITY_RANK",
     "GateDecision",
     "ValidationFinding",
+    "ValidationReport",
     "ValidatorRegistry",
     "coerce_finding",
     "evaluate_gate",
