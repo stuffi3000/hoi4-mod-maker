@@ -30,6 +30,8 @@ from data.constants import MAP_WIDTH, MAP_HEIGHT, TILE_LAND, TILE_SEA
 
 BASELINE_FILE = Path(__file__).parent.parent / "fixtures" / "export_baseline.json"
 
+pytestmark = pytest.mark.integration
+
 
 def _build_tiny_project():
     """Construct a mini test project: all land + 2 provinces + 1 state + 1 country."""

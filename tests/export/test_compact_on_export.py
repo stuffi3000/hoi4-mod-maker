@@ -20,6 +20,8 @@ from domain.managers.supply_node import SupplyNodeManager
 from export.mod_exporter import export_full_mod
 from data.constants import MAP_WIDTH, MAP_HEIGHT, TILE_LAND, TILE_SEA
 
+pytestmark = pytest.mark.integration
+
 
 def _build_gappy_project():
     """Mini project: Province ID 1/5/9 with holes (simulating the state after merging 2-4/6-8)."""

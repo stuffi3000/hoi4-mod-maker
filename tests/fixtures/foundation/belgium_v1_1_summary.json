@@ -1,0 +1,183 @@
+{
+  "schema_version": 1,
+  "fixture_kind": "metadata_only",
+  "captured_at": "2026-09-17",
+  "source": {
+    "project": "projects/Belgium_Map_v1_1.hoi4proj",
+    "output_inventory": "tests/fixtures/export_baseline.json"
+  },
+  "project": {
+    "dimensions": {
+      "width": 5632,
+      "height": 2048
+    },
+    "province_ids": {
+      "min": 1,
+      "max": 12521,
+      "count": 12521
+    },
+    "pixels": {
+      "surface_type_counts": {
+        "land": 10007842,
+        "sea": 1482021,
+        "lake": 44473
+      },
+      "river_non_background": 1577118
+    },
+    "province_types": {
+      "majority_counts": {
+        "undefined": 0,
+        "land": 12100,
+        "sea": 160,
+        "lake": 261
+      },
+      "mixed_type_count": 1
+    },
+    "coverage": {
+      "states": 290,
+      "state_provinces": 12100,
+      "countries": 6,
+      "continents": 1,
+      "strategic_regions": 48,
+      "strategic_region_provinces": 12521
+    },
+    "graphs": {
+      "special_adjacencies": 0,
+      "adjacency_rules": 0,
+      "railway_entries": 3510,
+      "supply_nodes": 421
+    }
+  },
+  "output_inventory": {
+    "source": "opt-in generated Belgium export; local path intentionally not committed",
+    "source_kind": "generated_output",
+    "file_count": 1074,
+    "path_sha256": "8ac0c4afb2405074d99a7230316798e729164146700f98a21ababce5040497a7",
+    "selected_file_hashes": {
+      "map/provinces.bmp": "98be77e15e811a939c568fb8c2f26596d6faddbeff19a7ac7beddacd55b7f900",
+      "map/terrain.bmp": "a31c457c6e79cb56462ee24c31ee6450220899dd313645f7ac5ba4bb5f81e418",
+      "map/heightmap.bmp": "1c7b28deb8b349138f1db40b6eff6803cffd764ef5cf664b091838ddd3015738",
+      "map/rivers.bmp": "93f8284b2657e07961607f27869335e38d669bae867dedc09dcf6f813ce33840",
+      "map/trees.bmp": "d498301064b111049de53d2394cf92c939458bb71ea47e3f1a756f8e5119fc1e",
+      "map/definition.csv": "95dd5acb286738b0773efc4e478fcdf87ed550824b16adb3222eb5629cdaf7cf",
+      "map/default.map": "aae136b6044c0c721d5930137cbaaccfc80cd43dbd071ba36e34a11beb94c996",
+      "map/adjacencies.csv": "aefa90f5e3ffdc50369514410f22f5766d10f199da52b98d549029b039414f3c",
+      "map/positions.txt": "5d5c6af876665d6cfa5294d0ffaa75e0326ff50fbde1266f31454ae72c6d2c4f",
+      "map/buildings.txt": "f43920cf07a896cedcc84b4e95cb70fc58727b598542de57c00396fddb7bce75",
+      "map/supply_nodes.txt": "4dbfd30e27b02cda2fec670603d80d31c739b2075168d3af883f17d0720c8bb5",
+      "map/railways.txt": "c8e150e81785104c64a9c0197721f22fe63734decbaa508ab6f4395d7407385d",
+      "map/continent.txt": "7d459a90af1bf93c9af47dbaed8d2ab8c72e759bfff0d504ed1eb0fff56808bc"
+    }
+  },
+  "bmp_headers": {
+    "source": "disposable export_full_mod benchmark artifact",
+    "note": "Header metadata and hashes only; the generated bitmap is not committed.",
+    "files": {
+      "map/provinces.bmp": {
+        "format": "BMP",
+        "width": 5632,
+        "height": 2048,
+        "bits_per_pixel": 24,
+        "compression": "BI_RGB",
+        "pixel_offset": 54,
+        "colors_used": 0,
+        "sha256": "98be77e15e811a939c568fb8c2f26596d6faddbeff19a7ac7beddacd55b7f900",
+        "file_size": 34603062
+      },
+      "map/heightmap.bmp": {
+        "format": "BMP",
+        "width": 5632,
+        "height": 2048,
+        "bits_per_pixel": 8,
+        "compression": "BI_RGB",
+        "pixel_offset": 1078,
+        "colors_used": 0,
+        "sha256": "1c7b28deb8b349138f1db40b6eff6803cffd764ef5cf664b091838ddd3015738",
+        "file_size": 11535414
+      },
+      "map/terrain.bmp": {
+        "format": "BMP",
+        "width": 5632,
+        "height": 2048,
+        "bits_per_pixel": 8,
+        "compression": "BI_RGB",
+        "pixel_offset": 1074,
+        "colors_used": 255,
+        "sha256": "a31c457c6e79cb56462ee24c31ee6450220899dd313645f7ac5ba4bb5f81e418",
+        "file_size": 11535410
+      },
+      "map/rivers.bmp": {
+        "format": "BMP",
+        "width": 5632,
+        "height": 2048,
+        "bits_per_pixel": 8,
+        "compression": "BI_RGB",
+        "pixel_offset": 1078,
+        "colors_used": 0,
+        "sha256": "93f8284b2657e07961607f27869335e38d669bae867dedc09dcf6f813ce33840",
+        "file_size": 11535414
+      },
+      "map/trees.bmp": {
+        "format": "BMP",
+        "width": 1408,
+        "height": 512,
+        "bits_per_pixel": 8,
+        "compression": "BI_RGB",
+        "pixel_offset": 1078,
+        "colors_used": 256,
+        "sha256": "d498301064b111049de53d2394cf92c939458bb71ea47e3f1a756f8e5119fc1e",
+        "file_size": 721974
+      },
+      "map/cities.bmp": {
+        "format": "BMP",
+        "width": 5632,
+        "height": 2048,
+        "bits_per_pixel": 8,
+        "compression": "BI_RGB",
+        "pixel_offset": 1074,
+        "colors_used": 255,
+        "sha256": "ed4dfa0e6709add3c784b9e33622d1db6f67b35e0ceec339bb37abebbb3d0dd0",
+        "file_size": 11535410
+      },
+      "map/world_normal.bmp": {
+        "format": "BMP",
+        "width": 2816,
+        "height": 1024,
+        "bits_per_pixel": 24,
+        "compression": "BI_RGB",
+        "pixel_offset": 54,
+        "colors_used": 0,
+        "sha256": "b0235b10adc757b5e996180d06d0ea7b11178242a3228035469e965c13a3074d",
+        "file_size": 8650806
+      }
+    }
+  },
+  "known_review_findings": [
+    {
+      "code": "province.mixed_type",
+      "province_ids": [9706],
+      "current": "one mixed-type province requires review",
+      "desired": "explicitly repair or approve the 14-pixel lake normalization"
+    },
+    {
+      "code": "adjacency.special_layer",
+      "current": "empty and unreviewed",
+      "desired": "mark none_intended after geographic review or author required entries"
+    },
+    {
+      "code": "logistics.railway_components",
+      "current": "327 disconnected components",
+      "desired": "connect, remove, or explain each component"
+    },
+    {
+      "code": "logistics.supply_nodes_without_railway",
+      "current": "48 supply nodes are absent from the railway graph",
+      "desired": "connect, remove, or accept with a reason"
+    },
+    {
+      "code": "placements.generated",
+      "current": "generated position/building records are not authoritative foundation data",
+      "desired": "review authored positions before foundation freeze"
+    }
+  ]
+}

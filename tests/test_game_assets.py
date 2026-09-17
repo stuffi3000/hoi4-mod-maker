@@ -178,6 +178,7 @@ def test_detect_supported_version(tmp_path, monkeypatch):
 _HAS_GAME = os.path.isfile(os.path.join(DEFAULT_HOI4_PATH, TERRAIN_DEF_RELPATH))
 
 
+@pytest.mark.game_install
 @pytest.mark.skipif(not _HAS_GAME, reason="HOI4 is not installed locally")
 def test_real_game_assets_load():
     """Real game assets: The mapping table is not empty, and the atlas is 16 512×512 RGBA tiles."""

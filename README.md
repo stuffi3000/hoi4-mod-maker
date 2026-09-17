@@ -105,7 +105,39 @@ Download the latest `.zip` from [Releases](https://github.com/AmonStreeling/hoi4
 
 - Python 3.10+ (source only)
 - Windows 10/11
-- Dependencies: PyQt5, NumPy, Pillow, SciPy
+- Dependencies: PyQt5, NumPy, Pillow, SciPy, OpenCV, pytest, pytest-qt, and pyqtdarktheme
+
+### Development tests
+
+Install the complete declared environment before collecting tests:
+
+```bash
+python -m pip install -r requirements.txt
+python -m pytest -m "not slow and not game_install and not workshop and not engine"
+```
+
+The suite registers `unit`, `integration`, `slow`, `game_install`, `workshop`,
+and `engine` markers. Game-install, Workshop, and engine checks are opt-in:
+
+```bash
+python -m pytest -m game_install
+python -m pytest -m "slow and not game_install"
+```
+
+OpenCV and the other packages in `requirements.txt` are required development
+dependencies; missing packages should be fixed with the install command rather
+than hidden with broad test skips.
+
+### CLI export exit codes
+
+`python cli_export.py <project.hoi4proj> [output_dir]` uses stable result codes:
+
+- `0` — export completed and final output verification passed;
+- `1` — command, project-load, or writer failure;
+- `2` — export ran, but final output validation found missing or empty required files.
+
+The CLI configures UTF-8 output where supported and uses an ASCII-safe fallback
+for Windows streams that cannot encode its status messages.
 
 ---
 
@@ -136,6 +168,7 @@ hoi4_map_maker/          224 files, 26,000 lines
 - [HOI4 wiki reference index](docs/wiki/README.md)
 - [Tool export contract](docs/wiki/tool-export-contract.md)
 - [Map foundation readiness audit](docs/map-foundation-readiness-audit.md)
+- [Map foundation performance baseline](docs/map-foundation-performance-baseline.md)
 
 ---
 

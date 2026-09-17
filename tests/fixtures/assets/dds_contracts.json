@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "fixture_kind": "metadata_only",
+  "profile_id": "hoi4-1.19",
+  "source": "tests/fixtures/game_profiles/hoi4_1_19_3_headers.json",
+  "contracts": {
+    "map/terrain/colormap_water_0.dds": {
+      "dimensions": [2816, 1024],
+      "four_cc": "DXT5",
+      "mip_count": 1,
+      "resolution": "half_map"
+    },
+    "map/terrain/colormap_water_1.dds": {
+      "dimensions": [1408, 512],
+      "four_cc": "DXT5",
+      "mip_count": 1,
+      "resolution": "quarter_map"
+    },
+    "map/terrain/colormap_water_2.dds": {
+      "dimensions": [704, 256],
+      "four_cc": "DXT5",
+      "mip_count": 1,
+      "resolution": "eighth_map"
+    },
+    "map/terrain/fow_rgb_waterspec_a.dds": {
+      "dimensions": [2816, 1024],
+      "four_cc": "DXT5",
+      "mip_count": 12,
+      "resolution": "half_map"
+    }
+  }
+}

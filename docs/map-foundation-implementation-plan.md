@@ -254,6 +254,14 @@ Add CLI tests that run under an ASCII-compatible mocked stream and verify:
 
 Measure the current full-size Belgium export and the major validator passes. Store the measurements in development documentation, not as brittle timing assertions. New algorithms should operate by full-array passes or cached province statistics rather than rescanning a 5,632 × 2,048 raster for every province.
 
+### M0 implementation tracking
+
+- [x] **M0.1 — regression evidence:** metadata-only Belgium, HOI4 1.19.3.0 header, and DDS contract fixtures; baseline comparison and explicit refresh tooling added.
+- [x] **M0.2 — test environment:** declared dependency setup documented, missing required packages fail collection with an actionable message, and all requested pytest markers are registered.
+- [x] **M0.3 — CLI reliability:** UTF-8/ASCII-safe output, distinct success/validation/command exit codes, final-verification ordering, and focused mocked-stream tests added.
+- [x] **M0.4 — performance evidence:** the full-size Belgium export and major validator stages were measured; methodology and results are recorded in `docs/map-foundation-performance-baseline.md`.
+- [x] **M0 verification:** focused M0 tests and the normal non-game suite pass; engine, Workshop, and local-install checks remain opt-in.
+
 ## M1 — game target, map profile, and project schema
 
 ### M1.1 Create one authoritative game-target service

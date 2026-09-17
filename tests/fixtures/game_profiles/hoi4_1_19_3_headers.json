@@ -1,0 +1,136 @@
+{
+  "schema_version": 1,
+  "fixture_kind": "metadata_only",
+  "profile_id": "hoi4-1.19",
+  "raw_version": "1.19.3.0",
+  "source_kind": "user_selected_install",
+  "note": "Hashes and headers only; no vanilla or Workshop binary is committed.",
+  "files": {
+    "map/provinces.bmp": {
+      "format": "BMP",
+      "width": 5632,
+      "height": 2048,
+      "bits_per_pixel": 24,
+      "compression": "BI_RGB",
+      "pixel_offset": 54,
+      "colors_used": 0,
+      "sha256": "e131d30e5dcb13d9c2a8598f820a2de0ae9828f3a24f2bddc1bcfff40f71660a",
+      "file_size": 34603062
+    },
+    "map/terrain.bmp": {
+      "format": "BMP",
+      "width": 5632,
+      "height": 2048,
+      "bits_per_pixel": 8,
+      "compression": "BI_RGB",
+      "pixel_offset": 1158,
+      "colors_used": 255,
+      "sha256": "41f95665077c5c4cc3366a966becd88e6c1a19fee686de4c29a767f49f9f3c9e",
+      "file_size": 11535494
+    },
+    "map/heightmap.bmp": {
+      "format": "BMP",
+      "width": 5632,
+      "height": 2048,
+      "bits_per_pixel": 8,
+      "compression": "BI_RGB",
+      "pixel_offset": 1078,
+      "colors_used": 0,
+      "sha256": "615300ea13a136ed99d3cba1a8f0b71bb9677d60b27cf474f8abe028f3db4aa4",
+      "file_size": 11535416
+    },
+    "map/rivers.bmp": {
+      "format": "BMP",
+      "width": 5632,
+      "height": 2048,
+      "bits_per_pixel": 8,
+      "compression": "BI_RGB",
+      "pixel_offset": 1078,
+      "colors_used": 0,
+      "sha256": "4491190a65771592ebffdb3479eae519b3b5623bfaca41500b1e2e4a38caba71",
+      "file_size": 11535416
+    },
+    "map/trees.bmp": {
+      "format": "BMP",
+      "width": 1650,
+      "height": 600,
+      "bits_per_pixel": 8,
+      "compression": "BI_RGB",
+      "pixel_offset": 1162,
+      "colors_used": 256,
+      "sha256": "3c575ad3c55cf786aa16ca7f0bc5216fc33001f260700ce031a64838bfaecf2f",
+      "file_size": 992362
+    },
+    "map/world_normal.bmp": {
+      "format": "BMP",
+      "width": 2816,
+      "height": 1024,
+      "bits_per_pixel": 24,
+      "compression": "BI_RGB",
+      "pixel_offset": 54,
+      "colors_used": 0,
+      "sha256": "0a050aa615dcf087ddf127b0d3ffdb2cbc24921a1c503405edb1a2aa141b5b87",
+      "file_size": 8650808
+    },
+    "map/cities.bmp": {
+      "format": "BMP",
+      "width": 5632,
+      "height": 2048,
+      "bits_per_pixel": 8,
+      "compression": "BI_RGB",
+      "pixel_offset": 1074,
+      "colors_used": 255,
+      "sha256": "b1d03542e837b3f1e591b158f3fc344d8c9fac9e90199e2402909f07bab59153",
+      "file_size": 11535412
+    },
+    "map/terrain/colormap_water_0.dds": {
+      "format": "DDS",
+      "width": 2816,
+      "height": 1024,
+      "mip_count": 1,
+      "pixel_format_flags": 4,
+      "four_cc": "DXT5",
+      "rgb_bits": 0,
+      "has_dx10_header": false,
+      "sha256": "5daf1a041d32002f4bb1bdd7efb433a397b20f6adbfca342e2d4862ed2900215",
+      "file_size": 2883712
+    },
+    "map/terrain/colormap_water_1.dds": {
+      "format": "DDS",
+      "width": 1408,
+      "height": 512,
+      "mip_count": 1,
+      "pixel_format_flags": 4,
+      "four_cc": "DXT5",
+      "rgb_bits": 0,
+      "has_dx10_header": false,
+      "sha256": "d0fbbbd2b2f596508ebd81da08b6dbf9af194236f3f4bd21907010ef6d4a55bd",
+      "file_size": 721024
+    },
+    "map/terrain/colormap_water_2.dds": {
+      "format": "DDS",
+      "width": 704,
+      "height": 256,
+      "mip_count": 1,
+      "pixel_format_flags": 4,
+      "four_cc": "DXT5",
+      "rgb_bits": 0,
+      "has_dx10_header": false,
+      "sha256": "f2a0b4d6b6bc227848e56855d5c3efeb5198556ef4f81f56df6bf46e4c226b32",
+      "file_size": 180352
+    },
+    "map/terrain/fow_rgb_waterspec_a.dds": {
+      "format": "DDS",
+      "width": 2816,
+      "height": 1024,
+      "mip_count": 12,
+      "pixel_format_flags": 4,
+      "four_cc": "DXT5",
+      "rgb_bits": 0,
+      "has_dx10_header": false,
+      "sha256": "e3ead48a39850258e158156edd9757c7265c8de7f1520cc93e0364f252d2c783",
+      "file_size": 3844976
+    }
+  },
+  "missing_files": []
+}
