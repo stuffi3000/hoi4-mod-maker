@@ -589,6 +589,14 @@ Add a test that exports the same synthetic project twice and compares the comple
 - [ ] **M3.4 — foundation manifest:** extend the manifest with path-independent identity, full inventory/provenance, validation, acceptance, and lock metadata.
 - [ ] **M3.5 — deterministic output:** enforce and test byte-identical foundation output for identical snapshots and options.
 
+### M3 checkpoint — after M3.2c1
+
+- **Completed:** M3.2c1 artifact verifier client, committed as `3133e72`.
+- **Reviewed:** `ModVerifier.verify_report()` is quiet and single-pass, uses the existing artifact adapter, forwards target/profile context, and preserves `verify_quiet()` and `verify_all()` compatibility.
+- **Evidence:** 8 new verifier tests plus 19 shared-report regression tests passed; compilation and diff checks passed.
+- **Environment note:** the existing M1 target-hook suite still encounters the known Windows temporary-directory ACL failure in five fixture setups; two tests pass.
+- **Next controlled slice:** M3.2c2 CLI reports. M3.2c3 export UI and all later M3 work remain pending.
+
 ## M4 — special adjacencies and logistics semantics
 
 ### M4.1 Add explicit adjacency review state
