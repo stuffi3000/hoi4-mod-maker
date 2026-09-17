@@ -155,36 +155,44 @@ _VANILLA_TAGS_FALLBACK = frozenset((
 _VANILLA_TAGS_CACHE: frozenset[str] | None = None
 
 
-def get_vanilla_tags() -> frozenset[str]:
+def get_vanilla_tags(install_dir: str | None = None, game_target=None) -> frozenset[str]:
     """Get all TAGs occupied by vanilla (frozenset). The results are cached until the end of the process.
 
     Prioritize dynamically reading the country_tags directory of vanilla (automatically obtain the latest after DLC is updated),
     If it cannot be read, use hard-coded fallback (1.17 as of 2026-05)."""
     global _VANILLA_TAGS_CACHE
-    if _VANILLA_TAGS_CACHE is not None:
+    _explicit_source = install_dir is not None or game_target is not None
+    _explicit = install_dir
+    if _explicit is None and game_target is not None:
+        _explicit = getattr(game_target, "install_dir", None)
+    if not _explicit_source and _VANILLA_TAGS_CACHE is not None:
         return _VANILLA_TAGS_CACHE
 
     import json
     import os
     import re
     tags = set(_VANILLA_TAGS_FALLBACK)
-    tags_dirs = [os.path.join(DEFAULT_HOI4_PATH, "common", "country_tags")]
+    tags_dirs: list[str] = []
+    if _explicit:
+        tags_dirs.append(os.path.join(str(_explicit), "common", "country_tags"))
     # The editor stores the selected Steam installation separately from this
     # module's historical default path.  Read it here as well so exports see
     # country tags added by the installed game/DLC and can provide matching
     # histories when ``history/countries`` is replaced.
-    config_path = os.path.join(os.path.expanduser("~"), ".hoi4_map_maker.json")
-    try:
-        with open(config_path, "r", encoding="utf-8") as config_file:
-            configured_path = json.load(config_file).get("hoi4_game_dir")
-        if configured_path:
-            configured_tags_dir = os.path.join(
-                os.fspath(configured_path), "common", "country_tags"
-            )
-            if configured_tags_dir not in tags_dirs:
-                tags_dirs.insert(0, configured_tags_dir)
-    except (OSError, TypeError, ValueError):
-        pass
+    if not _explicit_source:
+        tags_dirs.append(os.path.join(DEFAULT_HOI4_PATH, "common", "country_tags"))
+        config_path = os.path.join(os.path.expanduser("~"), ".hoi4_map_maker.json")
+        try:
+            with open(config_path, "r", encoding="utf-8") as config_file:
+                configured_path = json.load(config_file).get("hoi4_game_dir")
+            if configured_path:
+                configured_tags_dir = os.path.join(
+                    os.fspath(configured_path), "common", "country_tags"
+                )
+                if configured_tags_dir not in tags_dirs:
+                    tags_dirs.insert(0, configured_tags_dir)
+        except (OSError, TypeError, ValueError):
+            pass
 
     for tags_dir in tags_dirs:
         if os.path.isdir(tags_dir):
@@ -201,8 +209,10 @@ def get_vanilla_tags() -> frozenset[str]:
                                 tags.add(m.group(1))
                 except OSError:
                     pass
-    _VANILLA_TAGS_CACHE = frozenset(tags)
-    return _VANILLA_TAGS_CACHE
+    result = frozenset(tags)
+    if not _explicit_source:
+        _VANILLA_TAGS_CACHE = result
+    return result
 
 
 def is_vanilla_tag(tag: str) -> bool:

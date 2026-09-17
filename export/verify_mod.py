@@ -20,11 +20,14 @@ _VALID_STATE_CATEGORIES = frozenset({
 class ModVerifier:
     """Check HOI4 MOD output file by file and report any issues found"""
 
-    def __init__(self, mod_dir: str, *, quiet: bool = False):
+    def __init__(self, mod_dir: str, *, quiet: bool = False, profile=None, expected_dimensions: tuple[int, int] | None = None, game_target=None):
         self.mod_dir = mod_dir
         self.errors: list[str] = []    # Must collapse
         self.warnings: list[str] = []  # There may be a problem
         self._quiet = quiet
+        self.profile = profile
+        self.expected_dimensions = tuple(expected_dimensions) if expected_dimensions is not None else None
+        self.game_target = game_target
 
     def _run_all_checks(self) -> None:
         """Perform all validation checks (internal method, no printing)"""
@@ -69,10 +72,10 @@ class ModVerifier:
         return len(self.errors) == 0
 
     @classmethod
-    def verify_quiet(cls, mod_dir: str) -> tuple[list[str], list[str]]:
+    def verify_quiet(cls, mod_dir: str, *, profile=None, expected_dimensions: tuple[int, int] | None = None, game_target=None) -> tuple[list[str], list[str]]:
         """Runs all checks silently, returning (errors, warnings).
         Does not print anything, suitable for UI calls."""
-        v = cls(mod_dir, quiet=True)
+        v = cls(mod_dir, quiet=True, profile=profile, expected_dimensions=expected_dimensions, game_target=game_target)
         v._run_all_checks()
         return v.errors, v.warnings
 
@@ -147,7 +150,30 @@ class ModVerifier:
             bits = struct.unpack("<H", f.read(2))[0]
 
             valid_sizes = {(2048, 1024), (3072, 1536), (4096, 2048), (5632, 2048)}
-            if (w, abs(h)) not in valid_sizes:
+            _active_profile = self.profile
+            if _active_profile is None:
+                try:
+                    from services.game_profile_service import get_default_profile as _get_default_profile
+                    _active_profile = _get_default_profile()
+                except Exception:
+                    _active_profile = None
+            if _active_profile is not None:
+                _dim_errors = _active_profile.validate_dimensions(int(w), int(abs(h)))
+                if _dim_errors:
+                    for _err in _dim_errors:
+                        self.errors.append(f"provinces.bmp: {_err}")
+                elif (int(w), int(abs(h))) not in valid_sizes:
+                    self.warnings.append(
+                        f"provinces.bmp size is {w}x{abs(h)}; not a standard preset but satisfies profile "
+                        f"{getattr(_active_profile, 'profile_id', 'hoi4-1.19')} divisibility/pixel rules (engine acceptance required before freeze)"
+                    )
+                if self.expected_dimensions is not None:
+                    _ew, _eh = int(self.expected_dimensions[0]), int(self.expected_dimensions[1])
+                    if (int(w), int(abs(h))) != (_ew, _eh):
+                        self.errors.append(
+                            f"provinces.bmp size is {w}x{abs(h)}; expected {str(_ew)}x{str(_eh)} from explicit dimensions"
+                        )
+            elif (w, abs(h)) not in valid_sizes:
                 self.errors.append(
                     f"provinces.bmp size is {w}x{abs(h)}; expected one of "
                     f"2048x1024, 3072x1536, 4096x2048, or 5632x2048"

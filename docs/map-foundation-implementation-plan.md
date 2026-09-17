@@ -329,6 +329,14 @@ Migration tests must cover:
 
 Stop using mutable `data.constants.MAP_WIDTH`, `MAP_HEIGHT`, `ENGINE_MAX_PROVINCES`, and path constants as validation truth. Existing UI/generator code can continue using dimensions during migration, but exporters and validators must take dimensions/profile explicitly.
 
+### M1 implementation tracking
+
+- [x] **M1.1 — authoritative game target:** GameTarget resolution now records normalized installs, version/checksum metadata, profile IDs, selection source, validation time, and required-file availability; export writers receive the selected target context.
+- [x] **M1.2 — versioned map/asset profile:** the bundled HOI4 1.19.x profile describes dimensions, wrap rules, province guidance, raster/DDS contracts, file dispositions, terrain/tree contracts, descriptor policy, and custom-dimension behavior.
+- [x] **M1.3 — project archive schema:** project_meta.json is written/read with legacy in-memory inference, newer-schema protection, migration backup support, manager round-trip coverage, and sidecar preservation.
+- [x] **M1.4 — explicit profile migration hooks:** CLI, GUI export, exporters, readiness checks, validators, descriptor generation, and target-aware palettes accept explicit profile/target/dimension context while retaining compatibility fallbacks.
+- [x] **M1 verification:** focused M1/CLI tests and the non-game regression suite pass; engine, Workshop, and local-install checks remain opt-in.
+
 ## M2 — immutable export planning and profile separation
 
 ### M2.1 Introduce the export contracts

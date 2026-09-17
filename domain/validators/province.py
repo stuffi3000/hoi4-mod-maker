@@ -18,6 +18,9 @@ def validate_provinces(
     province_map: np.ndarray,
     *,
     min_pixels: int = MIN_PROVINCE_PIXELS,
+    map_width: int | None = None,
+    map_height: int | None = None,
+    profile=None,
 ) -> dict:
     """Validate the province map and detect any issues that may cause HOI4 to crash.
 
@@ -52,13 +55,21 @@ def validate_provinces(
     if province_map.max() == 0:
         return results
 
-    # 1. X-shaped cross detection
-    x_positions = detect_x_crossings(province_map)
+    # 1. X-shaped cross detection (profile-aware seam handling)
+    x_positions = detect_x_crossings(province_map, map_width=map_width, profile=profile)
     results["x_crossings"] = len(x_positions)
     results["x_crossing_positions"] = x_positions
 
     # 2. Detection of provinces that are too small
-    small_ids = detect_small_provinces(province_map, min_pixels=min_pixels)
+    _eff_min = int(min_pixels)
+    if profile is not None:
+        try:
+            _prof_min = int(profile.provinces.min_pixels)
+            if int(min_pixels) == int(MIN_PROVINCE_PIXELS):
+                _eff_min = _prof_min
+        except Exception:
+            pass
+    small_ids = detect_small_provinces(province_map, min_pixels=_eff_min)
     results["too_small"] = len(small_ids)
     results["too_small_ids"] = small_ids
 
@@ -83,7 +94,15 @@ def validate_provinces(
     # 7. Total warning
     total = int(province_map.max())
     results["total_provinces"] = total
-    if total > 21000:
+    _prof_warn = None
+    if profile is not None:
+        try:
+            _prof_warn = profile.province_count_warning(total)
+        except Exception:
+            _prof_warn = None
+    if _prof_warn:
+        results["count_warning"] = _prof_warn
+    elif total > 21000:
         results["count_warning"] = f"Danger: {total} > 21000, exceeding HOI4's hard limit and guaranteed to crash"
     elif total > 14000:
         results["count_warning"] = f"Warning: {total} > 14000, the limit recommended by HOI4 documentation"
@@ -93,7 +112,7 @@ def validate_provinces(
     return results
 
 
-def detect_x_crossings(province_map: np.ndarray) -> list[tuple[int, int]]:
+def detect_x_crossings(province_map: np.ndarray, map_width: int | None = None, wrap_horizontal: bool | None = None, profile=None) -> list[tuple[int, int]]:
     """Detect X-shaped intersection: 4 different province IDs appear in a 2×2 pixel block.
     HOI4 does not allow this and will cause a crash.
 
@@ -138,9 +157,22 @@ def detect_x_crossings(province_map: np.ndarray) -> list[tuple[int, int]]:
         (tl_w != tr_w) & (tl_w != bl_w) & (tl_w != br_w)
         & (tr_w != bl_w) & (tr_w != br_w) & (bl_w != br_w)
     )
-    # Only wrap edges are detected at full image size (subarrays are not wrapped)
+    # Only wrap edges are detected at full image size (subarrays are not wrapped).
+    # M1.4: callers may pass explicit map_width/profile so custom dimensions still get seam coverage.
     h, w = province_map.shape
-    if w == MAP_WIDTH:
+    _wrap = wrap_horizontal
+    if _wrap is None and profile is not None:
+        try:
+            _wrap = bool(profile.dimensions.wrap_horizontal)
+        except Exception:
+            _wrap = True
+    if _wrap is None:
+        _wrap = True
+    _full_w = int(map_width) if map_width is not None else int(MAP_WIDTH)
+    _check_seam = (w == _full_w) if map_width is not None or profile is None else True
+    if profile is not None and map_width is None:
+        _check_seam = True
+    if _wrap and _check_seam:
         ys_w = np.where(diff_w)[0]
         for y in ys_w:
             positions.append((int(y), w - 1))

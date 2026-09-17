@@ -26,12 +26,33 @@ class CheckItem:
     count: int = 0      # Quantity (number of provinces/number of states, etc.)
 
 
-def check_project_readiness(project, map_source) -> list[CheckItem]:
-    """Check whether the item can be exported and return the list of checked items."""
+def check_project_readiness(project, map_source, profile=None, dimensions: tuple[int, int] | None = None) -> list[CheckItem]:
+    """Check whether the item can be exported and return the list of checked items.
+
+    ``profile``/``dimensions`` optionally validate explicit map sizes against
+    the data-driven game profile instead of relying on global constants.
+    Omitted values preserve the legacy UI/generator behaviour."""
     items: list[CheckItem] = []
     pm = map_source.province_map
     tm = map_source.tile_map
     province_count = int(pm.max())
+    if profile is not None or dimensions is not None:
+        try:
+            _rw, _rh = (int(dimensions[0]), int(dimensions[1])) if dimensions is not None else (int(pm.shape[1]), int(pm.shape[0]))
+        except Exception:
+            _rw, _rh = int(pm.shape[1]), int(pm.shape[0])
+        _prof = profile
+        if _prof is None:
+            try:
+                from services.game_profile_service import get_default_profile as _get_prof
+                _prof = _get_prof()
+            except Exception:
+                _prof = None
+        if _prof is not None:
+            _derr = _prof.validate_dimensions(_rw, _rh)
+            if _derr:
+                items.append(CheckItem("map_dimensions", "missing", "; ".join(_derr), False))
+                return items
 
     # 1. Land/Province
     if province_count == 0:

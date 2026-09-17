@@ -41,6 +41,10 @@ def export_full_mod(
     scope: dict[str, bool] | None = None,
     assets: dict[str, bytes] | None = None,
     dirty_assets: set[str] | None = None,
+    game_target=None,
+    profile=None,
+    dimensions: tuple[int, int] | None = None,
+    supported_version: str | None = None,
 ) -> None:
     """Export complete MOD in one click. scope controls the export scope, None=export all.
 
@@ -57,6 +61,22 @@ def export_full_mod(
     # Or some writers import MAP_* at the top of the file and have bound old values (lazy import ones will refresh)
     from data.constants import set_map_size as _set_map_size
     _set_map_size(province_map.shape[1], province_map.shape[0])
+    _actual_w, _actual_h = int(province_map.shape[1]), int(province_map.shape[0])
+    _eff_w, _eff_h = _actual_w, _actual_h
+    if dimensions is not None:
+        try:
+            _eff_w, _eff_h = int(dimensions[0]), int(dimensions[1])
+        except (TypeError, ValueError, IndexError) as exc:
+            raise ValueError("dimensions must be a (width, height) pair") from exc
+        if (_eff_w, _eff_h) != (_actual_w, _actual_h):
+            raise ValueError(
+                f"explicit dimensions {_eff_w}x{_eff_h} do not match "
+                f"map arrays {_actual_w}x{_actual_h}"
+            )
+    if profile is not None:
+        _dim_errors = profile.validate_dimensions(_eff_w, _eff_h)
+        if _dim_errors:
+            raise ValueError("map dimensions do not satisfy profile " + str(getattr(profile, "profile_id", "")) + ": " + "; ".join(_dim_errors))
 
     # scope is all enabled by default
     if scope is None:
@@ -146,7 +166,7 @@ def export_full_mod(
         _sync_terrain_with_tile(terrain_for_export, tile_map)
     else:
         terrain_for_export = _gen_terrain(tile_map)
-    write_terrain_bmp(terrain_for_export, output_dir)
+    write_terrain_bmp(terrain_for_export, output_dir, game_target=game_target)
 
     write_rivers_bmp(output_dir, river_map, shape=tile_map.shape)
     # trees.bmp: Automatically generate tree distribution from terrain_map (A8)
@@ -158,7 +178,13 @@ def export_full_mod(
     _write_trees_new(output_dir, tree_map=_tree_map)
     # cities.bmp: Generate city markers from urban terrain (Feature 11)
     from export.writers.map.cities_bmp import write_cities_bmp as _write_cities_new
-    _write_cities_new(output_dir, terrain_map=terrain_for_export)
+    _write_cities_new(
+        output_dir,
+        terrain_map=terrain_for_export,
+        map_width=_eff_w,
+        map_height=_eff_h,
+        game_target=game_target,
+    )
     # world_normal.bmp — normal map, can be replaced by the imported original version
     from export.asset_helper import write_or_restore
     write_or_restore(
@@ -408,7 +434,7 @@ def export_full_mod(
 
     # === descriptor (independent switch - users who already have their own MOD framework can turn it off and only take the content files) ===
     if _enabled("descriptor"):
-        _write_descriptor(mod_name, output_dir)
+        _write_descriptor(mod_name, output_dir, game_target=game_target, supported_version=supported_version, profile=profile)
 
     # === replace_path directory ===
     if _enabled("replace_path"):
@@ -764,7 +790,8 @@ def _auto_split_states(land_ids, province_map, per_state=15):
     flat_pm = province_map.ravel()
     n = int(province_map.max()) + 1
     pid_count = np.bincount(flat_pm, minlength=n)
-    ys_grid, xs_grid = np.mgrid[0:MAP_HEIGHT, 0:MAP_WIDTH]
+    _gh, _gw = province_map.shape[:2]
+    ys_grid, xs_grid = np.mgrid[0:_gh, 0:_gw]
     sum_y = np.bincount(flat_pm, weights=ys_grid.ravel().astype(np.float64), minlength=n)
     sum_x = np.bincount(flat_pm, weights=xs_grid.ravel().astype(np.float64), minlength=n)
 
@@ -906,9 +933,12 @@ def _write_localisation(mod_name, tag, states, output_dir, region_count=24):
 
 # ────────────────── descriptor.mod + empty directory ──────────────────
 
-def _write_descriptor(mod_name, output_dir):
+def _write_descriptor(mod_name, output_dir, game_target=None, supported_version=None, profile=None):
     from export.writers.map.descriptor import write_descriptor
-    return write_descriptor(mod_name, output_dir)
+    replace = list(profile.replace_paths) if profile is not None and getattr(profile, "replace_paths", None) else None
+    if supported_version is None and profile is not None:
+        supported_version = getattr(profile, "supported_version_pattern", None)
+    return write_descriptor(mod_name, output_dir, supported_version=supported_version, game_target=game_target, replace_paths=replace)
 
 
 
@@ -1350,7 +1380,8 @@ def _gen_heightmap(tm):
     dist_to_land = distance_transform_edt(~is_land)  # Distance from ocean pixel to nearest land
     dist_to_sea = distance_transform_edt(~is_sea)    # Distance from land pixel to nearest ocean
 
-    hm = np.full((MAP_HEIGHT, MAP_WIDTH), SEA_LEVEL, dtype=np.float32)
+    _hm_h, _hm_w = tm.shape[:2]
+    hm = np.full((_hm_h, _hm_w), SEA_LEVEL, dtype=np.float32)
 
     # Land height: Coast 96 → Inland up to 160
     # Coefficient 1.5/pixel, capped at +65 (i.e. maximum 95+65=160)
@@ -1362,7 +1393,7 @@ def _gen_heightmap(tm):
 
     # Land plus random undulations makes mountains less flat (±20 range)
     rng = np.random.RandomState(42)
-    noise = gaussian_filter(rng.rand(MAP_HEIGHT, MAP_WIDTH), sigma=30) * 40
+    noise = gaussian_filter(rng.rand(_hm_h, _hm_w), sigma=30) * 40
     hm[is_land] += noise[is_land] - 20
 
     # Small-scale softening (avoiding jagged steps)
@@ -1384,7 +1415,8 @@ def _gen_terrain(tm):
     The dominant terrain of the province is plains/forest with dozens or hundreds of pixels, which will not turn into a desert)."""
     from scipy.ndimage import distance_transform_edt
 
-    t = np.zeros((MAP_HEIGHT, MAP_WIDTH), dtype=np.uint8)
+    _t_h, _t_w = tm.shape[:2]
+    t = np.zeros((_t_h, _t_w), dtype=np.uint8)
     for tile_type, name in DEFAULT_TERRAIN_FOR_TILE.items():
         t[tm == tile_type] = TERRAIN_PALETTE_INDEX[name]
 

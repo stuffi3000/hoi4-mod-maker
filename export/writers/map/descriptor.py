@@ -4,10 +4,15 @@ from data.constants import DEFAULT_MOD_VERSION, REPLACE_PATHS
 from services.game_assets import resolve_supported_version
 
 
-def write_descriptor(mod_name, output_dir):
-    rp = "\n".join(f'replace_path="{p}"' for p in REPLACE_PATHS)
+def write_descriptor(mod_name, output_dir, supported_version=None, game_target=None, replace_paths=None):
+    rp = "\n".join(f'replace_path="{p}"' for p in (list(replace_paths) if replace_paths is not None else list(REPLACE_PATHS)))
     # Automatically follow the local game version (the export will not be marked "outdated" by the launcher after the game is updated)
-    supported = resolve_supported_version()
+    if supported_version is not None:
+        supported = str(supported_version)
+    elif game_target is not None and getattr(game_target, "supported_version", None):
+        supported = str(game_target.supported_version)
+    else:
+        supported = resolve_supported_version(game_target)
 
     # Internal descriptor.mod (in MOD directory)
     with open(os.path.join(output_dir, "descriptor.mod"), "w", encoding="utf-8") as f:

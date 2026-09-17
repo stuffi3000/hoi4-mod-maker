@@ -27,7 +27,7 @@ from domain.managers.railway import RailwayManager
 from domain.managers.state import StateManager
 from domain.managers.strategic_region import StrategicRegionManager
 from domain.managers.supply_node import SupplyNodeManager
-from domain.project_io import load_project
+from domain.project_io import load_project, read_project_meta
 from export.mod_exporter import export_full_mod
 
 
@@ -190,6 +190,23 @@ def main(argv: list[str] | None = None) -> int:
         )
 
         height, width = tile_map.shape
+        try:
+            project_meta = read_project_meta(args.project)
+        except Exception:
+            # Legacy projects and test doubles may not contain M1 metadata.
+            project_meta = None
+        from services.game_assets import resolve_game_target
+        from services.game_profile_service import load_profile_for_target
+
+        target_install = getattr(project_meta, "game_install_dir", None)
+        target_profile_id = getattr(project_meta, "profile_id", None)
+        game_target = resolve_game_target(
+            target_install,
+            profile_id=target_profile_id,
+            source="project" if target_install else None,
+        )
+        profile = load_profile_for_target(game_target)
+        dimensions = (int(width), int(height))
         province_count = int(province_map.max())
         land_pixels = int(np.sum(tile_map == TILE_LAND))
         sea_pixels = int(np.sum(tile_map == TILE_SEA))
@@ -263,6 +280,9 @@ def main(argv: list[str] | None = None) -> int:
             country_mgr,
             continent_mgr,
             strategic_region_mgr=strategic_region_mgr,
+            game_target=game_target,
+            profile=profile,
+            dimensions=dimensions,
         )
         if report.fixed:
             print("\n── Automatic fixes ──")
@@ -303,6 +323,9 @@ def main(argv: list[str] | None = None) -> int:
             adjacency_rule_mgr=adjacency_rule_mgr,
             strategic_region_mgr=strategic_region_mgr,
             provincial_terrain=provincial_terrain,
+            game_target=game_target,
+            profile=profile,
+            dimensions=dimensions,
         )
     except Exception as exc:  # CLI boundary: convert writer/load failures to a stable code.
         print(f"[ERROR] Export failed: {exc}", file=sys.stderr)

@@ -171,6 +171,10 @@ def write_cities_txt(output_dir: str) -> None:
 def write_cities_bmp(
     output_dir: str,
     terrain_map: np.ndarray | None = None,
+    map_width: int | None = None,
+    map_height: int | None = None,
+    game_target=None,
+    install_dir: str | None = None,
 ) -> None:
     """Generate ``map/cities.bmp`` from the painted Urban graphical terrain.
 
@@ -194,33 +198,41 @@ def write_cities_bmp(
         # layer. The exporter normally supplies its generated terrain map.
         import data.constants as _c
 
-        w, h = _c.MAP_WIDTH, _c.MAP_HEIGHT
+        w = int(map_width) if map_width is not None else int(_c.MAP_WIDTH)
+        h = int(map_height) if map_height is not None else int(_c.MAP_HEIGHT)
         data = np.zeros((h, w), dtype=np.uint8)
 
-    _write_8bit_bmp(path, data, w, h)
+    _write_8bit_bmp(path, data, w, h, game_target=game_target, install_dir=install_dir)
 
 
-def _vanilla_palette() -> bytes | None:
+def _vanilla_palette(game_target=None, install_dir: str | None = None) -> bytes | None:
     """Return the installed game's 255-entry cities palette when available."""
     candidates: list[str] = []
-    try:
-        # The editor stores the selected installation in the user config, so it
-        # is preferable to the historical hard-coded default path.
-        from services.game_assets import find_hoi4_install
+    _explicit_source = install_dir is not None or game_target is not None
+    _explicit = install_dir
+    if _explicit is None and game_target is not None:
+        _explicit = getattr(game_target, "install_dir", None)
+    if _explicit:
+        candidates.append(os.path.join(str(_explicit), "map", "cities.bmp"))
+    if not _explicit_source:
+        try:
+            # The editor stores the selected installation in the user config,
+            # so it is preferable to the historical hard-coded default path.
+            from services.game_assets import find_hoi4_install
 
-        install = find_hoi4_install()
-        if install:
-            candidates.append(os.path.join(install, "map", "cities.bmp"))
-    except Exception:
-        # Export must remain usable without optional game-asset discovery.
-        pass
+            install = find_hoi4_install()
+            if install:
+                candidates.append(os.path.join(install, "map", "cities.bmp"))
+        except Exception:
+            # Export must remain usable without optional game-asset discovery.
+            pass
 
-    try:
-        from data.constants import DEFAULT_HOI4_PATH
+        try:
+            from data.constants import DEFAULT_HOI4_PATH
 
-        candidates.append(os.path.join(DEFAULT_HOI4_PATH, "map", "cities.bmp"))
-    except Exception:
-        pass
+            candidates.append(os.path.join(DEFAULT_HOI4_PATH, "map", "cities.bmp"))
+        except Exception:
+            pass
 
     seen: set[str] = set()
     for candidate in candidates:
@@ -268,7 +280,7 @@ def _fallback_palette() -> bytes:
     return b"".join(entries)
 
 
-def _write_8bit_bmp(path: str, data: np.ndarray, w: int, h: int) -> None:
+def _write_8bit_bmp(path: str, data: np.ndarray, w: int, h: int, game_target=None, install_dir: str | None = None) -> None:
     """Write an 8-bit indexed, bottom-up BMP with a vanilla-compatible header."""
     row_pad = (4 - w % 4) % 4
     padded_row = w + row_pad
@@ -277,7 +289,7 @@ def _write_8bit_bmp(path: str, data: np.ndarray, w: int, h: int) -> None:
     header_size = 14 + 40 + palette_size
     file_size = header_size + pixel_size
 
-    palette = _vanilla_palette() or _fallback_palette()
+    palette = _vanilla_palette(game_target=game_target, install_dir=install_dir) or _fallback_palette()
 
     with open(path, "wb") as f:
         # BMP file header

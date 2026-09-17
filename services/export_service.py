@@ -19,13 +19,45 @@ class ExportReport:
     stats: dict[str, int] = field(default_factory=dict)
 
 
-def validate_before_export(canvas, state_mgr, country_mgr) -> list[str]:
-    """Returns a list of warnings. Empty list = safe to export."""
+def _profile_for_context(profile=None, game_target=None):
+    if profile is not None or game_target is None:
+        return profile
+    try:
+        from services.game_profile_service import load_profile_for_target
+
+        return load_profile_for_target(game_target)
+    except Exception:
+        return None
+
+
+def validate_before_export(canvas, state_mgr, country_mgr, profile=None, game_target=None, dimensions=None) -> list[str]:
+    """Returns a list of warnings. Empty list = safe to export.
+
+    ``profile``/``dimensions`` optionally validate explicit map sizes against
+    the data-driven game profile instead of global constants. ``game_target``
+    is accepted for forward compatibility and currently unused beyond
+    dimension inference. All new parameters are optional so existing UI and
+    generator paths keep working."""
     warnings: list[str] = []
     pm = canvas.province_map
     if int(pm.max()) == 0:
         warnings.append("No province data; generate provinces first")
         return warnings
+    if dimensions is not None or profile is not None or game_target is not None:
+        try:
+            _w, _h = (int(dimensions[0]), int(dimensions[1])) if dimensions is not None else (int(pm.shape[1]), int(pm.shape[0]))
+        except Exception:
+            _w, _h = int(pm.shape[1]), int(pm.shape[0])
+        _prof = _profile_for_context(profile, game_target)
+        if _prof is None:
+            try:
+                from services.game_profile_service import get_default_profile as _get_prof
+                _prof = _get_prof()
+            except Exception:
+                _prof = None
+        if _prof is not None:
+            for _err in _prof.validate_dimensions(_w, _h):
+                warnings.append(_err)
 
     if not state_mgr.states:
         warnings.append("No states; group provinces automatically or create a state manually")
@@ -332,6 +364,9 @@ def pre_export_check_and_fix(
     country_mgr,
     continent_mgr=None,
     strategic_region_mgr=None,
+    profile=None,
+    game_target=None,
+    dimensions=None,
 ) -> ExportReport:
     """Automatically detect and fix known issues before exporting.
 
@@ -343,6 +378,32 @@ def pre_export_check_and_fix(
     if province_count == 0:
         return ExportReport(warnings=["No province data"], fixed=[], stats={})
 
+    active_profile = _profile_for_context(profile, game_target)
+    if active_profile is not None or dimensions is not None:
+        actual_width, actual_height = (
+            int(province_map.shape[1]),
+            int(province_map.shape[0]),
+        )
+        if dimensions is None:
+            requested_width, requested_height = actual_width, actual_height
+        else:
+            try:
+                requested_width, requested_height = (
+                    int(dimensions[0]),
+                    int(dimensions[1]),
+                )
+            except (TypeError, ValueError, IndexError):
+                warnings.append("Explicit export dimensions must be a (width, height) pair")
+                requested_width, requested_height = actual_width, actual_height
+        if (requested_width, requested_height) != (actual_width, actual_height):
+            warnings.append(
+                f"Explicit export dimensions {requested_width}x{requested_height} "
+                f"do not match map arrays {actual_width}x{actual_height}"
+            )
+        if active_profile is not None:
+            warnings.extend(
+                active_profile.validate_dimensions(requested_width, requested_height)
+            )
     # ── 1. Synchronize terrain_map and tile_map ──
     if terrain_map is not None:
         _precheck_sync_terrain_tile(terrain_map, tile_map, fixed)
@@ -546,8 +607,17 @@ def export_mod(
     scope: dict[str, bool] | None = None,
     assets: dict[str, bytes] | None = None,
     dirty_assets: set[str] | None = None,
+    game_target=None,
+    profile=None,
+    dimensions: tuple[int, int] | None = None,
+    supported_version: str | None = None,
 ) -> ExportReport:
-    """Call the complete export pipeline. Throw an exception on failure. Return ExportReport."""
+    """Call the complete export pipeline. Throw an exception on failure. Return ExportReport.
+
+    ``game_target``/``profile``/``dimensions``/``supported_version`` are optional
+    M1.4 compatibility hooks: explicit targets control descriptor versions and
+    dimension validation while legacy callers without them keep working."""
+    profile = _profile_for_context(profile, game_target)
     # ── Automatically detect and repair before export──
     report = pre_export_check_and_fix(
         tile_map=canvas.tile_map,
@@ -557,6 +627,9 @@ def export_mod(
         country_mgr=country_mgr,
         continent_mgr=continent_mgr,
         strategic_region_mgr=strategic_region_mgr,
+        profile=profile,
+        game_target=game_target,
+        dimensions=dimensions,
     )
 
     # ── Fill State default resource/building ──
@@ -611,6 +684,10 @@ def export_mod(
         scope=scope,
         assets=assets,
         dirty_assets=dirty_assets,
+        game_target=game_target,
+        profile=profile,
+        dimensions=dimensions,
+        supported_version=supported_version,
     )
 
     # ── Statistics export file ──

@@ -1,0 +1,225 @@
+{
+  "profile_id": "hoi4-1.19",
+  "display_name": "Hearts of Iron IV 1.19.x",
+  "game_versions": ["1.19.0.0", "1.19.1.0", "1.19.2.0", "1.19.3.0"],
+  "supported_version_pattern": "1.19.*",
+  "dimensions": {
+    "divisibility": 256,
+    "min_width": 1024,
+    "min_height": 1024,
+    "max_width": 8192,
+    "max_height": 8192,
+    "max_total_pixels": 13238272,
+    "wrap_horizontal": true,
+    "wrap_vertical": false,
+    "ui_presets": {
+      "Small (2048x1024)": [2048, 1024],
+      "Medium (3072x1536)": [3072, 1536],
+      "Large (4096x2048)": [4096, 2048],
+      "Vanilla (5632x2048)": [5632, 2048]
+    },
+    "observed_mod_dimensions": [[5632, 2304], [3328, 3840]],
+    "notes": "UI presets are conveniences only. Any multiple-of-256 size within the pixel budget is representable; custom sizes require engine acceptance before freeze."
+  },
+  "provinces": {
+    "hard_max": 21000,
+    "soft_max": 14000,
+    "recommended": 13000,
+    "min_pixels": 8,
+    "max_bbox_ratio": 0.125,
+    "ids_must_be_contiguous": true
+  },
+  "bmp": {
+    "map/provinces.bmp": {
+      "width_source": "full_map",
+      "height_source": "full_map",
+      "width_divisor": 1,
+      "height_divisor": 1,
+      "bits_per_pixel": 24,
+      "compression": "BI_RGB",
+      "bottom_up": true,
+      "palette_entries": 0,
+      "notes": "24-bit RGB, bottom-up, forbidden color (0,0,0)."
+    },
+    "map/heightmap.bmp": {
+      "width_source": "full_map",
+      "height_source": "full_map",
+      "width_divisor": 1,
+      "height_divisor": 1,
+      "bits_per_pixel": 8,
+      "compression": "BI_RGB",
+      "bottom_up": true,
+      "palette_entries": 0,
+      "notes": "8-bit grayscale, bottom-up."
+    },
+    "map/terrain.bmp": {
+      "width_source": "full_map",
+      "height_source": "full_map",
+      "width_divisor": 1,
+      "height_divisor": 1,
+      "bits_per_pixel": 8,
+      "compression": "BI_RGB",
+      "bottom_up": true,
+      "palette_entries": 255,
+      "notes": "8-bit indexed, 255-entry palette, bottom-up."
+    },
+    "map/rivers.bmp": {
+      "width_source": "full_map",
+      "height_source": "full_map",
+      "width_divisor": 1,
+      "height_divisor": 1,
+      "bits_per_pixel": 8,
+      "compression": "BI_RGB",
+      "bottom_up": true,
+      "palette_entries": 256,
+      "notes": "8-bit indexed, single-pixel orthogonal rivers."
+    },
+    "map/cities.bmp": {
+      "width_source": "full_map",
+      "height_source": "full_map",
+      "width_divisor": 1,
+      "height_divisor": 1,
+      "bits_per_pixel": 8,
+      "compression": "BI_RGB",
+      "bottom_up": true,
+      "palette_entries": 255,
+      "notes": "8-bit indexed city-style mask at full map resolution."
+    },
+    "map/trees.bmp": {
+      "width_source": "quarter_map",
+      "height_source": "quarter_map",
+      "width_divisor": 4,
+      "height_divisor": 4,
+      "bits_per_pixel": 8,
+      "compression": "BI_RGB",
+      "bottom_up": true,
+      "palette_entries": 256,
+      "notes": "Generated trees are map/4. Vanilla install ships 1650x600 for the 5632x2048 map; generated maps use map/4 (for example 1408x512)."
+    },
+    "map/world_normal.bmp": {
+      "width_source": "half_map",
+      "height_source": "half_map",
+      "width_divisor": 2,
+      "height_divisor": 2,
+      "bits_per_pixel": 24,
+      "compression": "BI_RGB",
+      "bottom_up": true,
+      "palette_entries": 0,
+      "notes": "24-bit normal map at half map resolution."
+    }
+  },
+  "dds": {
+    "map/terrain/colormap_water_0.dds": {
+      "width_source": "half_map",
+      "height_source": "half_map",
+      "width_divisor": 2,
+      "height_divisor": 2,
+      "four_cc": "DXT5",
+      "mip_count": 1,
+      "has_dx10_header": false,
+      "notes": "Half-map water colormap, BC3/DXT5."
+    },
+    "map/terrain/colormap_water_1.dds": {
+      "width_source": "quarter_map",
+      "height_source": "quarter_map",
+      "width_divisor": 4,
+      "height_divisor": 4,
+      "four_cc": "DXT5",
+      "mip_count": 1,
+      "has_dx10_header": false,
+      "notes": "Quarter-map water colormap, BC3/DXT5."
+    },
+    "map/terrain/colormap_water_2.dds": {
+      "width_source": "eighth_map",
+      "height_source": "eighth_map",
+      "width_divisor": 8,
+      "height_divisor": 8,
+      "four_cc": "DXT5",
+      "mip_count": 1,
+      "has_dx10_header": false,
+      "notes": "Eighth-map water colormap, BC3/DXT5."
+    },
+    "map/terrain/fow_rgb_waterspec_a.dds": {
+      "width_source": "half_map",
+      "height_source": "half_map",
+      "width_divisor": 2,
+      "height_divisor": 2,
+      "four_cc": "DXT5",
+      "mip_count": 12,
+      "has_dx10_header": false,
+      "notes": "Half-map fog-of-war with full mip chain, BC3/DXT5."
+    },
+    "map/terrain/colormap_rgb_cityemissivemask_a.dds": {
+      "width_source": "half_map",
+      "height_source": "half_map",
+      "width_divisor": 2,
+      "height_divisor": 2,
+      "four_cc": "BGRA8",
+      "mip_count": 1,
+      "has_dx10_header": false,
+      "notes": "Uncompressed BGRA8 area-tone map at half resolution; alpha is city-lights mask."
+    }
+  },
+  "required_files": [
+    "map/provinces.bmp",
+    "map/definition.csv",
+    "map/default.map",
+    "map/heightmap.bmp",
+    "map/terrain.bmp",
+    "map/rivers.bmp",
+    "map/trees.bmp",
+    "map/continent.txt",
+    "map/adjacencies.csv",
+    "map/adjacency_rules.txt",
+    "map/ambient_object.txt",
+    "map/seasons.txt",
+    "map/positions.txt",
+    "map/supply_nodes.txt",
+    "map/railways.txt",
+    "map/buildings.txt",
+    "descriptor.mod"
+  ],
+  "optional_files": [
+    "map/cities.bmp",
+    "map/cities.txt",
+    "map/world_normal.bmp",
+    "map/terrain/colormap_water_0.dds",
+    "map/terrain/colormap_water_1.dds",
+    "map/terrain/colormap_water_2.dds",
+    "map/terrain/fow_rgb_waterspec_a.dds",
+    "map/terrain/colormap_rgb_cityemissivemask_a.dds",
+    "map/colors.txt",
+    "map/airports.txt",
+    "map/rocketsites.txt"
+  ],
+  "deprecated_files": [],
+  "inherited_files": [
+    "map/terrain/atlas0.dds",
+    "map/terrain/atlas_normal0.dds",
+    "common/terrain/00_terrain.txt"
+  ],
+  "terrain_definition_source": "common/terrain/00_terrain.txt",
+  "terrain_indices": {
+    "ocean": 15,
+    "lakes": 14,
+    "plains": 0,
+    "forest": 1,
+    "hills": 17,
+    "mountain": 11,
+    "desert": 3,
+    "marsh": 9,
+    "jungle": 21,
+    "urban": 13
+  },
+  "tree_indices": [0, 2, 3, 5, 6, 11, 28, 29],
+  "tree_palette_entries": 256,
+  "replace_paths": [
+    "map/strategicregions",
+    "map/supplyareas",
+    "history/states",
+    "history/countries",
+    "history/units"
+  ],
+  "descriptor_policy": "supported_version follows the selected game target (for example 1.19.*); replace_path entries mirror the profile replace_paths.",
+  "notes": "Data-driven 1.19.x contract. Dimensions are validated by divisibility and pixel budget, not by preset allowlist."
+}

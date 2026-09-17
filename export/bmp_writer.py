@@ -158,11 +158,11 @@ def write_heightmap_bmp(
 def write_terrain_bmp(
     terrain_map: np.ndarray,
     output_dir: str,
+    game_target=None,
+    install_dir: str | None = None,
 ) -> None:
     """Writes 8-bit indexed color terrain.bmp.
     Copy the file header + palette directly from the original version to ensure that the format is completely consistent (255 colors, offset=1074)."""
-    from data.constants import DEFAULT_HOI4_PATH
-
     # Use actual array shape, not global MAP_WIDTH/HEIGHT
     H, W = terrain_map.shape
 
@@ -182,7 +182,20 @@ def write_terrain_bmp(
     file_size = pixel_offset + pixel_data_size
 
     # Try reading the palette from the original
-    vanilla_terrain = os.path.join(DEFAULT_HOI4_PATH, "map", "terrain.bmp")
+    _explicit_source = install_dir is not None or game_target is not None
+    _install = install_dir
+    if _install is None and game_target is not None:
+        _install = getattr(game_target, "install_dir", None)
+    if _install is None and not _explicit_source:
+        try:
+            from services.game_assets import find_hoi4_install as _find_install
+            _install = _find_install()
+        except Exception:
+            _install = None
+    if _install is None and not _explicit_source:
+        from data.constants import DEFAULT_HOI4_PATH as _fallback_path
+        _install = _fallback_path
+    vanilla_terrain = os.path.join(_install, "map", "terrain.bmp") if _install else ""
     vanilla_palette = None
     if os.path.exists(vanilla_terrain):
         with open(vanilla_terrain, "rb") as vf:
@@ -354,11 +367,21 @@ def write_trees_bmp(output_dir: str) -> None:
                 f.write(pad_bytes)
 
 
-def write_cities_bmp(output_dir: str) -> None:
+def write_cities_bmp(output_dir: str, map_width: int | None = None, map_height: int | None = None, game_target=None, install_dir: str | None = None) -> None:
     """Write blank cities.bmp (8-bit index of the same size as the map, all 0s = no cities).
     Must strictly match vanilla format: colors_used=255 (not 256), palette 255×4 bytes,
     pixel_offset=14+40+1020=1074. Otherwise, HOI4 reports "Missing cities mask bitmap" and crashes."""
-    from data.constants import MAP_WIDTH, MAP_HEIGHT, DEFAULT_HOI4_PATH
+    from data.constants import MAP_WIDTH as _GW, MAP_HEIGHT as _GH
+    _W = int(map_width) if map_width is not None else int(_GW)
+    _H = int(map_height) if map_height is not None else int(_GH)
+    MAP_WIDTH, MAP_HEIGHT = _W, _H
+    _explicit_source = install_dir is not None or game_target is not None
+    _install = install_dir
+    if _install is None and game_target is not None:
+        _install = getattr(game_target, "install_dir", None)
+    if _install is None and not _explicit_source:
+        from data.constants import DEFAULT_HOI4_PATH as _fallback_city_path
+        _install = _fallback_city_path
     map_dir = os.path.join(output_dir, "map")
     os.makedirs(map_dir, exist_ok=True)
     file_path = os.path.join(map_dir, "cities.bmp")
@@ -373,9 +396,9 @@ def write_cities_bmp(output_dir: str) -> None:
     file_size = pixel_offset + pixel_data_size
 
     # Read 255 color palette from vanilla
-    vanilla_cities = os.path.join(DEFAULT_HOI4_PATH, "map", "cities.bmp")
+    vanilla_cities = os.path.join(_install, "map", "cities.bmp") if _install else ""
     vanilla_palette = None
-    if os.path.exists(vanilla_cities):
+    if vanilla_cities and os.path.exists(vanilla_cities):
         with open(vanilla_cities, "rb") as vf:
             vf.seek(14 + 40)
             vanilla_palette = vf.read(n_colors * 4)

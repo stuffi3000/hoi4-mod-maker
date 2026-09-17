@@ -107,11 +107,20 @@ class ExportWorker(QThread):
         self.canvas = canvas
         self.project = project
         self.scope = scope or {}
+        self.game_target = None
+        self.profile = None
+        self.dimensions = None
 
     def run(self) -> None:
         try:
             self.progress.emit(tr("export_worker_pre_check"))
             from services.export_service import export_mod
+            from services.game_profile_service import load_profile_for_target
+
+            self.game_target = self.project.resolve_game_target()
+            self.profile = load_profile_for_target(self.game_target)
+            map_height, map_width = self.canvas.province_map.shape[:2]
+            self.dimensions = (int(map_width), int(map_height))
             report = export_mod(
                 self.output_dir,
                 self.canvas,
@@ -128,6 +137,9 @@ class ExportWorker(QThread):
                 scope=self.scope,
                 assets=self.project.assets,
                 dirty_assets=self.project.dirty_assets,
+                game_target=self.game_target,
+                profile=self.profile,
+                dimensions=self.dimensions,
             )
             self.finished.emit(report)
         except Exception as e:
@@ -272,7 +284,20 @@ class ExportDialog(QDialog):
             if child.widget():
                 child.widget().deleteLater()
 
-        self._items = check_project_readiness(self.project, self.canvas)
+        try:
+            from services.game_profile_service import load_profile_for_target
+
+            game_target = self.project.resolve_game_target()
+            profile = load_profile_for_target(game_target)
+        except Exception:
+            profile = None
+        map_height, map_width = self.canvas.province_map.shape[:2]
+        self._items = check_project_readiness(
+            self.project,
+            self.canvas,
+            profile=profile,
+            dimensions=(int(map_width), int(map_height)),
+        )
 
         has_missing = False
         has_blocking = False
@@ -422,7 +447,13 @@ class ExportDialog(QDialog):
 
         # Run MOD verification
         from export.verify_mod import ModVerifier
-        verify_errors, verify_warnings = ModVerifier.verify_quiet(self._output_dir)
+        worker = self._worker
+        verify_errors, verify_warnings = ModVerifier.verify_quiet(
+            self._output_dir,
+            profile=getattr(worker, "profile", None),
+            expected_dimensions=getattr(worker, "dimensions", None),
+            game_target=getattr(worker, "game_target", None),
+        )
 
         # Build result text
         lines = [tr("export_result_success").format(path=self._output_dir)]

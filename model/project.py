@@ -21,6 +21,12 @@ from domain.managers.adjacency_rule import AdjacencyRuleManager
 from domain.managers.strategic_region import StrategicRegionManager
 from domain.managers.colormap_settings import ColormapSettings
 from domain.managers.default_map_settings import DefaultMapSettings
+from domain.project_meta import (
+    CURRENT_SCHEMA_VERSION,
+    ProjectMeta,
+    default_meta,
+    infer_meta_for_legacy_project,
+)
 
 
 class Project:
@@ -39,6 +45,7 @@ class Project:
         self.strategic_region_mgr = StrategicRegionManager()
         self.colormap_settings = ColormapSettings.default()
         self.default_map_settings = DefaultMapSettings()
+        self.project_meta: ProjectMeta = default_meta()
 
         self._path: str | None = None  # current save path
         self._dirty = False  # unsaved changes
@@ -114,6 +121,8 @@ class Project:
         self.strategic_region_mgr = StrategicRegionManager()
         self.colormap_settings = ColormapSettings.default()
         self.default_map_settings = DefaultMapSettings()
+        existing_profile = getattr(getattr(self, "project_meta", None), "profile_id", "hoi4-1.19")
+        self.project_meta = default_meta(width=width, height=height, profile_id=existing_profile)
         self.assets = {}
         self.dirty_assets = set()
         self._path = None
@@ -125,7 +134,7 @@ class Project:
         if not save_path:
             raise ValueError("No save path was specified")
         from domain.project_io import save_project
-
+        self._sync_meta_dimensions()
         save_project(
             save_path,
             tile_map=self.map_data.tile_map,
@@ -143,6 +152,7 @@ class Project:
             strategic_region_mgr=self.strategic_region_mgr,
             provincial_terrain=self.map_data.provincial_terrain,
             tile_snapshot=self.map_data.tile_snapshot,
+            project_meta=self.project_meta,
         )
         # At the same time, persist art assets to the sidecar directory
         self._save_assets_sidecar(save_path)
@@ -151,6 +161,43 @@ class Project:
         self._last_save_time = time.time()
 
     # ── Art asset sidecar (accompanying .hoi4proj’s _assets directory with the same name) ──
+    def _sync_meta_dimensions(self) -> None:
+        try:
+            height, width = self.map_data.tile_map.shape[:2]
+        except Exception:
+            return
+        self.project_meta.width = int(width)
+        self.project_meta.height = int(height)
+
+    def resolve_game_target(self, explicit_dir: str | None = None):
+        from services.game_assets import resolve_game_target
+        install = explicit_dir or self.project_meta.game_install_dir
+        source = "explicit" if explicit_dir else ("project" if self.project_meta.game_install_dir else None)
+        target = resolve_game_target(install, profile_id=self.project_meta.profile_id, source=source)
+        return target
+
+    def set_game_target(self, install_dir: str | None, raw_version: str | None = None, profile_id: str | None = None) -> None:
+        if install_dir is not None:
+            from services.game_assets import normalize_install_dir
+            self.project_meta.game_install_dir = normalize_install_dir(install_dir)
+        if raw_version is not None:
+            self.project_meta.game_raw_version = str(raw_version)
+        if profile_id is not None:
+            self.project_meta.profile_id = str(profile_id)
+        self.project_meta.needs_target_confirmation = False
+        self.mark_dirty()
+
+    def confirm_game_target(self) -> None:
+        self.project_meta.needs_target_confirmation = False
+        self.mark_dirty()
+
+    def set_lifecycle(self, state: str) -> None:
+        from domain.project_meta import LIFECYCLE_STATES
+        if state not in LIFECYCLE_STATES:
+            raise ValueError(f"unknown lifecycle {state!r}")
+        self.project_meta.lifecycle = state
+        self.mark_dirty()
+
     @staticmethod
     def _sidecar_dir(proj_path: str) -> str:
         """Returns the asset directory path corresponding to .hoi4proj."""
@@ -207,9 +254,9 @@ class Project:
 
     def load(self, path: str) -> None:
         """Load project files."""
-        from domain.project_io import load_project
+        from domain.project_io import load_project_with_meta
 
-        result = load_project(
+        result = load_project_with_meta(
             path,
             state_mgr=self.state_mgr,
             country_mgr=self.country_mgr,
@@ -220,7 +267,8 @@ class Project:
             adjacency_rule_mgr=self.adjacency_rule_mgr,
             strategic_region_mgr=self.strategic_region_mgr,
         )
-        tile_map, province_map, terrain_map, height_map, river_map, provincial_terrain, tile_snapshot = result
+        tile_map, province_map, terrain_map, height_map, river_map, provincial_terrain, tile_snapshot, project_meta = result
+        self.project_meta = project_meta
 
         # Update map size from loaded data
         from data.constants import set_map_size

@@ -143,11 +143,30 @@ class GameAssets:
             ... prompt the user to select a game directory, or downgrade solid color rendering ...
         tiles = assets.atlas_tiles() # None = Failed to read the file"""
 
-    def __init__(self, install_dir: str | None = None) -> None:
-        self.install_dir = install_dir if install_dir else find_hoi4_install()
+    def __init__(self, install_dir: str | None = None, *, auto_detect: bool = True) -> None:
+        target_like = install_dir is not None and not isinstance(
+            install_dir, (str, bytes, os.PathLike)
+        )
+        if target_like:
+            maybe_dir = getattr(install_dir, "install_dir", None)
+            if maybe_dir is not None or hasattr(install_dir, "supported_version"):
+                install_dir = maybe_dir
+                auto_detect = False
+        if auto_detect and not install_dir:
+            install_dir = find_hoi4_install()
+        self.install_dir = install_dir
         self._cache: dict[str, object] = {}
         # The reason for the latest reading failure, for UI prompts and troubleshooting
         self.last_error: str = ""
+
+    @classmethod
+    def from_target(cls, target) -> "GameAssets":
+        """Create a GameAssets container from an explicit GameTarget.
+
+        This is the preferred path for export code: pass the resolved target
+        instead of letting the container rediscover DEFAULT_HOI4_PATH."""
+        install = getattr(target, "install_dir", None) if target is not None else None
+        return cls(install_dir=install, auto_detect=False)
 
     def available(self) -> bool:
         return self.install_dir is not None
@@ -269,9 +288,260 @@ def detect_supported_version() -> str | None:
     return None
 
 
-def resolve_supported_version() -> str:
-    """Export the game version declared by the MOD: give priority to local detection, and fall back to the default constants if it fails."""
+def resolve_supported_version(game_target=None) -> str:
+    """Export the game version declared by the MOD: give priority to local detection, and fall back to the default constants if it fails.
+
+    When ``game_target`` (see :class:`GameTarget`) is provided, its
+    descriptor-compatible ``supported_version`` is used directly so writers
+    do not need to rediscover the install path. This keeps older callers
+    working while new code passes an explicit target through."""
+    if game_target is not None and getattr(game_target, "supported_version", None):
+        return str(game_target.supported_version)
     from data.constants import DEFAULT_SUPPORTED_VERSION
+    return detect_supported_version() or DEFAULT_SUPPORTED_VERSION
+
+
+# M1.1 authoritative game-target resolution.
+
+from dataclasses import dataclass, field as _dc_field
+from datetime import datetime, timezone
+
+
+SELECTION_SOURCES = ("project", "user_config", "auto_detected", "explicit", "default")
+
+GAME_TARGET_REQUIRED_FILES: list[str] = [
+    TERRAIN_DEF_RELPATH,
+    ATLAS_RELPATH,
+    ATLAS_NORMAL_RELPATH,
+    "launcher-settings.json",
+]
+
+_LAUNCHER_SETTINGS_RELPATH = "launcher-settings.json"
+
+
+def normalize_install_dir(path: str | None) -> str | None:
+    if path is None:
+        return None
+    text = os.fspath(path).strip() if not isinstance(path, str) else path.strip()
+    if not text:
+        return None
+    normalized = os.path.abspath(os.path.normpath(text))
+    return normalized
+
+
+def _read_launcher_settings(install_dir: str | None) -> dict:
+    if not install_dir:
+        return {}
+    settings_path = os.path.join(install_dir, _LAUNCHER_SETTINGS_RELPATH)
+    try:
+        with open(settings_path, "r", encoding="utf-8") as handle:
+            data = json.load(handle)
+    except Exception:
+        return {}
+    if isinstance(data, dict):
+        return data
+    return {}
+
+
+def read_raw_version(install_dir: str | None) -> str | None:
+    settings = _read_launcher_settings(install_dir)
+    raw = settings.get("rawVersion", "")
+    text = str(raw).strip() if raw is not None else ""
+    return text or None
+
+
+def descriptor_version_for_raw(raw: str | None) -> str | None:
+    if not raw:
+        return None
+    parts = str(raw).strip().split(".")
+    if len(parts) >= 2 and parts[0].isdigit() and parts[1].isdigit():
+        return f"{parts[0]}.{parts[1]}.*"
+    return None
+
+
+def profile_id_for_raw(raw: str | None) -> str:
+    if not raw:
+        return "hoi4-1.19"
+    parts = str(raw).strip().split(".")
+    if len(parts) >= 2 and parts[0].isdigit() and parts[1].isdigit():
+        return f"hoi4-{parts[0]}.{parts[1]}"
+    return "hoi4-1.19"
+
+
+def display_version_for_raw(raw: str | None) -> str | None:
+    if not raw:
+        return None
+    parts = str(raw).strip().split(".")
+    if len(parts) >= 3 and all(p.isdigit() for p in parts[:3]):
+        return ".".join(parts[:3])
+    return str(raw).strip() or None
+
+
+def revision_for_raw(raw: str | None) -> str | None:
+    if not raw:
+        return None
+    parts = str(raw).strip().split(".")
+    if len(parts) >= 4 and parts[3]:
+        return str(parts[3])
+    return None
+
+
+def checksum_for_install(install_dir: str | None) -> str | None:
+    settings = _read_launcher_settings(install_dir)
+    for key in ("checksum", "checkSum", "gameChecksum"):
+        value = settings.get(key)
+        if value:
+            text = str(value).strip()
+            if text:
+                return text
+    return None
+
+
+def check_required_files(install_dir: str | None, relpaths: list[str] | None = None) -> dict[str, bool]:
+    targets = list(relpaths) if relpaths is not None else list(GAME_TARGET_REQUIRED_FILES)
+    availability: dict[str, bool] = {}
+    for rel in targets:
+        if not install_dir:
+            availability[rel] = False
+            continue
+        full = os.path.join(install_dir, rel.replace("/", os.sep))
+        availability[rel] = os.path.isfile(full)
+    return availability
+
+
+@dataclass(frozen=True)
+class GameTarget:
+    install_dir: str | None = None
+    raw_version: str | None = None
+    display_version: str | None = None
+    revision: str | None = None
+    checksum: str | None = None
+    supported_version: str = "1.19.*"
+    profile_id: str = "hoi4-1.19"
+    source: str = "default"
+    validated_at: str = ""
+    required_files: dict[str, bool] = _dc_field(default_factory=dict)
+    missing_files: list[str] = _dc_field(default_factory=list)
+
+    @property
+    def is_usable(self) -> bool:
+        if not self.install_dir:
+            return False
+        available = self.required_files.get(TERRAIN_DEF_RELPATH)
+        if available is None:
+            return os.path.isfile(os.path.join(self.install_dir, TERRAIN_DEF_RELPATH))
+        return bool(available)
+
+    @property
+    def normalized_install_dir(self) -> str | None:
+        return self.install_dir
+
+    def to_dict(self) -> dict:
+        return {
+            "install_dir": self.install_dir,
+            "raw_version": self.raw_version,
+            "display_version": self.display_version,
+            "revision": self.revision,
+            "checksum": self.checksum,
+            "supported_version": self.supported_version,
+            "profile_id": self.profile_id,
+            "source": self.source,
+            "validated_at": self.validated_at,
+            "required_files": dict(self.required_files),
+            "missing_files": list(self.missing_files),
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "GameTarget":
+        return cls(
+            install_dir=data.get("install_dir"),
+            raw_version=data.get("raw_version"),
+            display_version=data.get("display_version"),
+            revision=data.get("revision"),
+            checksum=data.get("checksum"),
+            supported_version=str(data.get("supported_version", "1.19.*")),
+            profile_id=str(data.get("profile_id", "hoi4-1.19")),
+            source=str(data.get("source", "default")),
+            validated_at=str(data.get("validated_at", "")),
+            required_files=dict(data.get("required_files", {}) or {}),
+            missing_files=list(data.get("missing_files", []) or []),
+        )
+
+
+def _utc_now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def resolve_game_target(
+    install_dir: str | None = None,
+    *,
+    profile_id: str | None = None,
+    source: str | None = None,
+    relpaths: list[str] | None = None,
+) -> GameTarget:
+    from data.constants import DEFAULT_SUPPORTED_VERSION
+
+    selected: str | None = None
+    selected_source: str | None = source
+    if install_dir is not None:
+        selected = normalize_install_dir(install_dir)
+        if selected_source is None:
+            selected_source = "explicit"
+    else:
+        if selected_source is None or selected_source == "project":
+            pass
+        saved = _read_config_game_dir()
+        if saved is not None:
+            selected = normalize_install_dir(saved)
+            if selected_source is None:
+                selected_source = "user_config"
+        elif os.path.isfile(os.path.join(DEFAULT_HOI4_PATH, TERRAIN_DEF_RELPATH)):
+            selected = normalize_install_dir(DEFAULT_HOI4_PATH)
+            if selected_source is None:
+                selected_source = "auto_detected"
+        else:
+            selected = None
+            if selected_source is None:
+                selected_source = "default"
+    if selected_source is None:
+        selected_source = "explicit" if install_dir is not None else "default"
+    if selected_source not in SELECTION_SOURCES:
+        selected_source = "explicit"
+
+    raw = read_raw_version(selected)
+    display = display_version_for_raw(raw)
+    revision = revision_for_raw(raw)
+    checksum = checksum_for_install(selected)
+    supported = descriptor_version_for_raw(raw) or DEFAULT_SUPPORTED_VERSION
+    resolved_profile = profile_id or profile_id_for_raw(raw)
+    availability = check_required_files(selected, relpaths)
+    missing = [key for key, ok in availability.items() if not ok]
+    return GameTarget(
+        install_dir=selected,
+        raw_version=raw,
+        display_version=display,
+        revision=revision,
+        checksum=checksum,
+        supported_version=supported,
+        profile_id=str(resolved_profile),
+        source=str(selected_source),
+        validated_at=_utc_now_iso(),
+        required_files=dict(availability),
+        missing_files=list(missing),
+    )
+
+
+def target_install_dir(target: "GameTarget | None") -> str | None:
+    if target is not None:
+        return getattr(target, "install_dir", None)
+    return find_hoi4_install()
+
+
+def target_supported_version(target: "GameTarget | None" = None) -> str:
+    from data.constants import DEFAULT_SUPPORTED_VERSION
+
+    if target is not None and getattr(target, "supported_version", None):
+        return str(target.supported_version)
     return detect_supported_version() or DEFAULT_SUPPORTED_VERSION
 
 
