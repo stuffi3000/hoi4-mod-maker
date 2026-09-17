@@ -23,3 +23,6 @@ build_log.txt
 start.bat
 *.bak2
 projects/
+.codex/
+tmp/
+/AGENTS.md
