@@ -15,6 +15,9 @@ import numpy as np
 
 from ui.i18n import tr
 
+from domain.validation import ValidationReport
+from services.validation_service import report_from_check_items
+
 
 @dataclass
 class CheckItem:
@@ -24,6 +27,7 @@ class CheckItem:
     detail: str         # Detailed description
     can_auto: bool      # Whether it can be automatically completed
     count: int = 0      # Quantity (number of provinces/number of states, etc.)
+    code: str = ""      # Stable locale-independent rule code (e.g. readiness.provinces)
 
 
 def check_project_readiness(project, map_source, profile=None, dimensions: tuple[int, int] | None = None) -> list[CheckItem]:
@@ -51,14 +55,14 @@ def check_project_readiness(project, map_source, profile=None, dimensions: tuple
         if _prof is not None:
             _derr = _prof.validate_dimensions(_rw, _rh)
             if _derr:
-                items.append(CheckItem("map_dimensions", "missing", "; ".join(_derr), False))
+                items.append(CheckItem("map_dimensions", "missing", "; ".join(_derr), False, code="readiness.map_dimensions"))
                 return items
 
     # 1. Land/Province
     if province_count == 0:
         items.append(CheckItem(
             tr("export_check_provinces"), "missing",
-            tr("export_check_no_provinces"), False))
+            tr("export_check_no_provinces"), False, code="readiness.provinces"))
         # Follow-up inspections are meaningless without provinces
         return items
 
@@ -69,7 +73,7 @@ def check_project_readiness(project, map_source, profile=None, dimensions: tuple
     if land_pixels == 0:
         items.append(CheckItem(
             tr("export_check_land"), "missing",
-            tr("export_check_no_land"), False))
+            tr("export_check_no_land"), False, code="readiness.land"))
         return items
 
     # Check ID continuity (there may be holes after merging provinces)
@@ -81,12 +85,12 @@ def check_project_readiness(project, map_source, profile=None, dimensions: tuple
             tr("export_check_provinces"), "warning",
             tr("export_check_province_gaps").format(
                 total=len(existing_ids), gaps=len(gap_ids)),
-            False, len(existing_ids)))
+            False, len(existing_ids), code="readiness.provinces"))
     else:
         items.append(CheckItem(
             tr("export_check_provinces"), "ok",
             tr("export_check_province_ok").format(count=province_count),
-            False, province_count))
+            False, province_count, code="readiness.provinces"))
 
     # 2. State
     state_mgr = project.state_mgr
@@ -95,7 +99,7 @@ def check_project_readiness(project, map_source, profile=None, dimensions: tuple
         items.append(CheckItem(
             tr("export_check_state"), "missing",
             tr("export_check_no_state"),
-            True))
+            True, code="readiness.states"))
     else:
         # Check orphan provinces
         n = province_count + 1
@@ -114,12 +118,12 @@ def check_project_readiness(project, map_source, profile=None, dimensions: tuple
                 tr("export_check_state"), "warning",
                 tr("export_check_state_orphans").format(
                     count=state_count, orphans=len(orphans)),
-                True, state_count))
+                True, state_count, code="readiness.states"))
         else:
             items.append(CheckItem(
                 tr("export_check_state"), "ok",
                 tr("export_check_state_ok").format(count=state_count),
-                False, state_count))
+                False, state_count, code="readiness.states"))
 
     # 3. Country
     country_mgr = project.country_mgr
@@ -128,7 +132,7 @@ def check_project_readiness(project, map_source, profile=None, dimensions: tuple
         items.append(CheckItem(
             tr("export_check_country"), "missing",
             tr("export_check_no_country"),
-            True))
+            True, code="readiness.countries"))
     else:
         # Check for unowned State
         unowned = []
@@ -140,12 +144,12 @@ def check_project_readiness(project, map_source, profile=None, dimensions: tuple
                 tr("export_check_country"), "warning",
                 tr("export_check_country_unowned").format(
                     count=country_count, unowned=len(unowned)),
-                True, country_count))
+                True, country_count, code="readiness.countries"))
         else:
             items.append(CheckItem(
                 tr("export_check_country"), "ok",
                 tr("export_check_country_ok").format(count=country_count),
-                False, country_count))
+                False, country_count, code="readiness.countries"))
 
     # 4. Strategic areas
     sr_mgr = project.strategic_region_mgr
@@ -154,12 +158,12 @@ def check_project_readiness(project, map_source, profile=None, dimensions: tuple
         items.append(CheckItem(
             tr("export_check_strategic_region"), "missing",
             tr("export_check_no_strategic_region"),
-            True))
+            True, code="readiness.strategic_regions"))
     else:
         items.append(CheckItem(
             tr("export_check_strategic_region"), "ok",
             tr("export_check_strategic_region_ok").format(count=sr_count),
-            False, sr_count))
+            False, sr_count, code="readiness.strategic_regions"))
 
     # 5. Mainland
     cont_mgr = project.continent_mgr
@@ -168,12 +172,12 @@ def check_project_readiness(project, map_source, profile=None, dimensions: tuple
         items.append(CheckItem(
             tr("export_check_continent"), "missing",
             tr("export_check_no_continent"),
-            True))
+            True, code="readiness.continents"))
     else:
         items.append(CheckItem(
             tr("export_check_continent"), "ok",
             tr("export_check_continent_ok").format(count=cont_count),
-            False, cont_count))
+            False, cont_count, code="readiness.continents"))
 
     # 6. Terrain
     ter = map_source.terrain_map
@@ -181,11 +185,11 @@ def check_project_readiness(project, map_source, profile=None, dimensions: tuple
         items.append(CheckItem(
             tr("export_check_terrain"), "missing",
             tr("export_check_no_terrain"),
-            True))
+            True, code="readiness.terrain"))
     else:
         items.append(CheckItem(
             tr("export_check_terrain"), "ok",
-            tr("export_check_terrain_ok"), False))
+            tr("export_check_terrain_ok"), False, code="readiness.terrain"))
 
     # 7. Height
     hm = map_source.height_map
@@ -193,11 +197,11 @@ def check_project_readiness(project, map_source, profile=None, dimensions: tuple
         items.append(CheckItem(
             tr("export_check_heightmap"), "missing",
             tr("export_check_no_heightmap"),
-            True))
+            True, code="readiness.heightmap"))
     else:
         items.append(CheckItem(
             tr("export_check_heightmap"), "ok",
-            tr("export_check_heightmap_ok"), False))
+            tr("export_check_heightmap_ok"), False, code="readiness.heightmap"))
 
     # 8. Art assets (only displayed when there are imported assets)
     asset_total = len(getattr(project, "assets", {}) or {})
@@ -208,12 +212,24 @@ def check_project_readiness(project, map_source, profile=None, dimensions: tuple
             items.append(CheckItem(
                 tr("export_check_assets"), "ok",
                 tr("export_check_assets_all_clean").format(total=asset_total),
-                False, asset_total))
+                False, asset_total, code="readiness.assets"))
         else:
             items.append(CheckItem(
                 tr("export_check_assets"), "warning",
                 tr("export_check_assets_dirty").format(
                     total=asset_total, clean=clean_count, dirty=dirty_count),
-                False, asset_total))
+                False, asset_total, code="readiness.assets"))
 
     return items
+
+
+def check_project_readiness_report(project, map_source, profile=None, dimensions: tuple[int, int] | None = None, context="draft_preview", source="readiness") -> ValidationReport:
+    """Build a shared ValidationReport from the live readiness checks.
+
+    Calls check_project_readiness exactly once and adapts its CheckItem
+    list without running duplicate checks. Finding codes come from the
+    locale-independent CheckItem codes, so reports stay stable across
+    UI languages. The wrapper is Qt-free like the underlying checks.
+    """
+    items = check_project_readiness(project, map_source, profile=profile, dimensions=dimensions)
+    return report_from_check_items(items, source=source, context=context)

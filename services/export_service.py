@@ -10,6 +10,9 @@ from dataclasses import dataclass, field
 from domain.managers.state import normalize_state_category
 from ui.i18n import get_language
 
+from domain.validation import ValidationReport
+from services.validation_service import report_from_preflight_messages
+
 
 @dataclass(frozen=True)
 class ExportReport:
@@ -17,6 +20,7 @@ class ExportReport:
     warnings: list[str] = field(default_factory=list)
     fixed: list[str] = field(default_factory=list)
     stats: dict[str, int] = field(default_factory=dict)
+    validation_report: ValidationReport | None = None
 
 
 def _profile_for_context(profile=None, game_target=None):
@@ -94,6 +98,24 @@ def validate_before_export(canvas, state_mgr, country_mgr, profile=None, game_ta
             warnings.append(f"River: {n} more issues; see Validate River on the River page")
 
     return warnings
+
+
+def validate_before_export_report(canvas, state_mgr, country_mgr, profile=None, game_target=None, dimensions=None, context="draft_preview", source="preflight") -> ValidationReport:
+    """Build a shared ValidationReport from the pre-write export gate.
+
+    Calls validate_before_export exactly once and converts its legacy
+    message list to stable preflight findings without re-running checks.
+    The legacy list[str] return contract is unchanged.
+    """
+    warnings = validate_before_export(
+        canvas,
+        state_mgr,
+        country_mgr,
+        profile=profile,
+        game_target=game_target,
+        dimensions=dimensions,
+    )
+    return report_from_preflight_messages(warnings, source=source, context=context)
 
 
 # ────────────────── Export pre-check steps (scheduled by pre_export_check_and_fix)──────────────────
@@ -376,7 +398,13 @@ def pre_export_check_and_fix(
 
     province_count = int(province_map.max())
     if province_count == 0:
-        return ExportReport(warnings=["No province data"], fixed=[], stats={})
+        _early_warnings = ["No province data"]
+        return ExportReport(
+            warnings=_early_warnings,
+            fixed=[],
+            stats={},
+            validation_report=report_from_preflight_messages(_early_warnings),
+        )
 
     active_profile = _profile_for_context(profile, game_target)
     if active_profile is not None or dimensions is not None:
@@ -456,7 +484,12 @@ def pre_export_check_and_fix(
         "countries": len(country_mgr.countries) if country_mgr else 0,
     }
 
-    return ExportReport(warnings=warnings, fixed=fixed, stats=stats)
+    return ExportReport(
+        warnings=warnings,
+        fixed=fixed,
+        stats=stats,
+        validation_report=report_from_preflight_messages(warnings),
+    )
 
 
 def fill_default_state_data(
@@ -644,6 +677,7 @@ def export_mod(
             warnings=report.warnings,
             fixed=list(report.fixed) + [f"Filled default resources/buildings for {filled} states"],
             stats=report.stats,
+            validation_report=report.validation_report,
         )
 
     # ──Province number empty prompt──
@@ -659,6 +693,7 @@ def export_mod(
                     f"Detected {_gap_count} gaps in province numbering left by merges; exported files were compacted automatically to consecutive IDs while project data remains unchanged"
                 ],
                 stats=report.stats,
+                validation_report=report.validation_report,
             )
 
     # ──Execute export──
@@ -700,6 +735,7 @@ def export_mod(
         warnings=report.warnings,
         fixed=report.fixed,
         stats=stats,
+        validation_report=report.validation_report,
     )
 
 

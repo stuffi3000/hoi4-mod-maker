@@ -18,7 +18,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from domain.validation import ValidationFinding, ValidationReport
+from domain.validation import SEVERITY_RANK, ValidationFinding, ValidationReport
 
 READINESS_SOURCE = "readiness"
 READINESS_LAYER = "readiness"
@@ -29,6 +29,17 @@ ARTIFACT_SOURCE = "artifact"
 ARTIFACT_LAYER = "artifact"
 ARTIFACT_ERROR_CODE = "artifact.error"
 ARTIFACT_WARNING_CODE = "artifact.warning"
+PREFLIGHT_SOURCE = "preflight"
+PREFLIGHT_LAYER = "preflight"
+PREFLIGHT_CODE_PREFIX = "preflight."
+PREFLIGHT_FALLBACK_CODE = "preflight.check"
+PREFLIGHT_MAP_DIMENSIONS_CODE = "preflight.map_dimensions"
+PREFLIGHT_PROVINCES_CODE = "preflight.provinces"
+PREFLIGHT_STATES_CODE = "preflight.states"
+PREFLIGHT_COUNTRIES_CODE = "preflight.countries"
+PREFLIGHT_STRATEGIC_REGIONS_CODE = "preflight.strategic_regions"
+PREFLIGHT_CONTINENTS_CODE = "preflight.continents"
+PREFLIGHT_RIVERS_CODE = "preflight.rivers"
 
 _CHECK_OK_STATUSES = frozenset({"ok", "pass", "passed", "success"})
 _CHECK_WARNING_STATUSES = frozenset({"warning", "warn"})
@@ -46,17 +57,32 @@ __all__ = [
     "ARTIFACT_LAYER",
     "ARTIFACT_SOURCE",
     "ARTIFACT_WARNING_CODE",
+    "PREFLIGHT_CODE_PREFIX",
+    "PREFLIGHT_CONTINENTS_CODE",
+    "PREFLIGHT_COUNTRIES_CODE",
+    "PREFLIGHT_FALLBACK_CODE",
+    "PREFLIGHT_LAYER",
+    "PREFLIGHT_MAP_DIMENSIONS_CODE",
+    "PREFLIGHT_PROVINCES_CODE",
+    "PREFLIGHT_RIVERS_CODE",
+    "PREFLIGHT_SOURCE",
+    "PREFLIGHT_STATES_CODE",
+    "PREFLIGHT_STRATEGIC_REGIONS_CODE",
     "READINESS_AUTO_FIX_CODE",
     "READINESS_CODE_PREFIX",
     "READINESS_LAYER",
     "READINESS_SOURCE",
     "check_item_code",
     "finding_from_check_item",
+    "finding_from_preflight_message",
     "finding_from_verifier_message",
     "findings_from_check_items",
+    "findings_from_preflight_messages",
     "findings_from_verifier_messages",
+    "preflight_message_code",
     "report_from_check_items",
     "report_from_findings",
+    "report_from_preflight_messages",
     "report_from_verifier_messages",
 ]
 
@@ -302,3 +328,84 @@ def report_from_findings(
     else:
         normalized = findings
     return ValidationReport(findings=normalized, source=source, context=context)
+
+
+def preflight_message_code(message: Any) -> str:
+    """Map a pre-write warning string to a stable category code.
+
+    Classification uses lowercase keyword matching against a fixed
+    category table, so identical messages always yield identical codes.
+    Codes never embed numeric IDs, tags, counts, or translated text.
+    """
+    text = str(message).lower() if message is not None else ""
+    if (
+        "dimension" in text
+        or "multiple" in text
+        or "minimum" in text
+        or "maximum" in text
+        or "exceed" in text
+        or "map size" in text
+        or "match map arrays" in text
+        or "(width, height)" in text
+    ):
+        return PREFLIGHT_MAP_DIMENSIONS_CODE
+    if "river" in text:
+        return PREFLIGHT_RIVERS_CODE
+    if "continent" in text:
+        return PREFLIGHT_CONTINENTS_CODE
+    if "strategic" in text or "exclave" in text:
+        return PREFLIGHT_STRATEGIC_REGIONS_CODE
+    if "country" in text or "capital" in text or "owner" in text:
+        return PREFLIGHT_COUNTRIES_CODE
+    if "state" in text:
+        return PREFLIGHT_STATES_CODE
+    if "province" in text:
+        return PREFLIGHT_PROVINCES_CODE
+    return PREFLIGHT_FALLBACK_CODE
+
+
+def finding_from_preflight_message(message: Any, severity: str = "warning") -> ValidationFinding:
+    """Convert one pre-write warning string to a shared preflight finding.
+
+    Absolute machine paths shrink to portable file names before the
+    finding is built, so serialized reports never carry absolute paths.
+    The default warning severity mirrors the legacy list semantics where
+    an empty list means safe to export.
+    """
+    normalized_severity = str(severity).strip().lower() if severity else ""
+    if normalized_severity not in SEVERITY_RANK:
+        raise ValueError(
+            "preflight severity must be info, warning, error, or blocker; got %r" % (severity,)
+        )
+    text = str(message).strip() if message is not None else ""
+    if not text:
+        raise ValueError("preflight message must be a non-empty string")
+    scrubbed = _scrub_machine_paths(text)
+    if not scrubbed.strip():
+        scrubbed = text
+    return ValidationFinding(
+        code=preflight_message_code(scrubbed),
+        severity=normalized_severity,
+        message=scrubbed,
+        layer=PREFLIGHT_LAYER,
+        path=_extract_relative_path(scrubbed),
+    )
+
+
+def findings_from_preflight_messages(messages: Any = ()) -> list[ValidationFinding]:
+    """Convert pre-write warning strings to findings in input order."""
+    return [finding_from_preflight_message(message) for message in _snapshot_messages(messages)]
+
+
+def report_from_preflight_messages(
+    messages: Any = (),
+    *,
+    source: str = PREFLIGHT_SOURCE,
+    context: str = "draft_preview",
+) -> ValidationReport:
+    """Build a deterministic report from pre-write warning strings."""
+    return ValidationReport(
+        findings=findings_from_preflight_messages(messages),
+        source=source,
+        context=context,
+    )
