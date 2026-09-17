@@ -1,59 +1,167 @@
 # HOI4 states and strategic regions
 
-States are the main territorial unit used by HOI4 history files. Strategic regions group provinces for weather, air operations, naval operations, and other map systems. The two layers must agree with the province raster.
+States and strategic regions are different layers. A state is the territorial
+unit used by history, ownership, buildings, resources, and victory points. A
+strategic region groups provinces for air operations, naval operations, and
+weather. Both layers must agree with the province map.
 
-## State history
+## State files
 
-State files live in `history/states/*.txt` and use a structure like this:
+State history is stored under:
+
+```text
+history/states/*.txt
+```
+
+The filename is not the state identity; the contents are. Without a deliberate
+`replace_path = "history/states"`, changing the names of existing vanilla
+files can leave both the base file and the mod file loaded. A complete map
+overhaul normally replaces the folder intentionally and supplies every state
+it needs.
+
+Every state is a `state = { ... }` block. A useful minimum is:
 
 ```pdx
 state = {
     id = 123
-    name = STATE_123
-    manpower = 500000
-    state_category = town
-    provinces = { 123 456 789 }
-
-    resources = { steel = 10 aluminium = 20 }
+    name = STATE_WT_123
+    manpower = 50000
+    state_category = large_town
 
     history = {
-        owner = POL
-        victory_points = { 123 10 }
-        add_core_of = POL
-        buildings = {
-            infrastructure = 3
-            123 = { naval_base = 2 }
+        owner = AUR
+        add_core_of = AUR
+        victory_points = { 456 5 }
+    }
+
+    provinces = { 456 789 }
+}
+```
+
+Important fields:
+
+- `id` is an integer and state IDs should be sequential from 1 to the largest
+  state. The engine expects the intermediate entries to exist. Deleting a state
+  therefore requires moving/referencing another state and updating every
+  country, capital, building, and script reference.
+- `name` is a localisation key. Use a stable ASCII key and put the visible
+  name in a localisation file.
+- `manpower` is the starting population of the state.
+- `state_category` controls state modifiers and shared building capacity. The
+  exact category set and slot limits are version-sensitive; resolve it from
+  the target `common/states/*.txt` or installed game data rather than keeping
+  a permanent hard-coded list in the UI.
+- `provinces` is the complete province membership list. It is not a list of
+  state IDs, and it should contain land provinces only for ordinary playable
+  states.
+- `history` is an effect block. `owner` is optional for the parser but an
+  ownerless playable state is unstable: many later effects, AI checks, and air
+  missions assume an owner. Set `controller` only when it differs from the
+  owner.
+- `victory_points = { province_id value }` uses a province ID, not a state ID.
+  Use one block per victory-point province and localise it with
+  `VICTORY_POINTS_<province_id>`.
+- `resources`, state-level buildings, province-level buildings,
+  `local_supplies`, cores, claims, and dated history blocks belong in their
+  documented scopes. A dated block applies only after its date according to
+  the engine's history rules.
+
+Country history uses a different ID type: `capital = 123` points to a state,
+while a victory point in that state points to a province. This distinction is
+one of the most common causes of a map that reaches the menu but crashes when
+the country is selected.
+
+## Strategic regions
+
+Strategic regions are defined under the current path:
+
+```text
+map/strategicregions/*.txt
+```
+
+The older `common/strategic_regions/` path is not the map definition path.
+Each file may contain one or more `strategic_region = { ... }` blocks; the
+numeric ID is in the block, not in the filename.
+
+```pdx
+strategic_region = {
+    id = 12
+    name = STRATEGICREGION_WT_12
+    naval_terrain = water_shallow_sea
+
+    provinces = { 3 4 5 6 }
+
+    weather = {
+        period = {
+            between = { 0.0 30.11 }
+            temperature = { -5.0 25.0 }
+            no_phenomenon = 0.5
+            rain_light = 0.2
+            rain_heavy = 0.1
+            snow = 0.1
+            blizzard = 0.05
+            mud = 0.05
+            sandstorm = 0.0
         }
     }
 }
 ```
 
-The `provinces` block lists province IDs that belong to the state. The history block supplies ownership, cores, victory points, buildings, resources, and dated changes. `capital` in a country history file refers to a state ID, while a victory-point entry refers to a province ID.
+Strategic-region IDs should be sequential. Every playable province needs one
+region; missing or duplicated assignments can crash before a country can be
+selected. A state should normally stay within one strategic region, and a
+region should be geographically coherent. Sea regions may set
+`naval_terrain` such as shallow sea, deep ocean, or fjords.
 
-## State categories
+Weather periods use `day.month` bounds where the first day and month are zero
+based in the wiki convention. The periods must cover the intended year, and
+the weather keys/weights must be valid for the selected `common/weather.txt`.
+`temperature_day_night` is obsolete in current versions; use `temperature`.
 
-`state_category` controls the state's building-slot rules. Common vanilla keys include `wasteland`, `enclave`, `tiny_island`, `small_island`, `large_island`, `pastoral`, `rural`, `town`, `large_town`, `city`, `large_city`, `metropolis`, and `megalopolis`. The category list and slot counts can change with the game version, so use the target version's definitions.
+`map/weatherpositions.txt` places weather objects:
 
-## Strategic regions
+```text
+strategic_region_id;X;Y;Z;size
+```
 
-Strategic-region definitions are stored under `common/strategic_regions/*.txt`. A region contains province IDs and metadata such as its name, weather, and air/naval settings. Every province used by the playable map should belong to a valid strategic region. States should not mix provinces from unrelated strategic regions unless the target game version explicitly supports that layout.
+The installed target game uses tokens such as `small` and `big`. Keep at least
+the positions required by the target version, use actual region coordinates,
+and do not treat one centroid per region as final visual placement. The Nudge
+tool is useful for producing and reviewing these records.
 
-When editing or generating a map, update these relationships together:
+## Relationship contract
 
-1. province colors and rows in `definition.csv`;
-2. the province list in each state history file;
-3. state ownership, capital, and victory points;
-4. strategic-region province lists;
-5. supply, railway, building, and adjacency references.
+The exporter should validate these relationships as one transaction:
+
+| Layer | Reference | Required invariant |
+| --- | --- | --- |
+| Province raster/CSV | province color and ID | One stable identity per province |
+| State membership | `history/states/*.txt` | Every land province in exactly one intended state |
+| State history | owners, cores, buildings, VPs | State IDs and province IDs are not mixed |
+| Country history | capital, OOB, politics | Capital resolves to a state and OOB references existing data |
+| Strategic region | `map/strategicregions/*.txt` | Every playable province assigned once; region IDs dense |
+| Weather positions | `map/weatherpositions.txt` | Every referenced region exists and coordinates use X/Y/Z convention |
+| Map objects/logistics | buildings, supply, railways, adjacencies | Every reference survives the final province ID mapping |
+
+The current exporter deliberately creates a state-aware region scaffold. That
+is useful for a parseable test map, but it is not a substitute for authoring
+weather, air/naval boundaries, and visual object placement for a production
+map.
 
 ## Validation checklist
 
-- state IDs are unique and all referenced states exist;
-- every listed province exists and appears in the intended state;
-- each state has a valid category and history owner when gameplay requires one;
-- victory points, capitals, buildings, railways, and supply hubs refer to the correct ID type;
-- strategic regions contain valid provinces and cover the playable map;
-- exported state and region files contain only the English localization keys used by the mod.
+- state IDs are unique, dense, and present from 1 through the maximum;
+- every state province exists, is land, and belongs to one state;
+- no state mixes strategic regions unless the selected game profile explicitly
+  allows it;
+- every province that should be playable belongs to one strategic region;
+- region IDs are dense and weather periods cover the required year;
+- region names, state names, victory points, and resources have localization
+  keys where required;
+- owners, controllers, cores, claims, capitals, buildings, supply nodes,
+  railways, and victory points resolve using the correct ID type;
+- `weatherpositions.txt` has valid region IDs and target-version size values;
+- a clean game run confirms that the static report matches engine behavior.
 
 ## Sources
 

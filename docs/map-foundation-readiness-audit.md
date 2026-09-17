@@ -81,13 +81,13 @@ One important caveat is that the exporter does not simply serialize the project.
 
 The export contains the expected core map files for a conventional 5,632 × 2,048 map:
 
-`provinces.bmp`, `definition.csv`, `heightmap.bmp`, `terrain.bmp`, `rivers.bmp`, `trees.bmp`, `cities.bmp`, `world_normal.bmp`, `default.map`, `continent.txt`, `adjacencies.csv`, `adjacency_rules.txt`, `ambient_object.txt`, `seasons.txt`, `weatherpositions.txt`, `buildings.txt`, `positions.txt`, `railways.txt`, `supply_nodes.txt`, state files, strategic-region files, and supply-area files.
+`provinces.bmp`, `definition.csv`, `heightmap.bmp`, `terrain.bmp`, `rivers.bmp`, `trees.bmp`, `cities.bmp`, `world_normal.bmp`, `default.map`, `continent.txt`, `adjacencies.csv`, `adjacency_rules.txt`, `ambient_object.txt`, `seasons.txt`, `weatherpositions.txt`, `buildings.txt`, `positions.txt`, `railways.txt`, `supply_nodes.txt`, state files, strategic-region files, and legacy supply-area files.
 
 The exporter produced:
 
 - 290 state files covering the 12,100 land provinces;
 - 48 strategic regions covering all 12,521 province IDs;
-- 20 supply areas;
+- 20 legacy supply areas (the current 1.19 supply contract is nodes plus railways);
 - 421 supply nodes;
 - 3,510 railway records;
 - six country definitions used by the scenario scaffold: `BEL`, `FRA`, `GER`, `HOL`, `LUX`, and `ENG`.
@@ -271,8 +271,8 @@ The following inventory is from the installed map roots. `Map files` includes fi
 
 | Map | Province raster | Max province ID | Map files | Notable pattern |
 |---|---:|---:|---:|---|
-| Vanilla 1.19.3.0 | 5,632 × 2,048 | 13,413 | — | 304 strategic regions, one supply area, extensive special adjacencies, 64 terrain assets |
-| Current tool output | 5,632 × 2,048 | 12,521 | 96 | 290 states, 48 regions, 20 supply areas, no special adjacencies/rules |
+| Vanilla 1.19.3.0 | 5,632 × 2,048 | 13,413 | — | 304 strategic regions, one legacy supply area, extensive special adjacencies, 64 terrain assets |
+| Current tool output | 5,632 × 2,048 | 12,521 | 96 | 290 states, 48 regions, 20 legacy supply areas, no special adjacencies/rules |
 | Kaiserreich | 5,632 × 2,048 | 13,906 | 295 | Omits some optional map files such as cities/default/positions and inherits them |
 | Old World Blues | 5,632 × 2,304 | 21,832 | 601 | Broad custom map with extensive assets and custom-size raster |
 | A Very British Civil War | 5,632 × 2,048 | 5,600 | 111 | Includes airports/rocketsites and custom art artifacts |
@@ -306,7 +306,7 @@ The tool should own, generate, preserve, and validate:
 - continent assignment;
 - state **province membership** and stable state IDs;
 - strategic-region membership and weather placement geometry;
-- supply-area membership, supply-node positions, railway topology, and network review;
+- current supply-node positions and railway topology; legacy supply-area membership only as an explicitly versioned compatibility artifact;
 - special adjacencies, canals, straits, impassable borders, and rule references;
 - province/state/city/port/building spawn coordinates and coordinate QA;
 - map-specific graphical assets that are part of the selected foundation, or a manifest of assets intentionally inherited from vanilla/dependencies;
@@ -374,7 +374,7 @@ Keep `export/verify_mod.py`, but add checks for:
 - 4-connectivity, X-crossings, minimum area, bounding boxes, map-edge wrap behavior, and mixed province types;
 - coast flags, ports, naval bases, cities, victory points, and terrain compatibility;
 - river source/outlet/width/level continuity;
-- all state, region, supply-area, railway, adjacency, building, and position references;
+- all state, region, supply-node, railway, adjacency, building, and position references, plus any intentionally retained legacy supply-area references;
 - railway neighbor adjacency, connected components, supply-node reachability, and intentional overseas exceptions;
 - position surfaces, province ownership of coordinates, duplicate/collision checks, and building-type legality;
 - actual selected-version terrain and map-art asset contracts.
@@ -446,7 +446,7 @@ After step 9, content authors can safely build state history and ordinary mod co
 | Province geometry | No detected crossings/non-contiguous/too-small provinces | Pass, with broader edge-case tests recommended |
 | Terrain/height/river dimensions | Present and dimensionally aligned | Needs version/palette and visual hardening |
 | State and strategic-region membership | Internally consistent | Pass structurally; review design before freeze |
-| Supply areas/nodes/rail endpoints | References valid; graph is fragmented | Needs hardening |
+| Supply nodes/rail endpoints | References valid; graph is fragmented; legacy supply areas are deprecated | Needs hardening |
 | Special adjacencies | Empty output | Conditional for Belgium; blocker for general maps until explicit |
 | Positions/buildings/weather | Parseable generated placeholders | Needs manual/tool-assisted placement work |
 | Terrain graphics | Partial generated/inherited set | Needs explicit inheritance or art pipeline |
@@ -485,5 +485,7 @@ Manual art creation and detailed scenario content do not all need to be automate
 - [`export/writers/map/buildings.py`](../export/writers/map/buildings.py) — current building and naval-base scaffolding.
 - [`services/import_service.py`](../services/import_service.py) — structural/art file classification and optional-file preservation behavior.
 - [`data/constants.py`](../data/constants.py) and [`services/game_assets.py`](../services/game_assets.py) — map-size, province-count, install-path, and terrain-registry assumptions.
-- [`docs/wiki/map-core.md`](wiki/map-core.md) — repository documentation on structural map files and validation limits.
-- [`docs/wiki/states-regions.md`](wiki/states-regions.md) and [`docs/wiki/buildings-supply.md`](wiki/buildings-supply.md) — state, position, building, railway, and supply expectations.
+- [`docs/wiki/README.md`](wiki/README.md) — index and maintenance rules for the wiki-derived references.
+- [`docs/wiki/map-core.md`](wiki/map-core.md) and [`docs/wiki/map-visual-assets.md`](wiki/map-visual-assets.md) — structural map files and visual asset contracts.
+- [`docs/wiki/states-regions.md`](wiki/states-regions.md), [`docs/wiki/buildings-supply.md`](wiki/buildings-supply.md), and [`docs/wiki/logistics-and-adjacency.md`](wiki/logistics-and-adjacency.md) — state, position, building, railway, supply, and adjacency expectations.
+- [`docs/wiki/tool-export-contract.md`](wiki/tool-export-contract.md) — generated, preserved, inherited, omitted, and unsupported output policy.

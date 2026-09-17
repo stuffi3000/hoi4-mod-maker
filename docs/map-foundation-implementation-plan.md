@@ -7,6 +7,9 @@
 **Source audit:** [Map foundation readiness audit](map-foundation-readiness-audit.md)
 **Primary target:** Hearts of Iron IV 1.19.3.0 and `projects/Belgium_Map_v1_1.hoi4proj`
 
+**Reference set:** [HOI4 wiki reference index](wiki/README.md) and the
+[tool export contract](wiki/tool-export-contract.md)
+
 ## 1. Objective
 
 Turn the current exporter from a successful map/scenario generator into a deterministic, version-aware foundation pipeline that can safely be frozen before conventional mod development begins.

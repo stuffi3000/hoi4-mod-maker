@@ -131,6 +131,12 @@ hoi4_map_maker/          224 files, 26,000 lines
 
 **Data flow**: User input → InputRouter → Controller → Command → MapData/Manager → EventBus → Feature renderer → Canvas refresh
 
+## Development references
+
+- [HOI4 wiki reference index](docs/wiki/README.md)
+- [Tool export contract](docs/wiki/tool-export-contract.md)
+- [Map foundation readiness audit](docs/map-foundation-readiness-audit.md)
+
 ---
 
 ## Roadmap

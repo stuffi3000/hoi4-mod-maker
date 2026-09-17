@@ -21,3 +21,7 @@ applying and undo if needed.
 Railway levels can be set from 1 to 5. Supply hubs are optional. Strategic
 regions retain their existing Auto Generate action. Special adjacency rules
 (such as canals and straits) remain manually authored.
+
+For the engine-facing file formats and the distinction between current supply
+nodes/railways and legacy supply areas, see [logistics and special adjacencies](wiki/logistics-and-adjacency.md)
+and the [tool export contract](wiki/tool-export-contract.md).

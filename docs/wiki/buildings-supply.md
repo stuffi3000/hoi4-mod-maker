@@ -1,58 +1,158 @@
-# HOI4 buildings, supply hubs, and railways
+# HOI4 buildings, ports, and starting map infrastructure
 
-This page summarizes the map-side building and logistics files used by the exporter. Building definitions and scripted construction effects belong to other HOI4 data directories; this page covers initial placement and network data.
+Buildings have three related but separate representations. The building
+definition describes what a building means; state history describes starting
+levels; `map/buildings.txt` places the 3D model and tells the engine which sea
+province a port uses.
 
-## `buildings.txt`
+## Building definitions and slot classes
 
-Initial map buildings are written to `map/buildings.txt` using this semicolon-separated form:
+Building definitions live under:
+
+```text
+common/buildings/*.txt
+```
+
+The target game's definitions decide cost, maximum level, modifiers, icon,
+model, and whether the building uses shared, state, or provincial slots.
+Typical classes are:
+
+| Class | Examples | Starting data |
+| --- | --- | --- |
+| Shared state slots | `industrial_complex`, `arms_factory`, `dockyard`, `synthetic_refinery`, `fuel_silo` | State history `history = { buildings = { ... } }` |
+| Non-shared state buildings | `infrastructure`, `air_base`, `radar_station`, `anti_air_building` | State history |
+| Provincial buildings | `naval_base`, `bunker`, `coastal_bunker`, `supply_node`, `rail_way` | Province block in state history for many buildings; supply/railway starting topology is in `map/` |
+
+Do not hard-code maximum levels or slot counts from an old patch. The wiki's
+building table is a useful guide, but the selected `common/buildings` and
+`defines` files are authoritative for the export profile.
+
+Railways and supply nodes are technically buildings but have special initial
+and construction behavior. Their starting levels are read from
+`map/railways.txt` and `map/supply_nodes.txt`; using a generic building effect
+to construct a railway during the game can crash or produce invalid state.
+
+## State-history buildings
+
+Initial state-level and province-level buildings are written in a state history
+block:
+
+```pdx
+history = {
+    buildings = {
+        infrastructure = 3
+        industrial_complex = 1
+        1234 = {
+            naval_base = 3
+            coastal_bunker = 2
+        }
+    }
+}
+```
+
+State-level names are building IDs. A numeric child block uses a province ID
+and must be inside the same state's `provinces` list. Do not put a naval base or
+coastal bunker on a province that is not actually coastal. Check the target
+building definitions for shared-slot, state-level, and provincial limits after
+any category change.
+
+## `map/buildings.txt`
+
+The map model file uses one semicolon-separated record per positioned object:
 
 ```text
 State ID;Building type;X;Y;Z;Rotation;Adjacent sea province
 ```
 
-The state ID identifies the state that owns the entry. `X`, `Y`, and `Z` locate the building in the map coordinate system, and rotation is expressed in radians. The final field is used when a naval or floating harbor needs to identify an adjacent sea province; ordinary buildings use the neutral value expected by the game version.
+The first field is always the **state ID**, including for a provincial model.
+For provincial buildings, the X/Y/Z coordinate identifies the province. The
+coordinate convention is the same as other map files: X is east-west, Y is
+height in roughly 0..25.5, and Z is south-to-north.
 
-The file must contain valid data for the buildings the map requires. A malformed building entry can stop map loading, and a naval building with an invalid adjacent sea province can cause particularly difficult startup failures. Coordinates should be placed on the intended province and land surface.
+Rotation is in radians. The last field is needed for naval bases and floating
+harbours so the game knows which sea province the port uses; ordinary objects
+use the neutral value required by the target version.
 
-## Building scopes
+Important failure modes:
 
-HOI4 buildings are commonly encountered in three scopes:
+- An entirely empty `buildings.txt` can make the map crash during loading.
+- A coastal province with a naval base but no matching port/model definition
+  may appear to work until the AI evaluates a fleet, then hang or crash.
+- A coordinate outside the intended province can cause invalid model placement
+  or a port to connect to the wrong sea.
+- Changing states or province IDs without remapping this file makes later
+  gameplay failures look unrelated to the original map edit.
 
-| Scope | Examples | Storage |
-| --- | --- | --- |
-| State-level | infrastructure, military factories, civilian factories, dockyards, refineries, fuel silos, radar | state history or state building data |
-| Province-level | naval bases, forts, coastal forts, supply hubs, railways | province entries inside state history or map data |
-| Map-object positions | ports, air bases, cities, and other visual/gameplay positions | `positions.txt`, `buildings.txt`, or the relevant map file |
-
-The exact maximum level and available building list are defined by the game version and DLC. Do not hard-code an old list when targeting a newer game release.
+The Nudge tool is usually safer for final placement because it knows the map
+surface and object model. An automated writer should at least test the rounded
+coordinate's province ownership and sea adjacency.
 
 ## Supply hubs and railways
 
-`map/supply_nodes.txt` describes the initial supply-hub level and province. `map/railways.txt` describes an initial railway route using a level, a province count, and the ordered province IDs. A minimal example is:
+Starting supply data is stored in the map root:
 
 ```text
-# supply_nodes.txt
-1 1234
+map/supply_nodes.txt
+map/railways.txt
+```
 
-# railways.txt
+`supply_nodes.txt` has one whitespace-separated record per node:
+
+```text
+Level Province
+1 1234
+```
+
+The default node maximum is one, but the selected `defines` can change it.
+The province must be a valid land province in a state. Do not use an ocean,
+lake, deleted, or stateless province as a node.
+
+`railways.txt` has one route per line:
+
+```text
+Level ProvinceCount Province1 Province2 ... ProvinceN
 4 4 693 1444 12 11
 ```
 
-Every province reference must exist in the exported `definition.csv`, and routes must be compatible with the final state and strategic-region layout. Do not leave a route pointing at a removed or remapped province. The exporter remaps these references together with compacted province IDs.
+The count must equal the number of listed provinces, the IDs must exist, and
+consecutive provinces should be adjacent in the final province topology. The
+default railway maximum is five; resolve the target value from `defines`.
+Disconnected islands can be intentional, but an exporter must report them as
+reviewable decisions rather than silently accepting every disconnected graph.
+Self-loop placeholders such as `1 2 1234 1234` are parseable scaffolding, not
+a production railway.
 
-Initial network levels are separate from later scripted construction. Use the documented railway effects for an in-game railway change; a generic building-construction effect is not an interchangeable substitute.
+## Export guidance
+
+Keep these operations separate in the data model:
+
+1. building **definition** (`common/buildings` and installed game assets);
+2. building **level** (state history or starting logistics file);
+3. building **position** (`map/buildings.txt`);
+4. building **network semantics** (railway connectivity, supply reachability,
+   and the selected sea province for a port).
+
+The current exporter can generate placeholder factories, ports, supply nodes,
+railways, and map positions to make a test fixture parseable. Those generated
+values must be labeled as scaffolding until terrain, state ownership, port
+access, graph connectivity, and visual placement have been reviewed.
 
 ## Safe export checklist
 
-- validate every state and province ID before writing map files;
-- place building coordinates on the correct province;
-- give naval structures a valid adjacent sea province where required;
-- ensure supply hubs and railway routes use exported province IDs;
-- check the generated files with the game's `error.log` and `setup.log` after a version upgrade;
-- remove obsolete map files only after confirming the target game version's requirements.
+- resolve every building ID against the selected game's definitions;
+- enforce state-category shared-slot limits after applying user overrides;
+- ensure every province-level building is in the state that owns its province;
+- place every naval building on a coastal province and give it a valid sea link;
+- validate building coordinates against the final province raster and heightmap;
+- validate supply nodes as state-owned land provinces;
+- validate railway count, endpoints, consecutive adjacency, level, and graph
+  components;
+- remap all references after province compaction;
+- run a clean target-version start and inspect `error.log`, `setup.log`, and
+  later AI/naval behavior.
 
 ## Sources
 
-- [HOI4 Map modding](https://hoi4.paradoxwikis.com/Map_modding)
 - [HOI4 Building modding](https://hoi4.paradoxwikis.com/Building_modding)
-- [Map modding reference mirror](https://github.com/cpntodd/HOI4-MCP/blob/main/paradox_wiki/Map%20modding%20-%20Hearts%20of%20Iron%204%20Wiki.md)
+- [HOI4 Map modding](https://hoi4.paradoxwikis.com/Map_modding)
+- [HOI4 Defines](https://hoi4.paradoxwikis.com/Defines)

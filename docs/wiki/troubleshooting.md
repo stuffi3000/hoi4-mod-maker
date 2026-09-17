@@ -1,66 +1,102 @@
-# HOI4 MOD troubleshooting
+# HOI4 MOD troubleshooting and acceptance testing
 
-When a MOD fails to load, start with the first useful error rather than the last message in the log. Parser errors often produce several secondary failures.
+When a MOD fails to load, start with the first useful error rather than the last message. One malformed definition can create a cascade of missing IDs, so the final line is often only a symptom.
 
-## Log files
+## Debug launch and log files
 
-The game normally writes logs under:
+Launch the selected game with the debug options relevant to the failure:
+
+```text
+hoi4.exe -debug -crash_data_log
+```
+
+`-debug` enables additional diagnostics and console/testing behavior. `-crash_data_log` adds crash-read information such as `LastRead`. `LastRead` identifies the last item successfully read; the invalid entry may be immediately after it, so inspect the surrounding file and the first error in `error.log`.
+
+The game normally writes logs below:
 
 ```text
 Documents/Paradox Interactive/Hearts of Iron IV/logs/
 ```
 
-| File | Use |
+| File | Start here for |
 | --- | --- |
-| `error.log` | Parser, asset, definition, and runtime errors |
-| `setup.log` | Map and database setup progress |
-| `game.log` | In-game triggers, effects, and country behavior |
-| `text.log` | Localisation key and text-parser diagnostics |
+| `error.log` | Parser, map, asset, definition, and runtime errors |
+| `exceptions.log` | Exception details; corroborate with the other logs |
+| `setup.log` | Map/database setup and initialization progress |
+| `game.log` | In-game triggers, effects, country behavior, and setup messages |
+| `graphics.log` | Graphics and renderer asset problems |
 | `memory.log` | Memory and loading diagnostics |
-| `exceptions.log` | Exception information; corroborate it with the other logs |
-| `time.log` | Timing information for loading and processing steps |
+| `text.log` | Localization and text-parser diagnostics |
+| `time.log` | Timing information during loading and processing |
 
-Enable the game's crash-data logging option when a crash report with a `LastRead` field is needed. `LastRead` identifies the last item successfully read; the actual invalid entry may be the next item, so inspect the surrounding files as well.
+Move or archive old logs before a test run. A stale log is not evidence that the current export reached the same stage.
 
-## Common map failures
+## Common failures
 
 | Symptom | First checks |
 | --- | --- |
-| Crash while loading the main menu | BMP dimensions, bit depth, palette, DIB header, and `default.map` references |
-| Provinces have wrong terrain or ownership | `definition.csv` colors, row order, province IDs, and state lists |
-| Coastal state or port failure | Province coastline, naval-base position, adjacent sea province, and building data |
-| Supply or railway crash | Valid exported province IDs, state membership, route order, and network levels |
-| Map reaches the menu but gameplay fails | State owners, capitals, strategic-region coverage, OOB references, and scripted scopes |
-| Text appears as a raw key | `l_english:` header, UTF-8 BOM, file path, exact key spelling, and `text.log` |
+| Crash while loading the menu | MOD root, descriptor path, replacement directories, BMP dimensions/bit depth/compression, and `default.map` references |
+| Provinces have wrong terrain or ownership | `definition.csv` colors, province IDs, state lists, continent assignments, and state history |
+| Coastal state, port, or naval base failure | Coastline geometry, `coastal` metadata, port position, adjacent sea province, and `buildings.txt` |
+| Supply or railway failure | Final province/state IDs, railway neighbor order, network levels, supply-node references, and disconnected components |
+| Map reaches the menu but a new game fails | State owners, capitals, strategic-region coverage, OOBs, country tags, and first-tick script errors |
+| Text appears as a raw key | `l_english:` header, UTF-8 BOM, language filename token, exact key spelling, and `text.log` |
+| Empty or missing focus/decision/event UI | Script path, duplicate ID, localization key, icon/sprite definition, and referenced image |
+| A vanilla definition unexpectedly disappears | `replace_path`, load order, dependencies, and whether the MOD actually contains the replacement directory |
 
-## Export validation
+## Map-specific triage
 
-Before launching the game, check that the export contains:
+For a map crash, validate in this order:
 
-- `map/provinces.bmp`, `definition.csv`, `terrain.bmp`, `heightmap.bmp`, and `default.map`;
-- valid `rivers.bmp`, `trees.bmp`, normal-map, colormap, and positions data when the target version requires them;
-- state, country, strategic-region, supply, railway, and adjacency references that use the final exported IDs;
-- `localisation/english/*_l_english.yml` files with a valid header and BOM;
-- a descriptor whose paths and supported version match the installation.
+1. the MOD descriptor points to the intended root and the game version matches the export profile;
+2. `default.map` points to files that exist and uses the target version's key names;
+3. `provinces.bmp`, `definition.csv`, `continent.txt`, and state province lists agree exactly;
+4. height, terrain, river, tree, normal, color-map, and atlas assets satisfy their dimensions and encoding contracts;
+5. state IDs, strategic-region IDs, supply nodes, railways, adjacencies, buildings, ports, and positions use final IDs;
+6. country tags and history are unique and every state has a valid owner/capital for the test scenario;
+7. the map starts, ticks, saves, reloads, and reaches the first gameplay map modes without new errors.
 
-The project's export verifier checks file presence and structural invariants, but it cannot replace a game launch test. Always test the generated MOD with the exact HOI4 version it targets.
+The project's static verifier is useful for deterministic file and reference checks, but it cannot prove that the selected HOI4 executable accepts the export. An engine run with isolated logs is a separate acceptance gate.
+
+## Replacement paths and inherited content
+
+`replace_path` is a common source of apparently unrelated errors. It unloads files directly in the named directory during menu loading; it does not recursively replace every child directory, and it does not change ordinary load order. A full-conversion exporter must either provide a complete replacement directory or leave that directory inherited. Keep the decision in the export manifest and test with dependencies enabled.
+
+When the exporter imports a MOD, distinguish files that are generated, preserved from the source, inherited from vanilla/dependencies, intentionally omitted, or unsupported. An empty compatibility file can be worse than a deliberate omission when the selected version no longer reads that file.
 
 ## Useful console checks
 
-The following commands are useful while diagnosing a loaded game:
+These commands help isolate a loaded-game problem:
 
 | Command | Purpose |
 | --- | --- |
-| `tdebug` | Show state, province, and other debug IDs |
-| `ai` | Toggle AI while isolating AI-triggered failures |
-| `reloadfx all` | Reload visual effects |
-| `reload localization` | Reload localisation files |
+| `tdebug` | Show state, province, country, and other debug IDs |
 | `tag TAG` | Switch the active country |
+| `ai` | Toggle AI while isolating AI-triggered behavior |
+| `reload localization` | Reload localization after editing `.yml` files |
+| `reloadfx all` | Reload visual effects during asset work |
 | `Focus.NoChecks` | Ignore focus prerequisites during testing |
 | `Focus.AutoComplete` | Complete focuses immediately during testing |
+
+Use console commands only to diagnose a reproducible test case; they do not replace a clean new-game acceptance run.
+
+## Acceptance run
+
+For a generated MOD, record the game executable/profile and run an isolated test with:
+
+- a fresh log directory and unique test country tags;
+- the main menu and new-game setup;
+- a 1936 start (or the selected bookmark) and at least 30 days of ticking;
+- map modes, land/naval/air interactions, supply, and at least one generated script path;
+- save, reload, and additional ticking;
+- a final scan of `error.log`, `exceptions.log`, `text.log`, and relevant setup/game logs.
+
+Record the result in the export manifest. “The menu opened” is a useful milestone, not proof of a playable MOD.
 
 ## Sources
 
 - [HOI4 Troubleshooting](https://hoi4.paradoxwikis.com/Troubleshooting)
+- [HOI4 Modding](https://hoi4.paradoxwikis.com/Modding)
 - [HOI4 Map modding](https://hoi4.paradoxwikis.com/Map_modding)
 - [HOI4 Localisation](https://hoi4.paradoxwikis.com/Localisation)
+- [Troubleshooting reference mirror](https://github.com/thelight0211/hoi4-wiki/blob/main/Troubleshooting%20-%20Hearts%20of%20Iron%204%20Wiki.md)
