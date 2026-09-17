@@ -582,6 +582,9 @@ Add a test that exports the same synthetic project twice and compares the comple
 - [x] **M3.2a — shared report foundation:** immutable `ValidationReport` and legacy readiness/verifier adapters are implemented in `domain/validation.py` and `services/validation_service.py`.
 - [x] **M3.2b — readiness/export-service clients:** make live readiness and pre-write export checks consume the shared report while preserving legacy return compatibility.
 - [ ] **M3.2c — artifact/CLI/UI clients:** make artifact verification, export progress/dialog, and CLI reports consume the shared report.
+  - [x] **M3.2c1 — artifact verifier:** add the quiet single-pass `ValidationReport` adapter while preserving `verify_quiet()` and `verify_all()` compatibility.
+  - [ ] **M3.2c2 — CLI reports:** route CLI human-readable/JSON validation output through the shared report without changing exit-code behavior.
+  - [ ] **M3.2c3 — export UI:** route export progress/result verification through the shared report without broadening the UI scope.
 - [ ] **M3.3 — validation suites:** implement and register the raster, terrain/river/mask, geography/reference, logistics, placement, and asset/integration suites.
 - [ ] **M3.4 — foundation manifest:** extend the manifest with path-independent identity, full inventory/provenance, validation, acceptance, and lock metadata.
 - [ ] **M3.5 — deterministic output:** enforce and test byte-identical foundation output for identical snapshots and options.

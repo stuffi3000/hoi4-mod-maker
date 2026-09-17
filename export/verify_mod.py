@@ -8,6 +8,12 @@ import struct
 import sys
 import re
 from collections import Counter
+from typing import TYPE_CHECKING
+
+from services.validation_service import ARTIFACT_SOURCE, report_from_verifier_messages
+
+if TYPE_CHECKING:
+    from domain.validation import ValidationReport
 
 
 _VALID_STATE_CATEGORIES = frozenset({
@@ -72,12 +78,28 @@ class ModVerifier:
         return len(self.errors) == 0
 
     @classmethod
+    def _run_quiet_verifier(cls, mod_dir: str, *, profile=None, expected_dimensions: tuple[int, int] | None = None, game_target=None):
+        """Run all checks once without printing and return the verifier."""
+        verifier = cls(mod_dir, quiet=True, profile=profile, expected_dimensions=expected_dimensions, game_target=game_target)
+        verifier._run_all_checks()
+        return verifier
+
+    @classmethod
     def verify_quiet(cls, mod_dir: str, *, profile=None, expected_dimensions: tuple[int, int] | None = None, game_target=None) -> tuple[list[str], list[str]]:
         """Runs all checks silently, returning (errors, warnings).
         Does not print anything, suitable for UI calls."""
-        v = cls(mod_dir, quiet=True, profile=profile, expected_dimensions=expected_dimensions, game_target=game_target)
-        v._run_all_checks()
-        return v.errors, v.warnings
+        verifier = cls._run_quiet_verifier(mod_dir, profile=profile, expected_dimensions=expected_dimensions, game_target=game_target)
+        return verifier.errors, verifier.warnings
+
+    def to_report(self, *, context: str = "draft_preview", source: str = ARTIFACT_SOURCE) -> "ValidationReport":
+        """Adapt collected errors/warnings to the shared validation report."""
+        return report_from_verifier_messages(self.errors, self.warnings, source=source, context=context)
+
+    @classmethod
+    def verify_report(cls, mod_dir: str, *, profile=None, expected_dimensions: tuple[int, int] | None = None, game_target=None, context: str = "draft_preview", source: str = ARTIFACT_SOURCE) -> "ValidationReport":
+        """Run all checks once without printing and return the shared report."""
+        verifier = cls._run_quiet_verifier(mod_dir, profile=profile, expected_dimensions=expected_dimensions, game_target=game_target)
+        return verifier.to_report(context=context, source=source)
 
     def _log(self, msg: str) -> None:
         if not self._quiet:
