@@ -586,6 +586,12 @@ Add a test that exports the same synthetic project twice and compares the comple
   - [x] **M3.2c2 — CLI reports:** route CLI human-readable/JSON validation output through the shared report without changing exit-code behavior.
   - [x] **M3.2c3 — export UI:** route export progress/result verification through the shared report without broadening the UI scope.
 - [ ] **M3.3 — validation suites:** implement and register the raster, terrain/river/mask, geography/reference, logistics, placement, and asset/integration suites.
+  - [ ] **M3.3a — raster/definition:** core raster dimensions, definition coverage, IDs, surface classification, connectivity, and bounding-box findings.
+  - [ ] **M3.3b — terrain/river/mask:** terrain indices/surface agreement plus river and layer-mask shape/value findings.
+  - [ ] **M3.3c — geography/reference:** state, region, continent, and cross-reference findings.
+  - [ ] **M3.3d — adjacency/logistics:** adjacency, railway, supply-node, port, and graph findings.
+  - [ ] **M3.3e — placement:** coordinate, building, port, collision, and weather-position findings.
+  - [ ] **M3.3f — asset/integration:** asset disposition/format, descriptor, tag-collision, and missing-reference findings.
 - [ ] **M3.4 — foundation manifest:** extend the manifest with path-independent identity, full inventory/provenance, validation, acceptance, and lock metadata.
 - [ ] **M3.5 — deterministic output:** enforce and test byte-identical foundation output for identical snapshots and options.
 
