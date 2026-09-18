@@ -126,6 +126,7 @@ class ExportWorker(QThread):
             from services.export_planner import format_plan_summary, plan_export_from_project
             from services.export_service import ExportReport, export_planned_mod
             from services.game_profile_service import load_profile_for_target
+            from services.validation_service import report_from_findings
 
             self.game_target = self.project.resolve_game_target()
             self.profile = load_profile_for_target(self.game_target)
@@ -156,12 +157,17 @@ class ExportWorker(QThread):
                 "countries": len(getattr(plan.snapshot.country_mgr, "countries", {}) or {}),
                 "files": len(self.export_result.written_files),
             }
+            try:
+                plan_report = report_from_findings(plan.findings)
+            except Exception:
+                plan_report = None
             report = ExportReport(
                 warnings=[note.message for note in plan.findings
                           if note.severity in ("warning", "error", "blocker")],
                 fixed=["[%s] %s" % (repair.safety, repair.summary)
                        for repair in plan.applied_repairs],
                 stats=stats,
+                validation_report=plan_report,
             )
             self.finished.emit(report)
         except Exception as e:
@@ -532,15 +538,17 @@ class ExportDialog(QDialog):
         self._progress_bar.setVisible(False)
         self._progress_label.setVisible(False)
 
-        # Run MOD verification
+        # Run MOD verification once as the shared report (M3.2c3).
         from export.verify_mod import ModVerifier
         worker = self._worker
-        verify_errors, verify_warnings = ModVerifier.verify_quiet(
+        validation_report = ModVerifier.verify_report(
             self._output_dir,
             profile=getattr(worker, "profile", None),
             expected_dimensions=getattr(worker, "dimensions", None),
             game_target=getattr(worker, "game_target", None),
         )
+        verify_errors = [finding.message for finding in validation_report.errors]
+        verify_warnings = [finding.message for finding in validation_report.warnings]
 
         # Build result text
         lines = [tr("export_result_success").format(path=self._output_dir)]
