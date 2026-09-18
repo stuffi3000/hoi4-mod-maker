@@ -778,6 +778,7 @@ Allow one or more authored/generated weather positions per strategic region, wit
 - [x] **M5.2a — pure deterministic proposal core:** replaced the implicit centroid-only calculation with a side-effect-free, seeded candidate scorer that considers province interior distance, coast distance, optional height/slope, land surface, and slot separation. It returns explicit diagnostics for sea/unknown/undersized provinces and emits only `generated`/`unreviewed` records. Committed as `1667518`.
 - [x] **M5.2b — port-aware proposal core:** added deterministic port proposals that require the explicitly requested adjacent sea province, validate land/sea surfaces and four-neighbor access, and emit `generated`/`unreviewed` port records with explicit diagnostics. Committed as `092bf93`.
 - [x] **M5.2c — explicit proposal acceptance workflow:** added deterministic slot/port ingestion reports that preserve `generated`/`unreviewed` status, protect authored/reviewed records by default, allow replacement only for unreviewed generated records when explicitly requested, and provide a separate selected-record acceptance helper. Malformed pre-reviewed proposals are rejected before manager mutation. Committed as `857d285`.
+- [x] **M5.2d — foundation placement review gate:** added manager-backed completeness/review validation that requires all six reviewed/accepted slots for land provinces and blocks frozen/accepted foundations when records would be omitted by the foundation writers, while preserving draft/candidate warnings and legacy callers without a placement manager. Committed as `5a037e0`.
 - [ ] **M5.2 — proposal generation integration:** connect the proposal core to port-aware placement requests and the export/editor acceptance flow; no silent fallback acceptance.
 - [ ] **M5.3 — placement editor and overlay:** add selection/editing and collision/provenance overlays.
 - [x] **M5.4 — foundation building output:** profile-aware position/building writers now omit incomplete or unreviewed foundation records, preserve reviewed transforms and exact port sea references, and retain clearly marked compatibility placeholders only for acceptance/scaffold/legacy profiles. Legacy direct writer signatures remain positional-compatible. Committed as `ba8a207`.
@@ -806,7 +807,14 @@ Allow one or more authored/generated weather positions per strategic region, wit
 
 - **Completed:** pure land and port proposal results can now be ingested into `MapPlacementManager` without changing their generated/unreviewed status. Existing authored/reviewed records are protected by default; replacing an unreviewed generated record requires an explicit flag. A separate helper accepts only explicitly selected stored keys/ports, and invalid pre-reviewed proposal inputs fail before manager mutation.
 - **Evidence:** proposal generator, port proposal, workflow, manager, persistence, and M3.3e placement tests passed; the workflow reports are stable and preserve float transforms and exact sea references.
-- **Next controlled slice:** make frozen foundation planning block missing, incomplete, or unreviewed placement records while retaining draft-preview compatibility.
+- **Evidence:** proposal generator, port proposal, workflow, manager, persistence, M3.3e placement, validator-registry, and export-planner tests passed; the workflow reports are stable and preserve float transforms and exact sea references.
+- **Next controlled slice:** add weather-position writing/spacing validation, then expose the accepted placement contract through the editor and overlay.
+
+### M5 checkpoint — foundation placement review gate
+
+- **Completed:** `validate_manager_placement_completeness` now checks the placement manager without mutating it, requires six reviewed/accepted slots for every land province, ignores sea-only provinces, and reports unreviewed building/port/weather records that foundation writers would omit. The foundation validator registry and planner use the gate; draft/candidate runs warn, while frozen/accepted runs block.
+- **Evidence:** focused M5 gate, M3.3e, registry, and planner tests passed, including malformed duck-typed records, deterministic findings, no input mutation, severity transitions, and manager-less legacy compatibility.
+- **Next controlled slice:** implement authored/generated weather positions with explicit review and spacing/containment validation.
 
 ## M6 — graphics and asset-resolution pipeline
 
