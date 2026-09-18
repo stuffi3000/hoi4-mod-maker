@@ -2088,6 +2088,106 @@ def canonical_manifest_json(manifest: dict) -> str:
     return json.dumps(canonical_manifest_dict(manifest), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
 
+def canonical_lock_dict(lock: dict) -> dict:
+    """Return the stable lock content without volatile metadata."""
+    if not isinstance(lock, dict):
+        return {}
+    try:
+        data = copy.deepcopy(dict(lock))
+    except Exception:
+        data = dict(lock)
+    data.pop("metadata", None)
+    data.pop("created_at", None)
+    return data
+
+
+def canonical_lock_json(lock: dict) -> str:
+    """Serialize lock compatibility content without volatile metadata."""
+    return json.dumps(canonical_lock_dict(lock), ensure_ascii=False,
+                      sort_keys=True, separators=(",", ":"))
+
+
+def _deterministic_report_bytes(raw: bytes) -> bytes:
+    """Normalize only the generated timestamp line in a text report."""
+    try:
+        text = raw.decode("utf-8")
+    except (AttributeError, UnicodeDecodeError):
+        return raw
+    normalized = []
+    for line in text.splitlines(keepends=True):
+        ending = ""
+        body = line
+        if body.endswith("\r\n"):
+            body, ending = body[:-2], "\r\n"
+        elif body.endswith(("\n", "\r")):
+            body, ending = body[:-1], body[-1]
+        if body.startswith("Created: "):
+            separator = body.find(" | ")
+            suffix = body[separator:] if separator >= 0 else ""
+            body = "Created: <volatile>" + suffix
+        normalized.append(body + ending)
+    return "".join(normalized).encode("utf-8")
+
+
+def _deterministic_file_bytes(rel_path: str, raw: bytes) -> bytes:
+    """Return comparison bytes while preserving every substantive artifact."""
+    normalized_path = str(rel_path).replace("\\", "/")
+    if normalized_path == "foundation_manifest.json":
+        try:
+            return canonical_manifest_json(json.loads(raw.decode("utf-8-sig"))).encode("utf-8")
+        except (UnicodeDecodeError, json.JSONDecodeError, TypeError, ValueError):
+            return raw
+    if normalized_path == "foundation.lock.json":
+        try:
+            return canonical_lock_json(json.loads(raw.decode("utf-8-sig"))).encode("utf-8")
+        except (UnicodeDecodeError, json.JSONDecodeError, TypeError, ValueError):
+            return raw
+    if normalized_path == "foundation_report.md":
+        return _deterministic_report_bytes(raw)
+    return raw
+
+
+def collect_deterministic_inventory(output_dir: str) -> list[dict]:
+    """Collect all output files with stable comparison sizes and hashes.
+
+    Manifest, lock, and report metadata timestamps are normalized only in the
+    comparison bytes. Files on disk are never changed, and every file remains
+    represented in the returned path/size/hash inventory.
+    """
+    entries = []
+    for root, dirs, files in os.walk(output_dir):
+        dirs.sort()
+        for name in sorted(files):
+            full = os.path.join(root, name)
+            rel_path = os.path.relpath(full, output_dir).replace(os.sep, "/")
+            needs_normalization = rel_path in {
+                "foundation_manifest.json",
+                "foundation.lock.json",
+                "foundation_report.md",
+            }
+            if not needs_normalization:
+                try:
+                    size = os.path.getsize(full)
+                    digest = hash_file(full)
+                except OSError:
+                    continue
+                entries.append({"rel_path": rel_path, "size": size, "sha256": digest})
+                continue
+            try:
+                with open(full, "rb") as handle:
+                    raw = handle.read()
+            except OSError:
+                continue
+            comparison_bytes = _deterministic_file_bytes(rel_path, raw)
+            entries.append({
+                "rel_path": rel_path,
+                "size": len(comparison_bytes),
+                "sha256": hashlib.sha256(comparison_bytes).hexdigest(),
+            })
+    entries.sort(key=lambda item: item["rel_path"])
+    return entries
+
+
 def manifest_identity_hash(manifest: dict) -> str:
     if isinstance(manifest, dict):
         identity = manifest.get("identity") or {}
