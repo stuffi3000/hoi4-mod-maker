@@ -60,17 +60,22 @@ from typing import Iterable as TypingIterable
 import numpy as np
 from scipy.ndimage import distance_transform_edt as edt_distance
 
+from collections.abc import Mapping as CollectionsMapping
 from data.constants import TILE_LAND
 from data.constants import TILE_SEA
 from data.constants import TILE_LAKE
 from domain.managers.map_placement import POSITION_SLOT_COUNT
+from domain.managers.map_placement import PortPlacement
 from domain.managers.map_placement import ProvincePositionSlot
 
 __all__ = [
     "DIAGNOSTIC_CODES",
+    "PORT_DIAGNOSTIC_CODES",
     "PlacementDiagnostic",
     "PlacementProposalResult",
+    "PortProposalResult",
     "generate_placement_proposals",
+    "generate_port_proposals",
 ]
 
 DIAGNOSTIC_CODES = (
@@ -541,5 +546,441 @@ def generate_placement_proposals(
 
     result = PlacementProposalResult(
         slots=result_slots, diagnostics=result_diagnostics
+    )
+    return result
+
+
+PORT_DIAGNOSTIC_CODES = (
+    "unknown_province",
+    "unknown_sea",
+    "non_land",
+    "non_sea",
+    "missing_mapping",
+    "invalid_mapping",
+    "no_adjacency",
+)
+
+
+@dataclass
+class PortProposalResult:
+    """Small documented result type for port proposal generation.
+
+    Attributes:
+        ports: PortPlacement records with provenance generated and review
+            status unreviewed, sorted by province id. At most one record
+            per land province is ever emitted.
+        diagnostics: Explicit absence signals sorted by province id, then
+            code, then message. Empty when every requested land province
+            received a port proposal.
+    """
+
+    ports: list = dataclass_field(default_factory=list)
+    diagnostics: list = dataclass_field(default_factory=list)
+
+    def __post_init__(self):
+        ordered_ports = sorted(
+            list(self.ports),
+            key=lambda record: int(record.province_id),
+        )
+        ordered_diagnostics = sorted(
+            list(self.diagnostics),
+            key=lambda diag: (
+                int(diag.province_id),
+                str(diag.code),
+                str(diag.message),
+            ),
+        )
+        self.ports = ordered_ports
+        self.diagnostics = ordered_diagnostics
+
+    def ports_for_province(self, province_id: int) -> list:
+        """Return port proposals for one province in stable order."""
+        wanted = int(province_id)
+        return [
+            record
+            for record in self.ports
+            if int(record.province_id) == wanted
+        ]
+
+    def diagnostics_for_province(self, province_id: int) -> list:
+        """Return diagnostics for one province in stable order."""
+        wanted = int(province_id)
+        return [
+            diag
+            for diag in self.diagnostics
+            if int(diag.province_id) == wanted
+        ]
+
+
+def generate_port_proposals(
+    province_map: np.ndarray,
+    tile_map: np.ndarray,
+    sea_mapping: CollectionsMapping,
+    height_map: np.ndarray | None = None,
+    province_ids: TypingIterable[int] | None = None,
+    *,
+    seed: int = 0,
+    border_weight: float = 1.0,
+    coast_weight: float = 1.0,
+    height_weight: float = 0.5,
+    slope_weight: float = 1.0,
+) -> PortProposalResult:
+    """Generate deterministic port and naval-base spawn proposals.
+
+    Pure proposal step that suggests one PortPlacement per coastal land
+    province from in-memory rasters without touching managers, exports,
+    services, views, the filesystem, the user interface, or any game
+    installation. Inputs are never mutated and no global state is used.
+
+    Args:
+        province_map: Two dimensional integer array of province ids where
+            zero means unassigned. Actual dimensions are used, no global
+            map size is assumed.
+        tile_map: Two dimensional integer array with the same shape as
+            province_map holding tile surface types. Only tiles equal to
+            land can host a port, and only tiles equal to sea count as
+            sea surface for adjacency.
+        sea_mapping: Mapping of land province id to intended sea province
+            id. The mapped sea province is always used exactly as given,
+            this function never substitutes a different sea province.
+        height_map: Optional two dimensional numeric array with the same
+            shape. When supplied, local height closeness to the legal
+            candidate median and local slope from central differences
+            contribute to scoring, and output height is the selected
+            local sample as a finite float.
+        province_ids: Optional iterable of land province ids to propose
+            for. Defaults to the sorted positive integer keys of
+            sea_mapping. Order of this iterable does not affect output
+            order.
+        seed: Deterministic integer seed affecting only tie breaking
+            between exactly equal scores through a stable integer hash
+            of seed, province id, row, and column.
+        border_weight: Weight for interior distance from the province
+            border. Must be finite and at least zero. Larger interior
+            distance is preferred among legal coastal pixels.
+        coast_weight: Weight for distance from the nearest sea or lake
+            tile. Must be finite and at least zero. Larger distance is
+            preferred among legal coastal pixels, and the component is
+            neutral when the map holds no water.
+        height_weight: Weight for height closeness within the legal
+            coastal set, used only when a height map is supplied. Must
+            be finite and at least zero.
+        slope_weight: Weight for flatness within the legal coastal set,
+            used only when a height map is supplied. Must be finite and
+            at least zero.
+
+    Returns:
+        PortProposalResult with ports sorted by province id and
+        diagnostics sorted by province id, code, and message. Every port
+        uses provenance generated with review status unreviewed,
+        rotation 0.0, fractional pixel-center coordinates with finite
+        floats, local height as a finite float with non finite samples
+        replaced by 0.0, and the exact mapped sea province. At most one
+        port per land province is emitted, so centroids are never
+        repeated.
+
+    Absence handling:
+        A port is emitted only when the land province exists, the mapped
+        sea province exists, the sea province holds at least one sea
+        surface tile, the land province holds at least one land tile,
+        and at least one land pixel of the land province is 4-neighbor
+        adjacent to a tile that is both part of the exact mapped sea
+        province and a sea surface tile. Every other case produces no
+        port and exactly one diagnostic for the land province. Missing
+        mapping entries produce missing_mapping. Non positive integer
+        mapping values produce invalid_mapping. Absent land ids produce
+        unknown_province. Absent sea ids produce unknown_sea. Land
+        provinces without land pixels produce non_land. Sea provinces
+        without sea surface tiles produce non_sea. Land provinces with
+        no exact adjacency produce no_adjacency, and no fallback sea is
+        ever chosen. Diagnostics carry the requesting land province id
+        and name both ids in the message.
+    """
+    province_arr = np.asarray(province_map)
+    tile_arr = np.asarray(tile_map)
+    if province_arr.ndim != 2 or tile_arr.ndim != 2:
+        raise ValueError("province_map and tile_map must be two dimensional arrays")
+    if province_arr.shape != tile_arr.shape:
+        raise ValueError("province_map and tile_map must share the same shape")
+    num_rows = int(province_arr.shape[0])
+    num_cols = int(province_arr.shape[1])
+    if num_rows <= 0 or num_cols <= 0:
+        raise ValueError("province_map and tile_map must be non empty")
+    if not isinstance(sea_mapping, CollectionsMapping):
+        raise ValueError("sea_mapping must be a mapping of land province to sea province")
+
+    seed_int = _coerce_seed(seed)
+    seed_u32 = int(seed_int) & int(0xFFFFFFFF)
+    border_importance = _coerce_nonnegative_float(border_weight, "border_weight")
+    coast_importance = _coerce_nonnegative_float(coast_weight, "coast_weight")
+    height_importance = _coerce_nonnegative_float(height_weight, "height_weight")
+    slope_importance = _coerce_nonnegative_float(slope_weight, "slope_weight")
+
+    flat_provinces = province_arr.ravel()
+    present_ids: set[int] = set()
+    for raw_pid in np.unique(flat_provinces):
+        pid_int = int(raw_pid)
+        if pid_int > 0:
+            present_ids.add(pid_int)
+
+    mapping_snapshot = dict(sea_mapping)
+    clean_mapping: dict[int, object] = {}
+    for raw_key, raw_value in mapping_snapshot.items():
+        if isinstance(raw_key, bool):
+            continue
+        try:
+            key_int = operator_module.index(raw_key)
+        except TypeError:
+            continue
+        key_int = int(key_int)
+        if key_int <= 0:
+            continue
+        clean_mapping[int(key_int)] = raw_value
+
+    if province_ids is None:
+        ordered_pids = sorted(clean_mapping.keys())
+    else:
+        ordered_pids = _coerce_province_list(province_ids, present_ids)
+
+    safe_height: np.ndarray | None = None
+    slope_field: np.ndarray | None = None
+    raw_height: np.ndarray | None = None
+    if height_map is not None:
+        raw_height = np.asarray(height_map, dtype=np.float64)
+        if raw_height.shape != province_arr.shape:
+            raise ValueError("height_map must share the shape of province_map")
+        finite_mask = np.isfinite(raw_height)
+        if np.any(finite_mask):
+            fill_value = float(np.median(raw_height[finite_mask]))
+        else:
+            fill_value = float(0.0)
+        safe_height = np.where(finite_mask, raw_height, fill_value)
+        grad_rows = np.zeros_like(safe_height, dtype=np.float64)
+        grad_cols = np.zeros_like(safe_height, dtype=np.float64)
+        if num_rows > 1:
+            grad_rows = np.asarray(
+                np.gradient(safe_height, axis=0), dtype=np.float64
+            )
+        if num_cols > 1:
+            grad_cols = np.asarray(
+                np.gradient(safe_height, axis=1), dtype=np.float64
+            )
+        slope_field = np.hypot(grad_rows, grad_cols)
+
+    water_mask = (tile_arr == int(TILE_SEA)) | (tile_arr == int(TILE_LAKE))
+    if bool(np.any(water_mask)):
+        coast_field = np.asarray(edt_distance(~water_mask), dtype=np.float64)
+    else:
+        coast_field = np.full(
+            province_arr.shape, float(max(num_rows, num_cols)), dtype=np.float64
+        )
+
+    land_mask_global = tile_arr == int(TILE_LAND)
+    result_ports: list[PortPlacement] = []
+    result_diagnostics: list[PlacementDiagnostic] = []
+
+    for province_id in ordered_pids:
+        if province_id not in present_ids:
+            result_diagnostics.append(
+                PlacementDiagnostic(
+                    province_id=int(province_id),
+                    code="unknown_province",
+                    message=(
+                        f"province {int(province_id)} is absent from "
+                        "province_map, no port proposal generated"
+                    ),
+                )
+            )
+            continue
+        if province_id not in clean_mapping:
+            result_diagnostics.append(
+                PlacementDiagnostic(
+                    province_id=int(province_id),
+                    code="missing_mapping",
+                    message=(
+                        f"province {int(province_id)} has no intended sea "
+                        "province in sea_mapping, no port proposal generated"
+                    ),
+                )
+            )
+            continue
+        raw_sea = clean_mapping[int(province_id)]
+        if isinstance(raw_sea, bool):
+            result_diagnostics.append(
+                PlacementDiagnostic(
+                    province_id=int(province_id),
+                    code="invalid_mapping",
+                    message=(
+                        f"province {int(province_id)} maps to invalid sea "
+                        f"province {raw_sea!r}, expected a positive integer"
+                    ),
+                )
+            )
+            continue
+        try:
+            sea_candidate = operator_module.index(raw_sea)
+        except TypeError:
+            result_diagnostics.append(
+                PlacementDiagnostic(
+                    province_id=int(province_id),
+                    code="invalid_mapping",
+                    message=(
+                        f"province {int(province_id)} maps to invalid sea "
+                        f"province {raw_sea!r}, expected a positive integer"
+                    ),
+                )
+            )
+            continue
+        sea_candidate = int(sea_candidate)
+        if sea_candidate <= 0:
+            result_diagnostics.append(
+                PlacementDiagnostic(
+                    province_id=int(province_id),
+                    code="invalid_mapping",
+                    message=(
+                        f"province {int(province_id)} maps to invalid sea "
+                        f"province {raw_sea!r}, expected a positive integer"
+                    ),
+                )
+            )
+            continue
+        sea_id = int(sea_candidate)
+        if sea_id not in present_ids:
+            result_diagnostics.append(
+                PlacementDiagnostic(
+                    province_id=int(province_id),
+                    code="unknown_sea",
+                    message=(
+                        f"province {int(province_id)} maps to sea province "
+                        f"{int(sea_id)} absent from province_map, no port "
+                        "proposal generated"
+                    ),
+                )
+            )
+            continue
+        sea_surface_mask = (province_arr == int(sea_id)) & (
+            tile_arr == int(TILE_SEA)
+        )
+        if not bool(np.any(sea_surface_mask)):
+            result_diagnostics.append(
+                PlacementDiagnostic(
+                    province_id=int(province_id),
+                    code="non_sea",
+                    message=(
+                        f"province {int(province_id)} maps to sea province "
+                        f"{int(sea_id)} with no sea surface tiles, no port "
+                        "proposal generated"
+                    ),
+                )
+            )
+            continue
+        province_mask = province_arr == int(province_id)
+        land_mask = province_mask & land_mask_global
+        if not bool(np.any(land_mask)):
+            result_diagnostics.append(
+                PlacementDiagnostic(
+                    province_id=int(province_id),
+                    code="non_land",
+                    message=(
+                        f"province {int(province_id)} has no land pixels, "
+                        "sea and lake and non land provinces are skipped"
+                    ),
+                )
+            )
+            continue
+        adjacent_to_sea = np.zeros(province_arr.shape, dtype=bool)
+        adjacent_to_sea[1:, :] |= sea_surface_mask[:-1, :]
+        adjacent_to_sea[:-1, :] |= sea_surface_mask[1:, :]
+        adjacent_to_sea[:, 1:] |= sea_surface_mask[:, :-1]
+        adjacent_to_sea[:, :-1] |= sea_surface_mask[:, 1:]
+        legal_mask = land_mask & adjacent_to_sea
+        legal_rows, legal_cols = np.nonzero(legal_mask)
+        if legal_rows.size == 0:
+            result_diagnostics.append(
+                PlacementDiagnostic(
+                    province_id=int(province_id),
+                    code="no_adjacency",
+                    message=(
+                        f"province {int(province_id)} has no land pixel "
+                        "4-neighbor adjacent to sea province "
+                        f"{int(sea_id)} on a sea surface tile, no fallback "
+                        "sea was chosen"
+                    ),
+                )
+            )
+            continue
+        prov_rows, prov_cols = np.nonzero(province_mask)
+        min_row = int(prov_rows.min())
+        max_row = int(prov_rows.max())
+        min_col = int(prov_cols.min())
+        max_col = int(prov_cols.max())
+        box_top = max(0, min_row - 1)
+        box_bottom = min(num_rows, max_row + 2)
+        box_left = max(0, min_col - 1)
+        box_right = min(num_cols, max_col + 2)
+        box_mask = province_arr[box_top:box_bottom, box_left:box_right] == int(
+            province_id
+        )
+        padded = np.zeros(
+            (int(box_mask.shape[0]) + 2, int(box_mask.shape[1]) + 2),
+            dtype=bool,
+        )
+        padded[1:-1, 1:-1] = box_mask
+        interior_box = np.asarray(edt_distance(padded), dtype=np.float64)
+        interior_values = interior_box[
+            (legal_rows - box_top + 1), (legal_cols - box_left + 1)
+        ].astype(np.float64, copy=False)
+        coast_values = coast_field[legal_rows, legal_cols].astype(
+            np.float64, copy=False
+        )
+        interior_norm = _normalize_higher(interior_values)
+        coast_norm = _normalize_higher(coast_values)
+        total_score = (
+            border_importance * interior_norm + coast_importance * coast_norm
+        )
+        if safe_height is not None and slope_field is not None:
+            height_values = safe_height[legal_rows, legal_cols].astype(
+                np.float64, copy=False
+            )
+            slope_values = slope_field[legal_rows, legal_cols].astype(
+                np.float64, copy=False
+            )
+            height_norm = _normalize_closeness(height_values)
+            slope_norm = _normalize_lower(slope_values)
+            total_score = (
+                total_score
+                + height_importance * height_norm
+                + slope_importance * slope_norm
+            )
+        tie_values = _tiebreak_keys(seed_u32, province_id, legal_rows, legal_cols)
+        sort_order = np.lexsort((tie_values, -total_score))
+        best_pos = int(sort_order[0])
+        best_row = int(legal_rows[best_pos])
+        best_col = int(legal_cols[best_pos])
+        if raw_height is not None:
+            raw_value = float(raw_height[best_row, best_col])
+            if math_isfinite(raw_value):
+                best_height = float(raw_value)
+            else:
+                best_height = float(0.0)
+        else:
+            best_height = float(0.0)
+        pos_x = float(best_col) + float(0.5)
+        pos_y = float(best_row) + float(0.5)
+        result_ports.append(
+            PortPlacement(
+                province_id=int(province_id),
+                x=float(pos_x),
+                y=float(pos_y),
+                rotation=float(0.0),
+                height=float(best_height),
+                sea_province=int(sea_id),
+                provenance="generated",
+                review_status="unreviewed",
+            )
+        )
+
+    result = PortProposalResult(
+        ports=result_ports, diagnostics=result_diagnostics
     )
     return result
