@@ -73,6 +73,8 @@ MANIFEST_SCHEMA = "foundation-manifest/3.4"
 MANIFEST_VERSION = "3.4"
 MANIFEST_GENERATOR = "hoi4-mod-maker/export_manifest"
 IDENTITY_HASH_ALGORITHM = "sha256-canonical-json-v1"
+LOCK_SCHEMA = "foundation-lock/3.4"
+LOCK_VERSION = "3.4"
 
 CRITICAL_ARRAYS = ("tile", "province", "terrain", "height", "river")
 MANAGER_KEYS = (
@@ -2134,18 +2136,154 @@ def write_report(output_dir: str, plan, written_files: list, manifest_path: str,
 
 def write_lock_file(output_dir: str, plan, lock_name: str = "foundation.lock.json") -> str:
     snapshot = getattr(plan, "snapshot", None)
+    try:
+        manifest = build_manifest_dict(plan, [])
+    except Exception:
+        manifest = {}
+    if not isinstance(manifest, dict):
+        manifest = {}
+    try:
+        metadata_tool = (manifest.get("metadata") or {}).get("tool_version") or _tool_version()
+    except Exception:
+        metadata_tool = _tool_version()
+    try:
+        manifest_identity = manifest.get("identity") or {}
+        if not isinstance(manifest_identity, dict):
+            manifest_identity = {}
+        identity_hash = manifest_identity.get("identity_hash", "")
+        identity_algorithm = manifest_identity.get("algorithm", IDENTITY_HASH_ALGORITHM)
+        if not isinstance(identity_hash, str):
+            identity_hash = ""
+        if not isinstance(identity_algorithm, str) or not identity_algorithm:
+            identity_algorithm = IDENTITY_HASH_ALGORITHM
+    except Exception:
+        identity_hash = ""
+        identity_algorithm = IDENTITY_HASH_ALGORITHM
+    try:
+        profile_name = manifest.get("profile", getattr(plan, "profile_name", ""))
+    except Exception:
+        try:
+            profile_name = getattr(plan, "profile_name", "")
+        except Exception:
+            profile_name = ""
+    try:
+        lifecycle_name = manifest.get("lifecycle", getattr(plan, "lifecycle", "draft"))
+    except Exception:
+        try:
+            lifecycle_name = getattr(plan, "lifecycle", "draft")
+        except Exception:
+            lifecycle_name = "draft"
+    try:
+        project = manifest.get("project", None)
+        if not isinstance(project, dict):
+            project = _portable_project(snapshot)
+    except Exception:
+        try:
+            project = _portable_project(snapshot)
+        except Exception:
+            project = {"schema_version": None, "profile_id": None, "generator_version": None}
+    try:
+        game_profile_id = manifest.get("game_profile", None)
+        if game_profile_id is None:
+            game_profile = getattr(plan, "game_profile", None)
+            if isinstance(game_profile, dict):
+                game_profile_id = game_profile.get("profile_id")
+            elif isinstance(game_profile, str):
+                game_profile_id = game_profile
+            elif game_profile is not None:
+                try:
+                    game_profile_id = getattr(game_profile, "profile_id", None)
+                except Exception:
+                    game_profile_id = None
+    except Exception:
+        game_profile_id = None
+    try:
+        detail = manifest.get("game_profile_detail", None)
+        if detail is None:
+            detail = _game_profile_detail(getattr(plan, "game_profile", None))
+    except Exception:
+        detail = None
+    try:
+        target_node = manifest.get("target", None)
+        target_identity = None
+        if isinstance(target_node, dict):
+            inner = target_node.get("identity")
+            if isinstance(inner, dict):
+                target_identity = dict(inner)
+        if target_identity is None:
+            target_identity = _portable_target_identity(getattr(plan, "game_target", None), getattr(plan, "game_profile", None), snapshot)
+    except Exception:
+        try:
+            target_identity = _portable_target_identity(getattr(plan, "game_target", None), getattr(plan, "game_profile", None), snapshot)
+        except Exception:
+            target_identity = {key: None for key in PORTABLE_TARGET_KEYS}
+            target_identity["game_profile"] = None
+    if not isinstance(target_identity, dict):
+        try:
+            target_identity = _portable_target_identity(getattr(plan, "game_target", None), getattr(plan, "game_profile", None), snapshot)
+        except Exception:
+            target_identity = {key: None for key in PORTABLE_TARGET_KEYS}
+            target_identity["game_profile"] = None
+    try:
+        fingerprint = manifest.get("snapshot_fingerprint", "")
+        if not isinstance(fingerprint, str):
+            fingerprint = getattr(snapshot, "fingerprint", "") if snapshot is not None else ""
+    except Exception:
+        try:
+            fingerprint = getattr(snapshot, "fingerprint", "") if snapshot is not None else ""
+        except Exception:
+            fingerprint = ""
+    try:
+        size = manifest.get("map_size", None)
+        if not isinstance(size, dict):
+            if snapshot is not None:
+                try:
+                    size = {"width": getattr(snapshot, "width", 0), "height": getattr(snapshot, "height", 0)}
+                except Exception:
+                    size = {}
+            else:
+                size = {}
+    except Exception:
+        size = {}
+    try:
+        stable = manifest.get("counts", None)
+        if not isinstance(stable, dict):
+            stable = _stable_counts(plan, snapshot)
+    except Exception:
+        try:
+            stable = _stable_counts(plan, snapshot)
+        except Exception:
+            stable = {"province_ids": 0, "province_max": 0, "map_pixels": 0, "managers": {}}
     payload = {
-        "tool_version": _tool_version(),
-        "created_at": _utc_now_iso(),
-        "profile": getattr(plan, "profile_name", ""),
-        "snapshot_fingerprint": getattr(snapshot, "fingerprint", "") if snapshot is not None else "",
-        "map_size": {"width": getattr(snapshot, "width", 0), "height": getattr(snapshot, "height", 0)}
-        if snapshot is not None else {},
-        "game_profile": getattr(getattr(plan, "game_profile", None), "profile_id", None),
+        "lock_schema": LOCK_SCHEMA,
+        "lock_version": LOCK_VERSION,
+        "manifest_schema": MANIFEST_SCHEMA,
+        "manifest_version": MANIFEST_VERSION,
+        "metadata": {
+            "tool_version": metadata_tool,
+            "created_at": _utc_now_iso(),
+            "generator": MANIFEST_GENERATOR,
+        },
+        "tool_version": metadata_tool,
+        "identity": {
+            "identity_hash": identity_hash,
+            "algorithm": identity_algorithm,
+        },
+        "profile": profile_name,
+        "lifecycle": lifecycle_name,
+        "project": _deepcopy_value(project),
+        "game_profile": game_profile_id,
+        "game_profile_detail": _deepcopy_value(detail),
+        "target": {
+            "identity": _deepcopy_value(target_identity),
+        },
+        "snapshot_fingerprint": fingerprint,
+        "map_size": _deepcopy_value(size),
+        "counts": _deepcopy_value(stable),
     }
     path = os.path.join(output_dir, lock_name)
     with open(path, "w", encoding="utf-8") as handle:
-        json.dump(payload, handle, ensure_ascii=False, indent=2)
+        json.dump(payload, handle, ensure_ascii=False, indent=2, sort_keys=True)
     return path
 
 
@@ -2155,20 +2293,254 @@ def _load_json(path: str) -> dict:
     return data if isinstance(data, dict) else {}
 
 
+def _comparison_target_identity(data: dict) -> dict:
+    try:
+        node = data.get("target") if isinstance(data, dict) else None
+    except Exception:
+        node = None
+    if isinstance(node, dict):
+        try:
+            inner = node.get("identity")
+        except Exception:
+            inner = None
+        if isinstance(inner, dict):
+            return dict(inner)
+        portable = {}
+        found = False
+        for key in PORTABLE_TARGET_KEYS + ("game_profile",):
+            try:
+                if key in node:
+                    portable[key] = node.get(key)
+                    found = True
+            except Exception:
+                continue
+        if found:
+            return portable
+    return {}
+
+
 def compare_with_lock(manifest: dict | str, lock: dict | str) -> dict:
-    manifest_data = _load_json(manifest) if isinstance(manifest, str) else dict(manifest or {})
-    lock_data = _load_json(lock) if isinstance(lock, str) else dict(lock or {})
+    try:
+        if isinstance(manifest, str):
+            manifest_data = _load_json(manifest)
+        elif isinstance(manifest, dict):
+            manifest_data = dict(manifest)
+        else:
+            manifest_data = {}
+    except Exception:
+        manifest_data = {}
+    try:
+        if isinstance(lock, str):
+            lock_data = _load_json(lock)
+        elif isinstance(lock, dict):
+            lock_data = dict(lock)
+        else:
+            lock_data = {}
+    except Exception:
+        lock_data = {}
+    if not isinstance(manifest_data, dict):
+        manifest_data = {}
+    if not isinstance(lock_data, dict):
+        lock_data = {}
     differences = []
+    def _record(field, old, new, breaking):
+        try:
+            old_copy = _deepcopy_value(old)
+        except Exception:
+            old_copy = old
+        try:
+            new_copy = _deepcopy_value(new)
+        except Exception:
+            new_copy = new
+        differences.append({"field": field, "lock": old_copy, "manifest": new_copy, "breaking": bool(breaking)})
     for key in ("snapshot_fingerprint", "profile", "game_profile"):
-        old, new = lock_data.get(key), manifest_data.get(key)
+        try:
+            old = lock_data.get(key)
+        except Exception:
+            old = None
+        try:
+            new = manifest_data.get(key)
+        except Exception:
+            new = None
         if old != new:
-            differences.append({"field": key, "lock": old, "manifest": new,
-                                "breaking": key in ("snapshot_fingerprint",)})
-    old_size = lock_data.get("map_size") or {}
-    new_size = manifest_data.get("map_size") or {}
+            _record(key, old, new, key == "snapshot_fingerprint")
+    try:
+        old_size = lock_data.get("map_size") or {}
+    except Exception:
+        old_size = {}
+    try:
+        new_size = manifest_data.get("map_size") or {}
+    except Exception:
+        new_size = {}
     if old_size != new_size:
-        differences.append({"field": "map_size", "lock": old_size, "manifest": new_size, "breaking": True})
-    breaking = any(item.get("breaking") for item in differences)
-    return {"breaking": breaking, "differences": differences,
-            "lock_fingerprint": lock_data.get("snapshot_fingerprint"),
-            "manifest_fingerprint": manifest_data.get("snapshot_fingerprint")}
+        _record("map_size", old_size, new_size, True)
+    if "lifecycle" in lock_data:
+        try:
+            old_life = lock_data.get("lifecycle")
+        except Exception:
+            old_life = None
+        try:
+            new_life = manifest_data.get("lifecycle")
+        except Exception:
+            new_life = None
+        if old_life != new_life:
+            _record("lifecycle", old_life, new_life, False)
+    if "identity" in lock_data:
+        try:
+            lock_ident = lock_data.get("identity") or {}
+            if not isinstance(lock_ident, dict):
+                lock_ident = {}
+        except Exception:
+            lock_ident = {}
+        try:
+            manifest_ident = manifest_data.get("identity") or {}
+            if not isinstance(manifest_ident, dict):
+                manifest_ident = {}
+        except Exception:
+            manifest_ident = {}
+        try:
+            old_hash = lock_ident.get("identity_hash")
+        except Exception:
+            old_hash = None
+        try:
+            new_hash = manifest_ident.get("identity_hash")
+        except Exception:
+            new_hash = None
+        if old_hash != new_hash:
+            _record("identity.identity_hash", old_hash, new_hash, True)
+        try:
+            old_algo = lock_ident.get("algorithm")
+        except Exception:
+            old_algo = None
+        try:
+            new_algo = manifest_ident.get("algorithm")
+        except Exception:
+            new_algo = None
+        if old_algo != new_algo:
+            _record("identity.algorithm", old_algo, new_algo, True)
+    if "target" in lock_data:
+        lock_ti = _comparison_target_identity(lock_data)
+        manifest_ti = _comparison_target_identity(manifest_data)
+        for key in sorted(set(PORTABLE_TARGET_KEYS) | {"game_profile"}):
+            try:
+                old = lock_ti.get(key)
+            except Exception:
+                old = None
+            try:
+                new = manifest_ti.get(key)
+            except Exception:
+                new = None
+            if old != new:
+                _record("target.identity." + key, old, new, True)
+    if "project" in lock_data:
+        try:
+            lock_proj = lock_data.get("project") or {}
+            if not isinstance(lock_proj, dict):
+                lock_proj = {}
+        except Exception:
+            lock_proj = {}
+        try:
+            manifest_proj = manifest_data.get("project") or {}
+            if not isinstance(manifest_proj, dict):
+                manifest_proj = {}
+        except Exception:
+            manifest_proj = {}
+        for key in sorted(("generator_version", "profile_id", "schema_version")):
+            try:
+                old = lock_proj.get(key)
+            except Exception:
+                old = None
+            try:
+                new = manifest_proj.get(key)
+            except Exception:
+                new = None
+            if old != new:
+                _record("project." + key, old, new, True)
+    if "counts" in lock_data:
+        try:
+            lock_counts = lock_data.get("counts") or {}
+            if not isinstance(lock_counts, dict):
+                lock_counts = {}
+        except Exception:
+            lock_counts = {}
+        try:
+            manifest_counts = manifest_data.get("counts") or {}
+            if not isinstance(manifest_counts, dict):
+                manifest_counts = {}
+        except Exception:
+            manifest_counts = {}
+        for key in sorted(("map_pixels", "province_ids", "province_max")):
+            try:
+                old = lock_counts.get(key)
+            except Exception:
+                old = None
+            try:
+                new = manifest_counts.get(key)
+            except Exception:
+                new = None
+            if old != new:
+                _record("counts." + key, old, new, True)
+        try:
+            lock_mgr = lock_counts.get("managers") or {}
+            if not isinstance(lock_mgr, dict):
+                lock_mgr = {}
+        except Exception:
+            lock_mgr = {}
+        try:
+            manifest_mgr = manifest_counts.get("managers") or {}
+            if not isinstance(manifest_mgr, dict):
+                manifest_mgr = {}
+        except Exception:
+            manifest_mgr = {}
+        for key in sorted(MANAGER_KEYS):
+            try:
+                old = lock_mgr.get(key)
+            except Exception:
+                old = None
+            try:
+                new = manifest_mgr.get(key)
+            except Exception:
+                new = None
+            if old != new:
+                _record("counts.managers." + key, old, new, True)
+    try:
+        differences.sort(key=lambda item: str(item.get("field", "")))
+    except Exception:
+        pass
+    try:
+        breaking = any(bool(item.get("breaking")) for item in differences)
+    except Exception:
+        breaking = False
+    try:
+        lock_fp = lock_data.get("snapshot_fingerprint")
+    except Exception:
+        lock_fp = None
+    try:
+        manifest_fp = manifest_data.get("snapshot_fingerprint")
+    except Exception:
+        manifest_fp = None
+    try:
+        lock_node = lock_data.get("identity")
+        lock_ident_hash = lock_node.get("identity_hash") if isinstance(lock_node, dict) else None
+    except Exception:
+        lock_ident_hash = None
+    try:
+        manifest_node = manifest_data.get("identity")
+        manifest_ident_hash = manifest_node.get("identity_hash") if isinstance(manifest_node, dict) else None
+    except Exception:
+        manifest_ident_hash = None
+    if breaking:
+        status = "breaking"
+    elif differences:
+        status = "mismatch"
+    else:
+        status = "compatible"
+    return {
+        "breaking": breaking,
+        "differences": differences,
+        "lock_fingerprint": lock_fp,
+        "manifest_fingerprint": manifest_fp,
+        "lock_identity": lock_ident_hash,
+        "manifest_identity": manifest_ident_hash,
+        "status": status,
+    }

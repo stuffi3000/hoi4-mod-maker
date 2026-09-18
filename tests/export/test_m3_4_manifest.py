@@ -18,6 +18,9 @@ from domain.managers.continent import ContinentManager
 from domain.managers.country import CountryManager
 from domain.managers.state import StateManager
 from services.export_manifest import (
+    IDENTITY_HASH_ALGORITHM,
+    LOCK_SCHEMA,
+    LOCK_VERSION,
     MANIFEST_SCHEMA,
     MANIFEST_VERSION,
     build_manifest_dict,
@@ -25,6 +28,7 @@ from services.export_manifest import (
     canonical_manifest_json,
     compare_with_lock,
     manifest_identity_hash,
+    write_lock_file,
 )
 from services.export_planner import plan_export
 from services.game_assets import GameTarget
@@ -657,3 +661,153 @@ def test_write_manifest_forwards_validation_acceptance_lock(m3_4_tmp):
     assert first_data["acceptance"] == second_data["acceptance"]
     assert first_data["lock_compat"] == second_data["lock_compat"]
     assert first_data["identity"] == second_data["identity"]
+
+
+def test_lock_schema_contents_and_timestamp_placement(m3_4_tmp):
+    plan = _base_plan()
+    plan.game_target = _fake_target("C:/games/hoi4-a", "2026-01-01T00:00:00+00:00")
+    manifest = build_manifest_dict(plan, [])
+    lock_path = write_lock_file(str(m3_4_tmp), plan)
+    data = json.loads(Path(lock_path).read_text(encoding="utf-8"))
+    assert data["lock_schema"] == LOCK_SCHEMA
+    assert data["lock_version"] == LOCK_VERSION
+    assert data["manifest_schema"] == MANIFEST_SCHEMA
+    assert data["manifest_version"] == MANIFEST_VERSION
+    assert "created_at" not in data
+    assert "metadata" in data
+    assert data["metadata"]["created_at"]
+    assert data["metadata"]["tool_version"]
+    assert data["metadata"]["generator"]
+    assert data["identity"]["identity_hash"] == manifest["identity"]["identity_hash"]
+    assert data["identity"]["algorithm"] == manifest["identity"]["algorithm"]
+    assert data["identity"]["algorithm"] == IDENTITY_HASH_ALGORITHM
+    assert data["snapshot_fingerprint"] == plan.snapshot.fingerprint
+    assert data["snapshot_fingerprint"] == manifest["snapshot_fingerprint"]
+    assert data["map_size"] == {"width": plan.snapshot.width, "height": plan.snapshot.height}
+    assert data["profile"] == "foundation"
+    assert data["lifecycle"] == manifest["lifecycle"]
+    assert data["project"] == manifest["project"]
+    assert data["game_profile"] == manifest["game_profile"]
+    assert data["target"]["identity"] == manifest["target"]["identity"]
+    assert data["counts"] == manifest["counts"]
+    assert data["counts"]["province_ids"] == 2
+    blob = json.dumps(data)
+    assert "install_dir" not in blob
+    assert "validated_at" not in blob
+    assert data["target"]["identity"]["raw_version"] == "1.19.3.0"
+    assert data["target"]["identity"]["display_version"] == "1.19.3"
+    assert data["target"]["identity"]["revision"] == "0"
+    assert data["target"]["identity"]["checksum"] == "abc123"
+
+
+def test_modern_manifest_lock_compatible(m3_4_tmp):
+    plan = _base_plan()
+    manifest = build_manifest_dict(plan, [])
+    lock_path = write_lock_file(str(m3_4_tmp), plan)
+    lock_data = json.loads(Path(lock_path).read_text(encoding="utf-8"))
+    same = compare_with_lock(manifest, lock_data)
+    assert same["breaking"] is False
+    assert same["differences"] == []
+    assert same["status"] == "compatible"
+    assert same["lock_fingerprint"] == plan.snapshot.fingerprint
+    assert same["manifest_fingerprint"] == plan.snapshot.fingerprint
+    assert same["lock_identity"] == manifest["identity"]["identity_hash"]
+    assert same["manifest_identity"] == manifest["identity"]["identity_hash"]
+    by_path = compare_with_lock(manifest, str(lock_path))
+    assert by_path == same
+    manifest_path = m3_4_tmp / "manifest.json"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    via_paths = compare_with_lock(str(manifest_path), str(lock_path))
+    assert via_paths["breaking"] is False
+    assert via_paths["differences"] == []
+
+
+def test_lock_breaking_on_identity_map_counts_target(m3_4_tmp):
+    plan = _base_plan()
+    manifest = build_manifest_dict(plan, [])
+    lock_path = write_lock_file(str(m3_4_tmp), plan)
+    lock_data = json.loads(Path(lock_path).read_text(encoding="utf-8"))
+    mutated = copy.deepcopy(manifest)
+    mutated["identity"]["identity_hash"] = "0" * 64
+    first = compare_with_lock(mutated, lock_data)
+    assert first["breaking"] is True
+    assert first["status"] == "breaking"
+    assert any(item["field"] == "identity.identity_hash" and item["breaking"] for item in first["differences"])
+    mutated = copy.deepcopy(manifest)
+    mutated["map_size"] = {"width": 9999, "height": 8888}
+    second = compare_with_lock(mutated, lock_data)
+    assert second["breaking"] is True
+    assert any(item["field"] == "map_size" for item in second["differences"])
+    mutated = copy.deepcopy(manifest)
+    mutated["counts"]["province_ids"] = int(manifest["counts"]["province_ids"]) + 100
+    third = compare_with_lock(mutated, lock_data)
+    assert third["breaking"] is True
+    assert any(item["field"] == "counts.province_ids" for item in third["differences"])
+    mutated = copy.deepcopy(manifest)
+    mutated["target"]["identity"]["raw_version"] = "9.99.9.9-modified"
+    fourth = compare_with_lock(mutated, lock_data)
+    assert fourth["breaking"] is True
+    assert any(item["field"] == "target.identity.raw_version" for item in fourth["differences"])
+    mutated = copy.deepcopy(manifest)
+    mutated["snapshot_fingerprint"] = "f" * 64
+    fifth = compare_with_lock(mutated, lock_data)
+    assert fifth["breaking"] is True
+
+
+def test_legacy_lock_shape_still_compares(m3_4_tmp):
+    plan = _base_plan()
+    manifest = build_manifest_dict(plan, [])
+    legacy = {
+        "tool_version": "legacy-test",
+        "created_at": "2020-01-01T00:00:00+00:00",
+        "profile": manifest["profile"],
+        "snapshot_fingerprint": manifest["snapshot_fingerprint"],
+        "map_size": dict(manifest["map_size"]),
+        "game_profile": manifest["game_profile"],
+    }
+    same = compare_with_lock(manifest, legacy)
+    assert same["breaking"] is False
+    assert same["differences"] == []
+    assert same["lock_fingerprint"] == manifest["snapshot_fingerprint"]
+    assert same["manifest_fingerprint"] == manifest["snapshot_fingerprint"]
+    assert same["status"] == "compatible"
+    changed = dict(manifest)
+    changed["snapshot_fingerprint"] = "0" * 64
+    breaking = compare_with_lock(changed, legacy)
+    assert breaking["breaking"] is True
+    assert any(item["field"] == "snapshot_fingerprint" for item in breaking["differences"])
+    legacy_path = m3_4_tmp / "legacy.lock.json"
+    legacy_path.write_text(json.dumps(legacy), encoding="utf-8")
+    via_path = compare_with_lock(manifest, str(legacy_path))
+    assert via_path["breaking"] is False
+    assert via_path["differences"] == []
+
+
+def test_lock_comparison_stable_under_metadata_shuffle(m3_4_tmp):
+    plan = _base_plan()
+    manifest = build_manifest_dict(plan, [])
+    lock_path = write_lock_file(str(m3_4_tmp), plan)
+    lock_data = json.loads(Path(lock_path).read_text(encoding="utf-8"))
+    manifest_extra = copy.deepcopy(manifest)
+    manifest_extra["metadata"]["extra_note"] = "zzz-extra"
+    manifest_extra["extra_top_level"] = {"nested": [3, 2, 1]}
+    lock_extra = copy.deepcopy(lock_data)
+    lock_extra["metadata"]["extra_note"] = "different-extra"
+    lock_extra["extra_top_level"] = 12345
+    lock_extra["target"]["diagnostics"] = {"install_dir": "C:/should-be-ignored"}
+    assert compare_with_lock(manifest, lock_data)["differences"] == []
+    assert compare_with_lock(manifest_extra, lock_extra)["differences"] == []
+    assert compare_with_lock(manifest_extra, lock_extra) == compare_with_lock(manifest, lock_data)
+    mutated = copy.deepcopy(manifest)
+    mutated["identity"]["identity_hash"] = "1" * 64
+    mutated["map_size"] = {"width": 111, "height": 222}
+    mutated["counts"]["province_ids"] = 999
+    mutated["target"]["identity"]["checksum"] = "changed-checksum"
+    result = compare_with_lock(mutated, lock_data)
+    assert result["breaking"] is True
+    fields = [item["field"] for item in result["differences"]]
+    assert fields == sorted(fields)
+    reversed_lock = {key: lock_data[key] for key in reversed(list(lock_data.keys()))}
+    rerun = compare_with_lock(mutated, reversed_lock)
+    assert [item["field"] for item in rerun["differences"]] == fields
+    assert rerun == result
