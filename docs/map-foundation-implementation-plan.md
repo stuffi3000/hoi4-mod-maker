@@ -816,6 +816,14 @@ Allow one or more authored/generated weather positions per strategic region, wit
 - **Evidence:** focused M5 gate, M3.3e, registry, and planner tests passed, including malformed duck-typed records, deterministic findings, no input mutation, severity transitions, and manager-less legacy compatibility.
 - **Next controlled slice:** implement authored/generated weather positions with explicit review and spacing/containment validation.
 
+### M5 continuation note — resume tomorrow (2026-09-18)
+
+- **Current state:** M5.1, M5.2a–d, and M5.4 are implemented and checked above. The latest implementation commits are `857d285` (proposal ingestion/acceptance) and `5a037e0` (foundation completeness/review gate); the latest plan checkpoint is `ddf84bd`.
+- **Stopped work:** a narrowly scoped Muse Spark weather-writer task was launched for M5.5 and stopped at the end of today without a final response or repository diff. The worktree was clean after stopping, so there is no partial weather implementation to preserve or review.
+- **First task tomorrow:** relaunch/retry the small M5.5 writer slice. Review `export/writers/map/strategic_regions.py`, `export/stages/regions.py`, and the legacy forwarding wrapper in `export/mod_exporter.py`. Keep all new parameters trailing and preserve old direct-call output. Foundation must write only reviewed/accepted manager weather records, remap original strategic-region IDs to emitted IDs, preserve float coordinates/height/bottom-origin conversion/size, and omit centroid fallback; compatibility profiles may retain deterministic centroid fallback.
+- **Second task:** add and integrate a pure weather validator for strategic-region containment and minimum spacing, with warnings in draft/candidate and blockers in frozen/accepted lifecycles. It must cover multiple positions per region and malformed/no-input cases without mutating the manager.
+- **Then:** run focused weather, stage, planner, registry, writer, and M5 placement tests; update the M5.5 checkbox/checkpoint only after those pass. Continue with M5.3 editor/overlay integration, then perform the full M5 regression and repository test/compile/diff checks. M5.2 remains unchecked until the proposal/acceptance contract is exposed through the editor/export flow.
+
 ## M6 — graphics and asset-resolution pipeline
 
 ### M6.1 Create an explicit asset inventory
