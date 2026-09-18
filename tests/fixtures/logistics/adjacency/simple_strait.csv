@@ -1,0 +1,4 @@
+From;To;Type;Through;start_x;start_y;stop_x;stop_y;adjacency_rule_name;Comment
+101;102;sea;-1;0;0;1;0;;synthetic strait joining the north and south banks
+-1;-1;-1;-1;-1;-1;-1;-1;-1
+

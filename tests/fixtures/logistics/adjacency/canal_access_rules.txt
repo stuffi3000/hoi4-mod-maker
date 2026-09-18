@@ -1,0 +1,11 @@
+# Synthetic review: canal passage for test map only
+adjacency_rule = {
+	name = "SYNTH_CANAL"
+	contested = { army=no navy=no submarine=no trade=no }
+	enemy = { army=no navy=no submarine=no trade=no }
+	friend = { army=yes navy=yes submarine=yes trade=yes }
+	neutral = { army=yes navy=no submarine=yes trade=yes }
+	required_provinces = { 101 102 }
+	icon = 201
+}
+

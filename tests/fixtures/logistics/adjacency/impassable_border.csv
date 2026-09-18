@@ -1,0 +1,4 @@
+From;To;Type;Through;start_x;start_y;stop_x;stop_y;adjacency_rule_name;Comment
+101;103;impassable;-1;-1;-1;-1;-1;;synthetic ridge blocks the valley pass
+-1;-1;-1;-1;-1;-1;-1;-1;-1
+

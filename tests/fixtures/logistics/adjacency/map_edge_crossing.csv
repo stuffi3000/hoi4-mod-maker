@@ -1,0 +1,4 @@
+From;To;Type;Through;start_x;start_y;stop_x;stop_y;adjacency_rule_name;Comment
+103;104;sea;-1;0;1;5;1;;synthetic wrap crossing at the map seam
+-1;-1;-1;-1;-1;-1;-1;-1;-1
+

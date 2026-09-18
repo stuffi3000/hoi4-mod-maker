@@ -1,0 +1,4 @@
+From;To;Type;Through;start_x;start_y;stop_x;stop_y;adjacency_rule_name;Comment
+101;104;sea;-1;0;0;1;0;MISSING_SYNTH_RULE;synthetic reference to a rule that does not exist
+-1;-1;-1;-1;-1;-1;-1;-1;-1
+

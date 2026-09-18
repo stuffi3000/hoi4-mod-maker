@@ -1,0 +1,4 @@
+From;To;Type;Through;start_x;start_y;stop_x;stop_y;adjacency_rule_name;Comment
+101;102;sea;201;0;0;1;0;SYNTH_CANAL;synthetic canal crossing under rule control
+-1;-1;-1;-1;-1;-1;-1;-1;-1
+
