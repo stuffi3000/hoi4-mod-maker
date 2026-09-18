@@ -477,6 +477,76 @@ def _verify_planned_export(output_dir: str, profile_name: str) -> list:
     return missing
 
 
+_PLAN_REPORT_SOURCE = "planner"
+_PLAN_REPORT_CONTEXT = "draft_preview"
+_ARTIFACT_REPORT_SOURCE = "artifact"
+_ARTIFACT_REPORT_CONTEXT = "draft_preview"
+
+
+def _plan_validation_report(plan):
+    from services.validation_service import report_from_findings
+    findings = getattr(plan, "findings", ()) or ()
+    return report_from_findings(
+        findings,
+        source=_PLAN_REPORT_SOURCE,
+        context=_PLAN_REPORT_CONTEXT,
+    )
+
+
+def _artifact_validation_report(missing):
+    from services.validation_service import report_from_verifier_messages
+    messages = ["missing or empty: %s" % path for path in (missing or [])]
+    return report_from_verifier_messages(
+        messages,
+        (),
+        source=_ARTIFACT_REPORT_SOURCE,
+        context=_ARTIFACT_REPORT_CONTEXT,
+    )
+
+
+def _format_validation_summary(report, label):
+    counts = report.counts
+    total = report.total
+    noun = "finding" if total == 1 else "findings"
+    return (
+        "Validation report (%s): %d %s "
+        "(info=%d, warning=%d, error=%d, blocker=%d)"
+        % (
+            label,
+            total,
+            noun,
+            counts.get("info", 0),
+            counts.get("warning", 0),
+            counts.get("error", 0),
+            counts.get("blocker", 0),
+        )
+    )
+
+
+def _validation_detail_lines(report):
+    lines = []
+    for finding in report.findings:
+        lines.append(
+            "  [%s] %s: %s"
+            % (str(finding.severity).upper(), finding.code, finding.message)
+        )
+    return lines
+
+
+def _write_planner_json_report(path, plan, result, plan_report, artifact_report):
+    import json
+    payload = {
+        "plan": plan.to_dict(),
+        "result": result.to_dict() if result is not None else None,
+        "validation_reports": {
+            "plan": plan_report.to_dict() if plan_report is not None else None,
+            "artifact": artifact_report.to_dict() if artifact_report is not None else None,
+        },
+    }
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump(payload, handle, ensure_ascii=False, indent=2)
+
+
 def run_planner_export(args) -> int:
     configure_console_streams()
     print = _safe_print
@@ -543,6 +613,10 @@ def run_planner_export(args) -> int:
             acceptance_count=int(args.acceptance_count or 0),
         )
         print(format_plan_summary(plan))
+        plan_report = _plan_validation_report(plan)
+        print(_format_validation_summary(plan_report, "plan"))
+        for detail_line in _validation_detail_lines(plan_report):
+            print(detail_line)
         if args.compare_lock:
             from services.export_manifest import build_manifest_dict, compare_with_lock
             comparison = compare_with_lock(
@@ -553,10 +627,20 @@ def run_planner_export(args) -> int:
             if comparison["breaking"]:
                 print("Lock comparison found breaking differences; export refused",
                       file=sys.stderr)
+                if args.json_report:
+                    _write_planner_json_report(
+                        args.json_report, plan, None, plan_report, None
+                    )
+                    print(f"JSON report: {args.json_report}")
                 return EXIT_VALIDATION_ERROR
         if plan.blocked:
             for blocker in plan.blockers:
                 print(f"  [BLOCKER] {blocker}", file=sys.stderr)
+            if args.json_report:
+                _write_planner_json_report(
+                    args.json_report, plan, None, plan_report, None
+                )
+                print(f"JSON report: {args.json_report}")
             return EXIT_VALIDATION_ERROR
         from services.export_service import export_planned_mod
         result = export_planned_mod(
@@ -572,16 +656,19 @@ def run_planner_export(args) -> int:
         if args.manifest and result.manifest_path:
             shutil.copy2(result.manifest_path, args.manifest)
             print(f"Manifest copied to: {args.manifest}")
-        if args.json_report:
-            import json
-            payload = {"plan": plan.to_dict(), "result": result.to_dict()}
-            with open(args.json_report, "w", encoding="utf-8") as handle:
-                json.dump(payload, handle, ensure_ascii=False, indent=2)
-            print(f"JSON report: {args.json_report}")
     except Exception as exc:
         print(f"[ERROR] Export failed: {exc}", file=sys.stderr)
         return EXIT_COMMAND_ERROR
     missing = _verify_planned_export(args.output_dir, args.profile)
+    artifact_report = _artifact_validation_report(missing)
+    print(_format_validation_summary(artifact_report, "artifact"))
+    for detail_line in _validation_detail_lines(artifact_report):
+        print(detail_line)
+    if args.json_report:
+        _write_planner_json_report(
+            args.json_report, plan, result, plan_report, artifact_report
+        )
+        print(f"JSON report: {args.json_report}")
     if missing:
         for relative_path in missing:
             print(f"  [MISSING/EMPTY] {relative_path}")
