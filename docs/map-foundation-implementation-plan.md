@@ -776,9 +776,10 @@ Allow one or more authored/generated weather positions per strategic region, wit
 
 - [x] **M5.1 — authored placement model:** added deterministic province-slot, building, port, and weather records with float-preserving transforms, provenance/review state, stable serialization, compact-ID remap/drop operations, and focused tests. Project lifecycle and `placements.json` persistence clear legacy/missing placement data safely; export snapshots fork placements and remap the export copy during province compaction. Muse Spark implemented the model and lifecycle wiring in narrow slices; the parent reviewed and corrected generated-proposal review semantics and backward-compatible optional argument placement. Committed as `fd51a63`.
 - [x] **M5.2a — pure deterministic proposal core:** replaced the implicit centroid-only calculation with a side-effect-free, seeded candidate scorer that considers province interior distance, coast distance, optional height/slope, land surface, and slot separation. It returns explicit diagnostics for sea/unknown/undersized provinces and emits only `generated`/`unreviewed` records. Committed as `1667518`.
+- [x] **M5.2b — port-aware proposal core:** added deterministic port proposals that require the explicitly requested adjacent sea province, validate land/sea surfaces and four-neighbor access, and emit `generated`/`unreviewed` port records with explicit diagnostics. Committed as `092bf93`.
 - [ ] **M5.2 — proposal generation integration:** connect the proposal core to port-aware placement requests and the export/editor acceptance flow; no silent fallback acceptance.
 - [ ] **M5.3 — placement editor and overlay:** add selection/editing and collision/provenance overlays.
-- [ ] **M5.4 — foundation building output:** stop writing one-of-everything placeholders and consume authored/reviewed map-object placements by profile.
+- [x] **M5.4 — foundation building output:** profile-aware position/building writers now omit incomplete or unreviewed foundation records, preserve reviewed transforms and exact port sea references, and retain clearly marked compatibility placeholders only for acceptance/scaffold/legacy profiles. Legacy direct writer signatures remain positional-compatible. Committed as `ba8a207`.
 - [ ] **M5.5 — weather positions:** write and validate one or more authored/generated weather positions per strategic region.
 
 ### M5 checkpoint — M5.1 complete
@@ -790,8 +791,14 @@ Allow one or more authored/generated weather positions per strategic region, wit
 ### M5 checkpoint — pure M5.2 proposal core
 
 - **Completed:** deterministic land-position proposal scoring now produces separated, float-preserving six-slot candidates with explicit `generated`/`unreviewed` provenance and diagnostics instead of repeated fallback centroids. The generator is pure and uses actual raster dimensions; one-pixel dimensions and non-land provinces are handled explicitly.
-- **Evidence:** M5.2 synthetic generator tests passed, including concave interiors, coast avoidance, optional height/slope, deterministic seed/order, sea/lake rejection, insufficient-space diagnostics, and no repeated coordinates.
-- **Next controlled slice:** add port/sea-access-aware proposals, then route reviewed placements into profile-specific foundation output.
+- **Evidence:** M5.2 synthetic generator tests passed, including concave interiors, coast avoidance, optional height/slope, deterministic seed/order, sea/lake rejection, insufficient-space diagnostics, and no repeated coordinates. Port proposal tests passed for exact sea mapping, land/sea surface rejection, four-neighbor access, deterministic output, and nonfinite height handling.
+- **Next controlled slice:** connect both proposal generators to an explicit manager acceptance path and add the foundation freeze gate before continuing with weather and editor work.
+
+### M5 checkpoint — profile-aware placement writers
+
+- **Completed:** foundation `positions.txt` writes only complete six-slot province records whose slots are reviewed or accepted; foundation `buildings.txt` writes only reviewed/accepted building and exact-sea port records. Acceptance/scaffold/legacy staged exports retain compatibility placeholders with an explicit generated marker and can overlay reviewed manager records without duplicate lines. Legacy exporter and direct writer call paths retain their existing positional signatures.
+- **Evidence:** focused M5.4 writer tests passed, including float/rotation/height preservation, bottom-origin conversion, incomplete/unreviewed filtering, reviewed generated records, exact port sea references, compatibility markers, stage forwarding, and legacy direct calls. Existing export safety/planner/determinism and M5.1 placement persistence/remap tests passed as well; compile and diff checks passed.
+- **Next controlled slice:** add a small proposal-to-manager acceptance service plus a foundation placement completeness/review validation gate, then use that contract for the editor and weather writer.
 
 ## M6 — graphics and asset-resolution pipeline
 
