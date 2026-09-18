@@ -592,7 +592,11 @@ Add a test that exports the same synthetic project twice and compares the comple
   - [x] **M3.3d — adjacency/logistics:** adjacency, railway, supply-node, port, and graph findings, including profile-aware wrap and duplicate-route checks.
   - [x] **M3.3e — placement:** coordinate, building, port, collision, and weather-position findings.
   - [x] **M3.3f — asset/integration:** asset disposition/format, descriptor, tag-collision, and missing-reference findings.
-- [ ] **M3.4 — foundation manifest:** extend the manifest with path-independent identity, full inventory/provenance, validation, acceptance, and lock metadata.
+- [x] **M3.4 — foundation manifest:** extend the manifest with path-independent identity, full inventory/provenance, validation, acceptance, and lock metadata.
+  - [x] **M3.4a — deterministic identity:** record path-independent project/target identity, source array/manager/auxiliary hashes, counts, scope, and stable canonical JSON.
+  - [x] **M3.4b — inventory/provenance:** record sorted written-file inventory, stage ownership, asset resolutions, source hashes, and output hashes without mutating export inputs.
+  - [x] **M3.4c — validation metadata:** serialize shared validation reports, gate decisions, accepted exceptions, engine-acceptance results, and explicit `not_run` defaults outside the identity hash.
+  - [x] **M3.4d — foundation lock:** emit a versioned lock with portable compatibility fields and compare modern and legacy locks deterministically.
 - [ ] **M3.5 — deterministic output:** enforce and test byte-identical foundation output for identical snapshots and options.
 
 ### M3 checkpoint — after M3.2c1
@@ -630,6 +634,13 @@ Add a test that exports the same synthetic project twice and compares the comple
 - **Reviewed:** both pure validators use typed, deterministic findings with sorted/capped evidence, no input mutation, profile/explicit wrap or descriptor-kind handling where applicable, and filesystem/Qt-free inputs. Placement covers coordinate/building/port/collision/fallback/weather checks; asset integration covers disposition/policy, BMP/DDS headers and payload size, descriptor ownership, tag collisions, and missing references.
 - **Evidence:** 25 placement tests, 29 asset tests, 21 registry tests, and the shared validation/manager/adjacency/compaction/province-paint regressions passed (134 tests total); compilation and diff checks passed. Two independent Muse reviews and two targeted follow-up workers were used before parent acceptance.
 - **Next controlled slice:** M3.4 foundation manifest. M3.5 deterministic-output enforcement remains pending.
+
+### M3 checkpoint — after M3.4
+
+- **Completed:** M3.4a-d foundation manifest identity, inventory/provenance, validation/acceptance metadata, and versioned lock compatibility, committed as `bd4b29f`, `2785a59`, `2413edd`, and `6ee20a6`.
+- **Reviewed:** manifest identity excludes timestamps, machine paths, inventory, and gate metadata; written files and asset provenance are sorted and stage-owned; shared validation reports and accepted exceptions are normalized without input mutation; modern locks compare identity, target, project, dimensions, counts, and legacy fingerprints while ignoring metadata/diagnostic extras.
+- **Evidence:** 58 focused M3.4/M2/verifier tests passed, the full `tests/export` suite passed, and compilation/diff checks passed. Muse Spark workers implemented the bounded slices; parent review accepted the resulting diffs.
+- **Next controlled slice:** M3.5 deterministic-output enforcement. M4 remains pending.
 
 ## M4 — special adjacencies and logistics semantics
 
