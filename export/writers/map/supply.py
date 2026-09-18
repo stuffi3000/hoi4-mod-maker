@@ -23,16 +23,20 @@ def write_supply_nodes(states, province_map, output_dir):
 
 
 def write_railways(states, province_map, output_dir):
-    """fallback: When there is no user railway data, write the minimum occupancy."""
+    """Write a valid adjacent proposal when no user railway data exists."""
     d = os.path.join(output_dir, "map")
     os.makedirs(d, exist_ok=True)
-    fallback_pid = 1
-    for sid, provs in states.items():
-        if provs:
-            fallback_pid = provs[0]
-            break
+    allowed = {
+        int(pid)
+        for provinces in (states or {}).values()
+        for pid in (provinces or [])
+        if int(pid) > 0
+    }
+    from export.writers.map.railways import first_distinct_adjacent_pair
+    pair = first_distinct_adjacent_pair(province_map, allowed)
     with open(os.path.join(d, "railways.txt"), "w", encoding="utf-8") as f:
-        f.write(f"1 2 {fallback_pid} {fallback_pid}\n")
+        if pair is not None:
+            f.write(f"1 2 {pair[0]} {pair[1]}\n")
 
 
 def write_supply_areas(states, output_dir, states_per_area: int = 15):

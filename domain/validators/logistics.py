@@ -56,6 +56,7 @@ from typing import Any
 
 import numpy as np
 
+from domain.logistics_graph import analyze_logistics_graph
 from domain.validation import ValidationFinding
 
 try:
@@ -640,7 +641,6 @@ def validate_logistics_references(
     supply_details: list[str] = []
     supply_ids: set[int] = set()
     supply_bad_count = 0
-    supply_vertices: set[int] = set()
     for raw in supply_nodes:
         pid = _as_int(_field(raw, "province_id", None))
         level = _as_int(_field(raw, "level", None))
@@ -661,9 +661,6 @@ def validate_logistics_references(
             else:
                 supply_details.append("supply node has illegal level %s" % _short(_field(raw, "level", None)))
             broken = True
-        if pid is not None and pid > 0 and level is not None and level >= 1:
-            if known_ids is None or pid in known_ids:
-                supply_vertices.add(pid)
         if broken:
             supply_bad_count += 1
     if supply_details:
@@ -713,82 +710,56 @@ def validate_logistics_references(
             )
         )
 
-    railway_id_set: set[int] = set()
-    graph_pairs: list[tuple[int, int]] = []
-    for raw in railway_entries:
-        raw_ids = _field(raw, "province_ids", [])
-        if raw_ids is None or isinstance(raw_ids, (str, bytes)):
-            continue
-        try:
-            ids_list = list(raw_ids)
-        except TypeError:
-            continue
-        parsed: list[int] = []
-        usable = True
-        for value in ids_list:
-            pid = _as_int(value)
-            if pid is None or pid <= 0:
-                usable = False
-                break
-            if known_ids is not None and pid not in known_ids:
-                usable = False
-                break
-            parsed.append(pid)
-        if not usable:
-            continue
-        railway_id_set.update(parsed)
-        for first, second in zip(parsed, parsed[1:]):
-            if first != second:
-                graph_pairs.append((first, second))
-    graph_vertices = set(railway_id_set) | set(supply_vertices)
-    if graph_vertices:
-        parent = {vertex: vertex for vertex in graph_vertices}
-
-        def _find(vertex: int) -> int:
-            while parent[vertex] != vertex:
-                parent[vertex] = parent[parent[vertex]]
-                vertex = parent[vertex]
-            return vertex
-
-        for first, second in graph_pairs:
-            if first in parent and second in parent:
-                root_first, root_second = _find(first), _find(second)
-                if root_first != root_second:
-                    parent[root_second] = root_first
-        groups: dict[int, list[int]] = {}
-        for vertex in graph_vertices:
-            groups.setdefault(_find(vertex), []).append(vertex)
-        if len(groups) > 1:
-            ordered = sorted((sorted(members) for members in groups.values()), key=lambda m: (-len(m), m[0]))
-            largest = set(ordered[0])
-            outside = sorted(graph_vertices - largest)
-            off_rail = sorted(pid for pid in supply_vertices if pid not in railway_id_set)
-            sizes = sorted((len(members) for members in ordered), reverse=True)
-            size_text = "+".join(str(n) for n in sizes[:12])
-            if len(sizes) > 12:
-                size_text += "+...(+%d more)" % (len(sizes) - 12)
-            parts = ["components=%d" % len(groups), "sizes=%s" % size_text]
-            if off_rail:
-                shown = ",".join(str(pid) for pid in off_rail[:12])
-                if len(off_rail) > 12:
-                    shown += ",..."
-                parts.append("off_rail_supply=%s" % shown)
-            shown_out = ",".join(str(pid) for pid in outside[:12])
-            if len(outside) > 12:
-                shown_out += ",..."
-            parts.append("outside_main=%s" % shown_out)
-            findings.append(
-                ValidationFinding(
-                    code="logistics.graph",
-                    severity="warning",
-                    message="logistics graph has %d disconnected components" % len(groups),
-                    layer=LAYER,
-                    affected_ids=tuple(outside[:_GRAPH_AFFECTED_LIMIT]),
-                    coordinates=_coords_for(set(outside[:_GRAPH_AFFECTED_LIMIT]), first_coords),
-                    evidence="; ".join(parts) + "; affected_total=%d" % len(outside),
-                    waivable=True,
-                )
+    graph = analyze_logistics_graph(
+        railway_entries,
+        supply_nodes,
+        known_provinces=known_ids,
+    )
+    if graph.supply_provinces and not graph.railway_provinces and not supply_details:
+        missing_ids = tuple(graph.supply_off_rail)
+        findings.append(
+            ValidationFinding(
+                code="logistics.graph",
+                severity="warning",
+                message="supply nodes have no railway graph",
+                layer=LAYER,
+                affected_ids=missing_ids[:_GRAPH_AFFECTED_LIMIT],
+                coordinates=_coords_for(set(missing_ids[:_GRAPH_AFFECTED_LIMIT]), first_coords),
+                evidence="components=%d; off_rail_supply=%s; missing_railway_graph=true"
+                % (graph.component_count, ",".join(str(pid) for pid in missing_ids[:12])),
+                waivable=True,
             )
+        )
+    elif graph.components and graph.component_count > 1:
+        largest = set(graph.components[0].provinces)
+        outside = sorted(set(graph.vertices) - largest)
+        off_rail = list(graph.supply_off_rail)
+        sizes = sorted((len(component.provinces) for component in graph.components), reverse=True)
+        size_text = "+".join(str(n) for n in sizes[:12])
+        if len(sizes) > 12:
+            size_text += "+...(+%d more)" % (len(sizes) - 12)
+        parts = ["components=%d" % graph.component_count, "sizes=%s" % size_text]
+        if off_rail:
+            shown = ",".join(str(pid) for pid in off_rail[:12])
+            if len(off_rail) > 12:
+                shown += ",..."
+            parts.append("off_rail_supply=%s" % shown)
+        shown_out = ",".join(str(pid) for pid in outside[:12])
+        if len(outside) > 12:
+            shown_out += ",..."
+        parts.append("outside_main=%s" % shown_out)
+        findings.append(
+            ValidationFinding(
+                code="logistics.graph",
+                severity="warning",
+                message="logistics graph has %d disconnected components" % graph.component_count,
+                layer=LAYER,
+                affected_ids=tuple(outside[:_GRAPH_AFFECTED_LIMIT]),
+                coordinates=_coords_for(set(outside[:_GRAPH_AFFECTED_LIMIT]), first_coords),
+                evidence="; ".join(parts) + "; affected_total=%d" % len(outside),
+                waivable=True,
+            )
+        )
 
     duplicate_details: list[str] = []
     duplicate_ids: set[int] = set()

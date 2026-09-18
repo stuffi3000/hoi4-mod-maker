@@ -258,9 +258,15 @@ def write_empty_files(output_dir: str) -> None:
         pass
 
 
-def write_supply_files(output_dir: str, first_land_province: int) -> None:
+def write_supply_files(
+    output_dir: str,
+    first_land_province: int,
+    second_land_province: int | None = None,
+) -> None:
     """Generate supply_nodes.txt and railways.txt (minimum usable version).
-    At least one node and one railway are required, otherwise the game crashes."""
+    The railway file is empty unless a distinct second province is supplied;
+    callers must resolve missing logistics rather than receiving a self-loop.
+    """
     map_dir = os.path.join(output_dir, "map")
     os.makedirs(map_dir, exist_ok=True)
 
@@ -268,11 +274,11 @@ def write_supply_files(output_dir: str, first_land_province: int) -> None:
     with open(os.path.join(map_dir, "supply_nodes.txt"), "w", encoding="utf-8") as f:
         f.write(f"1 {first_land_province}\n")
 
-    # railways.txt — at least one class 1 railway
-    # Format: Level Number of provinces Province ID1 Province ID2...
-    # At least two provinces are required, and the same province is used here (minimum available)
+    # railways.txt — emit a distinct pair only when the caller has supplied
+    # one.  The former first/first self-loop concealed missing logistics.
     with open(os.path.join(map_dir, "railways.txt"), "w", encoding="utf-8") as f:
-        f.write(f"1 2 {first_land_province} {first_land_province}\n")
+        if second_land_province is not None and second_land_province != first_land_province:
+            f.write(f"1 2 {first_land_province} {second_land_province}\n")
 
 
 def write_buildings_txt(output_dir: str, first_land_province: int) -> None:
