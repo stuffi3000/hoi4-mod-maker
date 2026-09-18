@@ -597,7 +597,9 @@ Add a test that exports the same synthetic project twice and compares the comple
   - [x] **M3.4b — inventory/provenance:** record sorted written-file inventory, stage ownership, asset resolutions, source hashes, and output hashes without mutating export inputs.
   - [x] **M3.4c — validation metadata:** serialize shared validation reports, gate decisions, accepted exceptions, engine-acceptance results, and explicit `not_run` defaults outside the identity hash.
   - [x] **M3.4d — foundation lock:** emit a versioned lock with portable compatibility fields and compare modern and legacy locks deterministically.
-- [ ] **M3.5 — deterministic output:** enforce and test byte-identical foundation output for identical snapshots and options.
+- [x] **M3.5 — deterministic output:** enforce and test byte-identical foundation content for identical snapshots and options; compare the complete output inventory while normalizing only the explicitly volatile metadata timestamps.
+  - [x] **M3.5a — stable artifact production:** preserve sorted writer/stage/file ordering and seeded procedural generation across repeated foundation exports.
+  - [x] **M3.5b — deterministic inventory:** hash every emitted file, canonicalize manifest/lock metadata and the report timestamp for comparison, and verify two identical synthetic exports match.
 
 ### M3 checkpoint — after M3.2c1
 
@@ -641,6 +643,13 @@ Add a test that exports the same synthetic project twice and compares the comple
 - **Reviewed:** manifest identity excludes timestamps, machine paths, inventory, and gate metadata; written files and asset provenance are sorted and stage-owned; shared validation reports and accepted exceptions are normalized without input mutation; modern locks compare identity, target, project, dimensions, counts, and legacy fingerprints while ignoring metadata/diagnostic extras.
 - **Evidence:** 58 focused M3.4/M2/verifier tests passed, the full `tests/export` suite passed, and compilation/diff checks passed. Muse Spark workers implemented the bounded slices; parent review accepted the resulting diffs.
 - **Next controlled slice:** M3.5 deterministic-output enforcement. M4 remains pending.
+
+### M3 checkpoint — after M3.5
+
+- **Completed:** M3.5a-b deterministic foundation artifact production and complete normalized inventory comparison, committed as `a9d1d42`.
+- **Reviewed:** ordinary output files are streamed and hashed byte-for-byte; only manifest/lock metadata and the generated report timestamp are normalized, without modifying files on disk. The repeated-export test confirms all paths, normalized sizes, and hashes match while raw metadata timestamps differ.
+- **Evidence:** 51 focused M3.5/M3.4/M2 tests passed, the full `tests/export` suite passed, and compilation/diff checks passed. Muse Spark was attempted for this slice but stalled without edits; the parent completed and reviewed the bounded recovery implementation.
+- **Next controlled slice:** M4.1 adjacency review state. M4–M8 remain pending.
 
 ## M4 — special adjacencies and logistics semantics
 
