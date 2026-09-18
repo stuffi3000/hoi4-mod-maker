@@ -754,7 +754,308 @@ def _sorted_stages(stage_results) -> list:
         except Exception:
             pass
         out.append(data)
+    out.sort(
+        key=lambda item: (
+            str(item.get("stage", "")),
+            json.dumps(item, ensure_ascii=True, sort_keys=True, default=str),
+        )
+    )
     return out
+
+
+# Stable fallback label for manifest files no export stage can own.
+OWNERSHIP_FALLBACK_STAGE = "unowned"
+
+
+def _normalize_manifest_path(value) -> str:
+    try:
+        text = str(value)
+    except Exception:
+        return ""
+    text = text.strip().replace("\\", "/")
+    while "//" in text:
+        text = text.replace("//", "/")
+    return text.strip().strip("/")
+
+
+def _stage_name_of(entry):
+    name = None
+    if isinstance(entry, dict):
+        name = entry.get("stage")
+    else:
+        try:
+            name = getattr(entry, "stage", None)
+        except Exception:
+            name = None
+    if name is None:
+        return None
+    try:
+        text = str(name).strip()
+    except Exception:
+        return None
+    return text or None
+
+
+def _stage_written_paths(entry) -> list:
+    if isinstance(entry, dict):
+        written = entry.get("written") or []
+    else:
+        try:
+            written = getattr(entry, "written", None) or []
+        except Exception:
+            written = []
+    if isinstance(written, str):
+        candidates = [written]
+    else:
+        try:
+            candidates = list(written)
+        except TypeError:
+            return []
+    paths = []
+    for item in candidates:
+        rel = None
+        if isinstance(item, dict):
+            rel = item.get("rel_path")
+        else:
+            converter = getattr(item, "to_dict", None)
+            if callable(converter):
+                try:
+                    data = converter()
+                except Exception:
+                    data = None
+                if isinstance(data, dict):
+                    rel = data.get("rel_path")
+            if rel is None:
+                try:
+                    rel = getattr(item, "rel_path", None)
+                except Exception:
+                    rel = None
+            if rel is None and isinstance(item, str):
+                rel = item
+        if rel is None:
+            continue
+        norm = _normalize_manifest_path(rel)
+        if norm:
+            paths.append(norm)
+    return paths
+
+
+def _stage_owned_paths(entry) -> list:
+    if isinstance(entry, dict):
+        owned = entry.get("owned_files") or []
+    else:
+        try:
+            owned = getattr(entry, "owned_files", None) or []
+        except Exception:
+            owned = []
+    if isinstance(owned, str):
+        candidates = [owned]
+    else:
+        try:
+            candidates = list(owned)
+        except TypeError:
+            return []
+    paths = []
+    for item in candidates:
+        try:
+            text = str(item)
+        except Exception:
+            continue
+        norm = _normalize_manifest_path(text)
+        if norm:
+            paths.append(norm)
+    return paths
+
+
+def _build_stage_ownership(stage_results) -> tuple:
+    # Map normalized paths to stage names in a stable, sorted order. Only
+    # entries with a usable stage name take part in the join, so records
+    # without one stay out of ownership while remaining in stages output.
+    # Exact written claims win over owned prefixes, the longest prefix wins,
+    # and stage-name order breaks remaining ties.
+    try:
+        entries = list(stage_results or [])
+    except TypeError:
+        return {}, []
+    named = []
+    for entry in entries:
+        name = _stage_name_of(entry)
+        if not name:
+            continue
+        named.append((name, entry))
+    named.sort(key=lambda pair: pair[0])
+    written_claims: dict = {}
+    for name, entry in named:
+        for path in _stage_written_paths(entry):
+            if path not in written_claims:
+                written_claims[path] = name
+    owned_claims: dict = {}
+    for name, entry in named:
+        for path in _stage_owned_paths(entry):
+            if path not in owned_claims:
+                owned_claims[path] = name
+    owned_prefixes = sorted(
+        owned_claims.items(), key=lambda item: (-len(item[0]), item[1], item[0])
+    )
+    return written_claims, owned_prefixes
+
+
+def _resolve_file_stage(rel_path, written_claims, owned_prefixes) -> str:
+    norm = _normalize_manifest_path(rel_path)
+    if not norm:
+        return OWNERSHIP_FALLBACK_STAGE
+    try:
+        stage = (written_claims or {}).get(norm)
+    except Exception:
+        stage = None
+    if stage:
+        return stage
+    try:
+        prefixes = list(owned_prefixes or [])
+    except TypeError:
+        prefixes = []
+    for prefix, stage in prefixes:
+        if norm == prefix or norm.startswith(prefix + "/"):
+            return stage
+    return OWNERSHIP_FALLBACK_STAGE
+
+
+def _enrich_written_files(written_files, stage_results) -> list:
+    # Return sorted written-file dicts with a deterministic stage label.
+    # Labels derive from caller supplied StageResult metadata only, so no
+    # filesystem I/O happens here. Files no stage claims fall back to
+    # OWNERSHIP_FALLBACK_STAGE. Inputs are copied, never mutated, and any
+    # pre-existing stage label is recomputed deterministically.
+    items = _sorted_written_files(written_files)
+    written_claims, owned_prefixes = _build_stage_ownership(stage_results)
+    enriched = []
+    for item in items:
+        if isinstance(item, dict):
+            rel = item.get("rel_path")
+            if rel is None:
+                rel = ""
+            item["stage"] = _resolve_file_stage(rel, written_claims, owned_prefixes)
+            enriched.append(item)
+            continue
+        try:
+            rel = str(item)
+        except Exception:
+            continue
+        enriched.append(
+            {
+                "rel_path": rel,
+                "size": 0,
+                "sha256": "",
+                "stage": _resolve_file_stage(rel, written_claims, owned_prefixes),
+            }
+        )
+    return enriched
+
+
+def _sha256_of_bytes(value) -> str:
+    if not isinstance(value, (bytes, bytearray, memoryview)):
+        return ""
+    try:
+        return hashlib.sha256(bytes(value)).hexdigest()
+    except Exception:
+        return ""
+
+
+def _written_hash_index(written_files) -> dict:
+    try:
+        entries = list(written_files or [])
+    except TypeError:
+        return {}
+    candidates: dict = {}
+    for entry in entries:
+        rel = None
+        digest = ""
+        if isinstance(entry, dict):
+            rel = entry.get("rel_path")
+            digest = entry.get("sha256") or ""
+        else:
+            converter = getattr(entry, "to_dict", None)
+            data = None
+            if callable(converter):
+                try:
+                    data = converter()
+                except Exception:
+                    data = None
+            if isinstance(data, dict):
+                rel = data.get("rel_path")
+                digest = data.get("sha256") or ""
+            else:
+                try:
+                    rel = getattr(entry, "rel_path", None)
+                except Exception:
+                    rel = None
+                try:
+                    digest = getattr(entry, "sha256", "") or ""
+                except Exception:
+                    digest = ""
+        if rel is None:
+            continue
+        norm = _normalize_manifest_path(rel)
+        if not norm:
+            continue
+        try:
+            text = str(digest) if digest else ""
+        except Exception:
+            text = ""
+        candidates.setdefault(norm, []).append(text)
+    index = {}
+    for norm, digests in candidates.items():
+        non_empty = sorted(value for value in digests if value)
+        index[norm] = non_empty[0] if non_empty else ""
+    return index
+
+
+def _enrich_asset_resolutions(asset_resolutions, snapshot_assets, written_hashes) -> list:
+    # Return sorted asset dicts with deterministic provenance hashes.
+    # source_sha256 hashes the byte-like snapshot asset for the same path and
+    # stays empty when no byte value exists; output_sha256 reuses the staged
+    # written-file hash when available and stays empty otherwise. Missing
+    # metadata is never invented. All AssetResolution fields and the stable
+    # path ordering are preserved, and inputs are copied, never mutated.
+    items = _sorted_asset_resolutions(asset_resolutions)
+    normalized_assets: dict = {}
+    if isinstance(snapshot_assets, dict):
+        try:
+            ordered_keys = sorted(snapshot_assets, key=lambda key: str(key))
+        except Exception:
+            try:
+                ordered_keys = list(snapshot_assets)
+            except TypeError:
+                ordered_keys = []
+        for key in ordered_keys:
+            norm = _normalize_manifest_path(key)
+            if norm and norm not in normalized_assets:
+                try:
+                    normalized_assets[norm] = snapshot_assets[key]
+                except Exception:
+                    continue
+    try:
+        hashes = dict(written_hashes or {})
+    except Exception:
+        hashes = {}
+    enriched = []
+    for item in items:
+        if not isinstance(item, dict):
+            enriched.append(item)
+            continue
+        rel = item.get("rel_path")
+        norm = _normalize_manifest_path(rel) if rel is not None else ""
+        if norm in normalized_assets:
+            item["source_sha256"] = _sha256_of_bytes(normalized_assets[norm])
+        else:
+            item["source_sha256"] = ""
+        try:
+            output = hashes.get(norm, "") if norm else ""
+            item["output_sha256"] = str(output) if output else ""
+        except Exception:
+            item["output_sha256"] = ""
+        enriched.append(item)
+    return enriched
 
 
 def _compute_identity_hash(profile_name, portable_target, portable_project, map_size, layers, portable_scope, sources, snapshot_fingerprint) -> str:
@@ -864,6 +1165,17 @@ def build_manifest_dict(plan, written_files: list, stage_results: list | None = 
         acceptance_tags = list(getattr(plan, "acceptance_tags", []) or [])
     except Exception:
         acceptance_tags = []
+    try:
+        snapshot_assets = getattr(snapshot, "assets", None) if snapshot is not None else None
+    except Exception:
+        snapshot_assets = None
+    written_hashes = _written_hash_index(written_files)
+    enriched_files = _enrich_written_files(written_files, stage_results)
+    try:
+        plan_resolutions = getattr(plan, "asset_resolutions", []) or []
+    except Exception:
+        plan_resolutions = []
+    enriched_assets = _enrich_asset_resolutions(plan_resolutions, snapshot_assets, written_hashes)
     return {
         "manifest_schema": MANIFEST_SCHEMA,
         "manifest_version": MANIFEST_VERSION,
@@ -898,14 +1210,14 @@ def build_manifest_dict(plan, written_files: list, stage_results: list | None = 
         "proposed_repairs": proposed,
         "applied_repairs": applied,
         "asset_counts": _asset_counts(plan),
-        "asset_resolutions": _sorted_asset_resolutions(getattr(plan, "asset_resolutions", []) or []),
+        "asset_resolutions": enriched_assets,
         "findings": findings,
         "blockers": blockers,
         "acceptance_tags": acceptance_tags,
         "placeholders": _sorted_strings(placeholders),
         "provenance": _sorted_strings(provenance),
         "stages": _sorted_stages(stage_results),
-        "written_files": _sorted_written_files(written_files),
+        "written_files": enriched_files,
     }
 
 

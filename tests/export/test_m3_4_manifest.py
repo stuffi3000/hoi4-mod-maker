@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import shutil
 import uuid
@@ -12,7 +13,7 @@ import pytest
 
 from data.constants import TILE_LAND, TILE_SEA
 from data.terrain_types import TERRAIN_PALETTE_INDEX
-from domain.export_contract import WrittenFile
+from domain.export_contract import StageResult, WrittenFile
 from domain.managers.continent import ContinentManager
 from domain.managers.country import CountryManager
 from domain.managers.state import StateManager
@@ -259,3 +260,175 @@ def test_legacy_lock_comparison_still_works(m3_4_tmp):
     changed["snapshot_fingerprint"] = "0" * 64
     breaking = compare_with_lock(changed, str(lock_path))
     assert breaking["breaking"] is True
+
+
+def _ownership_fixture_stages():
+    return [
+        StageResult(
+            stage="map_metadata",
+            owned_files=("map/provinces.bmp", "map/default.map"),
+            written=[],
+        ),
+        StageResult(
+            stage="core_rasters",
+            owned_files=("map/", "map/terrain/"),
+            written=[WrittenFile("map/provinces.bmp", 10, "a" * 64)],
+        ),
+        StageResult(
+            stage="state_geography",
+            owned_files=("history/states/",),
+            written=[WrittenFile("history/states/1-Foo.txt", 3, "c" * 64)],
+        ),
+    ]
+
+
+def test_written_files_stage_ownership_resolution():
+    plan = _base_plan()
+    files = [
+        WrittenFile("map/provinces.bmp", 10, "a" * 64),
+        WrittenFile("map/terrain/colormap_water_0.dds", 5, "b" * 64),
+        WrittenFile("map/default.map", 6, "d" * 64),
+        WrittenFile("history/states/1-Foo.txt", 3, "c" * 64),
+        WrittenFile("history/states/2-Bar.txt", 4, "e" * 64),
+        WrittenFile("descriptor.mod", 7, "f" * 64),
+    ]
+    manifest = build_manifest_dict(plan, files, _ownership_fixture_stages())
+    by_path = {entry["rel_path"]: entry for entry in manifest["written_files"]}
+    assert by_path["map/provinces.bmp"]["stage"] == "core_rasters"
+    assert by_path["map/terrain/colormap_water_0.dds"]["stage"] == "core_rasters"
+    assert by_path["map/default.map"]["stage"] == "map_metadata"
+    assert by_path["history/states/1-Foo.txt"]["stage"] == "state_geography"
+    assert by_path["history/states/2-Bar.txt"]["stage"] == "state_geography"
+    assert by_path["descriptor.mod"]["stage"] == "unowned"
+    assert by_path["map/provinces.bmp"]["size"] == 10
+    assert by_path["map/provinces.bmp"]["sha256"] == "a" * 64
+    assert [entry["rel_path"] for entry in manifest["written_files"]] == sorted(by_path)
+
+
+def test_stage_ownership_stable_under_shuffled_inputs_and_service_records():
+    plan = _base_plan()
+    stages = _ownership_fixture_stages()
+    files = [
+        WrittenFile("descriptor.mod", 7, "f" * 64),
+        WrittenFile("map/provinces.bmp", 10, "a" * 64),
+        WrittenFile("orphan.txt", 1, "9" * 64),
+        WrittenFile("history/states/2-Bar.txt", 4, "e" * 64),
+    ]
+    service_record = StageResult(
+        stage="",
+        owned_files=("orphan.txt", "descriptor.mod"),
+        written=[WrittenFile("orphan.txt", 1, "9" * 64)],
+    )
+    first = build_manifest_dict(plan, files, stages + [service_record])
+    second = build_manifest_dict(
+        plan, list(reversed(files)), [service_record] + list(reversed(stages))
+    )
+    assert first["written_files"] == second["written_files"]
+    assert first["asset_resolutions"] == second["asset_resolutions"]
+    assert first["stages"] == second["stages"]
+    by_path = {entry["rel_path"]: entry for entry in first["written_files"]}
+    assert by_path["orphan.txt"]["stage"] == "unowned"
+    assert by_path["descriptor.mod"]["stage"] == "unowned"
+    assert by_path["map/provinces.bmp"]["stage"] == "core_rasters"
+
+
+def test_asset_source_and_output_hashes():
+    raw = b"clean-world-normal-bytes"
+    plan = _base_plan(assets={"map/world_normal.bmp": raw})
+    staged_hash = "2" * 64
+    out_hash = "1" * 64
+    files = [
+        WrittenFile("map/world_normal.bmp", len(raw), staged_hash),
+        WrittenFile("map/provinces.bmp", 7, out_hash),
+    ]
+    manifest = build_manifest_dict(plan, files)
+    by_path = {entry["rel_path"]: entry for entry in manifest["asset_resolutions"]}
+    preserved = by_path["map/world_normal.bmp"]
+    assert preserved["disposition"] == "preserved"
+    assert preserved["provenance"] == "project-assets"
+    assert preserved["size"] == len(raw)
+    assert preserved["source_sha256"] == hashlib.sha256(raw).hexdigest()
+    assert preserved["output_sha256"] == staged_hash
+    generated = by_path["map/provinces.bmp"]
+    assert generated["disposition"] == "generated"
+    assert generated["provenance"] == "writer-generated"
+    assert generated["reason"] == "export writers generate this file"
+    assert generated["source_sha256"] == ""
+    assert generated["output_sha256"] == out_hash
+    assert plan.snapshot.assets["map/world_normal.bmp"] == raw
+
+
+def test_asset_hashes_for_byte_like_and_missing_metadata():
+    plan = _base_plan(
+        assets={
+            "custom/a.bin": bytearray(b"AAA"),
+            "custom/b.bin": memoryview(b"BBB"),
+            "custom/notes.txt": "text-is-not-bytes",
+        }
+    )
+    manifest = build_manifest_dict(plan, [])
+    by_path = {entry["rel_path"]: entry for entry in manifest["asset_resolutions"]}
+    assert by_path["custom/a.bin"]["source_sha256"] == hashlib.sha256(b"AAA").hexdigest()
+    assert by_path["custom/b.bin"]["source_sha256"] == hashlib.sha256(b"BBB").hexdigest()
+    assert by_path["custom/a.bin"]["output_sha256"] == ""
+    assert by_path["custom/notes.txt"]["source_sha256"] == ""
+    assert by_path["custom/notes.txt"]["output_sha256"] == ""
+    omitted = by_path["map/colors.txt"]
+    assert omitted["disposition"] == "omitted"
+    assert omitted["provenance"] == "profile-policy"
+    assert omitted["source_sha256"] == ""
+    assert omitted["output_sha256"] == ""
+    assert plan.snapshot.assets["custom/notes.txt"] == "text-is-not-bytes"
+
+
+def test_asset_lists_stable_under_shuffled_input_without_mutation():
+    plan = _base_plan(assets={"map/world_normal.bmp": b"shuffled-bytes"})
+    files = [
+        {"rel_path": "b.txt", "size": 2, "sha256": "h2"},
+        {"rel_path": "a.txt", "size": 1, "sha256": "h1"},
+    ]
+    files_before = copy.deepcopy(files)
+    plan.asset_resolutions = [
+        {"rel_path": "b.txt", "disposition": "generated", "provenance": "p",
+         "reason": "r", "size": 2},
+        {"rel_path": "a.txt", "disposition": "omitted", "provenance": "p",
+         "reason": "r", "size": 0},
+    ]
+    resolutions_before = copy.deepcopy(plan.asset_resolutions)
+    stages = [StageResult(stage="core_rasters", owned_files=("a.txt",), written=[])]
+    first = build_manifest_dict(plan, files, stages)
+    assert files == files_before
+    assert plan.asset_resolutions == resolutions_before
+    plan.asset_resolutions = list(reversed(plan.asset_resolutions))
+    second = build_manifest_dict(plan, list(reversed(files)), list(reversed(stages)))
+    assert first["written_files"] == second["written_files"]
+    assert first["asset_resolutions"] == second["asset_resolutions"]
+    assert [entry["rel_path"] for entry in first["written_files"]] == ["a.txt", "b.txt"]
+    assert first["written_files"][0]["stage"] == "core_rasters"
+    assert first["written_files"][1]["stage"] == "unowned"
+    asset_by_path = {entry["rel_path"]: entry for entry in first["asset_resolutions"]}
+    assert asset_by_path["b.txt"]["output_sha256"] == "h2"
+    assert asset_by_path["b.txt"]["source_sha256"] == ""
+
+
+def test_identity_invariant_to_inventory_stage_and_hashes():
+    plan = _base_plan(assets={"map/world_normal.bmp": b"xyz"})
+    empty = build_manifest_dict(plan, [])
+    stages = [
+        StageResult(
+            stage="core_rasters",
+            owned_files=("map/",),
+            written=[WrittenFile("map/provinces.bmp", 1, "a" * 64)],
+        )
+    ]
+    full = build_manifest_dict(
+        plan,
+        [WrittenFile("map/provinces.bmp", 1, "a" * 64), WrittenFile("zzz.txt", 1, "b" * 64)],
+        stages,
+    )
+    assert full["identity"] == empty["identity"]
+    assert manifest_identity_hash(full) == empty["identity"]["identity_hash"]
+    assert full["sources"] == empty["sources"]
+    assert full["target"]["identity"] == empty["target"]["identity"]
+    assert full["written_files"] != empty["written_files"]
+    assert full["asset_resolutions"] != empty["asset_resolutions"]
