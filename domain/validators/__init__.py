@@ -1,4 +1,4 @@
-﻿"""Validator package with shared M3.1/M3.2a contracts."""
+"""Validator package with shared M3.1/M3.2a contracts."""
 from domain.validation import (
     GATE_CONTEXTS,
     FINDING_SEVERITIES,
@@ -10,8 +10,10 @@ from domain.validation import (
     coerce_finding,
     evaluate_gate,
 )
+from domain.validators.assets import validate_asset_integration
 from domain.validators.geography import validate_geography_references
 from domain.validators.logistics import validate_logistics_references
+from domain.validators.placement import validate_placement_references
 from domain.validators.raster import validate_raster_definition
 from domain.validators.terrain import validate_terrain_layers
 
@@ -19,6 +21,8 @@ FOUNDATION_RASTER_VALIDATOR_NAME = "raster/definition"
 FOUNDATION_TERRAIN_VALIDATOR_NAME = "terrain/layers"
 FOUNDATION_GEOGRAPHY_VALIDATOR_NAME = "geography/references"
 FOUNDATION_LOGISTICS_VALIDATOR_NAME = "logistics/references"
+FOUNDATION_PLACEMENT_VALIDATOR_NAME = "placement/references"
+FOUNDATION_ASSET_VALIDATOR_NAME = "integration/assets"
 
 
 def _foundation_raster_check(
@@ -163,12 +167,127 @@ def _foundation_logistics_check(
     )
 
 
+def _foundation_placement_check(
+    *,
+    tile_map=None,
+    province_map=None,
+    definitions=None,
+    terrain_map=None,
+    river_map=None,
+    height_map=None,
+    city_map=None,
+    tree_map=None,
+    profile=None,
+    expected_dimensions=None,
+    wrap_horizontal=None,
+    max_bbox_ratio=None,
+    include_engine_boundary=False,
+    mixed_threshold=0.0,
+    terrain_indices=None,
+    state_mgr=None,
+    country_mgr=None,
+    continent_mgr=None,
+    strategic_region_mgr=None,
+    adjacency_mgr=None,
+    railway_mgr=None,
+    supply_mgr=None,
+    adjacency_rule_mgr=None,
+    placement_entries=None,
+    position_entries=None,
+    building_entries=None,
+    weather_entries=None,
+    lifecycle="draft",
+    collision_tolerance=1.0,
+    **_ignored,
+):
+    return validate_placement_references(
+        province_map,
+        tile_map,
+        placement_entries=placement_entries,
+        position_entries=position_entries,
+        building_entries=building_entries,
+        weather_entries=weather_entries,
+        state_mgr=state_mgr,
+        strategic_region_mgr=strategic_region_mgr,
+        profile=profile,
+        lifecycle=lifecycle,
+        wrap_horizontal=wrap_horizontal,
+        collision_tolerance=collision_tolerance,
+    )
+
+
+def _foundation_asset_check(
+    *,
+    tile_map=None,
+    province_map=None,
+    definitions=None,
+    terrain_map=None,
+    river_map=None,
+    height_map=None,
+    city_map=None,
+    tree_map=None,
+    profile=None,
+    expected_dimensions=None,
+    wrap_horizontal=None,
+    max_bbox_ratio=None,
+    include_engine_boundary=False,
+    mixed_threshold=0.0,
+    terrain_indices=None,
+    state_mgr=None,
+    country_mgr=None,
+    continent_mgr=None,
+    strategic_region_mgr=None,
+    adjacency_mgr=None,
+    railway_mgr=None,
+    supply_mgr=None,
+    adjacency_rule_mgr=None,
+    target=None,
+    asset_resolutions=None,
+    output_files=None,
+    assets=None,
+    dirty_assets=None,
+    bmp_headers=None,
+    dds_headers=None,
+    descriptor_text=None,
+    descriptor_kind="internal",
+    vanilla_tags=(),
+    dependency_tags=(),
+    project_tags=(),
+    acceptance_tags=(),
+    foundation_ids=(),
+    content_references=None,
+    map_dimensions=None,
+    **_ignored,
+):
+    return validate_asset_integration(
+        profile=profile,
+        target=target,
+        asset_resolutions=asset_resolutions,
+        output_files=output_files,
+        assets=assets,
+        dirty_assets=dirty_assets,
+        bmp_headers=bmp_headers,
+        dds_headers=dds_headers,
+        descriptor_text=descriptor_text,
+        descriptor_kind=descriptor_kind,
+        vanilla_tags=vanilla_tags,
+        dependency_tags=dependency_tags,
+        project_tags=project_tags,
+        acceptance_tags=acceptance_tags,
+        foundation_ids=foundation_ids,
+        content_references=content_references,
+        map_dimensions=map_dimensions,
+    )
+
+
 def create_foundation_validator_registry():
     registry = ValidatorRegistry()
     registry.register(FOUNDATION_RASTER_VALIDATOR_NAME, _foundation_raster_check)
     registry.register(FOUNDATION_TERRAIN_VALIDATOR_NAME, _foundation_terrain_check)
     registry.register(FOUNDATION_GEOGRAPHY_VALIDATOR_NAME, _foundation_geography_check)
     registry.register(FOUNDATION_LOGISTICS_VALIDATOR_NAME, _foundation_logistics_check)
+    registry.register(FOUNDATION_PLACEMENT_VALIDATOR_NAME, _foundation_placement_check)
+    registry.register(FOUNDATION_ASSET_VALIDATOR_NAME, _foundation_asset_check)
     return registry
 
 
@@ -196,6 +315,28 @@ def run_foundation_validation(
     railway_mgr=None,
     supply_mgr=None,
     adjacency_rule_mgr=None,
+    placement_entries=None,
+    position_entries=None,
+    building_entries=None,
+    weather_entries=None,
+    lifecycle="draft",
+    collision_tolerance=1.0,
+    target=None,
+    asset_resolutions=None,
+    output_files=None,
+    assets=None,
+    dirty_assets=None,
+    bmp_headers=None,
+    dds_headers=None,
+    descriptor_text=None,
+    descriptor_kind="internal",
+    vanilla_tags=(),
+    dependency_tags=(),
+    project_tags=(),
+    acceptance_tags=(),
+    foundation_ids=(),
+    content_references=None,
+    map_dimensions=None,
     context="draft_preview",
     source="foundation",
 ):
@@ -224,6 +365,28 @@ def run_foundation_validation(
         railway_mgr=railway_mgr,
         supply_mgr=supply_mgr,
         adjacency_rule_mgr=adjacency_rule_mgr,
+        placement_entries=placement_entries,
+        position_entries=position_entries,
+        building_entries=building_entries,
+        weather_entries=weather_entries,
+        lifecycle=lifecycle,
+        collision_tolerance=collision_tolerance,
+        target=target,
+        asset_resolutions=asset_resolutions,
+        output_files=output_files,
+        assets=assets,
+        dirty_assets=dirty_assets,
+        bmp_headers=bmp_headers,
+        dds_headers=dds_headers,
+        descriptor_text=descriptor_text,
+        descriptor_kind=descriptor_kind,
+        vanilla_tags=vanilla_tags,
+        dependency_tags=dependency_tags,
+        project_tags=project_tags,
+        acceptance_tags=acceptance_tags,
+        foundation_ids=foundation_ids,
+        content_references=content_references,
+        map_dimensions=map_dimensions,
     )
     return ValidationReport(findings=findings, source=source, context=context)
 
@@ -236,6 +399,8 @@ __all__ = [
     "FOUNDATION_TERRAIN_VALIDATOR_NAME",
     "FOUNDATION_GEOGRAPHY_VALIDATOR_NAME",
     "FOUNDATION_LOGISTICS_VALIDATOR_NAME",
+    "FOUNDATION_PLACEMENT_VALIDATOR_NAME",
+    "FOUNDATION_ASSET_VALIDATOR_NAME",
     "GateDecision",
     "ValidationFinding",
     "ValidationReport",

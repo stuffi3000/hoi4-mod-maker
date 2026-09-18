@@ -1,4 +1,4 @@
-﻿"""M3.3 central foundation registry tests (no game install)."""
+"""M3.3 central foundation registry tests (no game install)."""
 from __future__ import annotations
 
 import numpy as np
@@ -8,8 +8,10 @@ from data.constants import TILE_LAND, TILE_SEA
 from data.terrain_types import TERRAIN_PALETTE_INDEX
 from domain.validation import ValidationFinding, ValidationReport
 from domain.validators import (
+    FOUNDATION_ASSET_VALIDATOR_NAME,
     FOUNDATION_GEOGRAPHY_VALIDATOR_NAME,
     FOUNDATION_LOGISTICS_VALIDATOR_NAME,
+    FOUNDATION_PLACEMENT_VALIDATOR_NAME,
     FOUNDATION_RASTER_VALIDATOR_NAME,
     FOUNDATION_TERRAIN_VALIDATOR_NAME,
     create_foundation_validator_registry,
@@ -88,13 +90,15 @@ def _clean_foundation_with_managers():
     return inputs
 
 
-def test_registry_has_exactly_four_deterministic_entries():
+def test_registry_has_exactly_six_deterministic_entries():
     registry = create_foundation_validator_registry()
-    assert len(registry) == 4
+    assert len(registry) == 6
     assert registry.names == tuple(sorted(registry.names))
     assert registry.names == (
         FOUNDATION_GEOGRAPHY_VALIDATOR_NAME,
+        FOUNDATION_ASSET_VALIDATOR_NAME,
         FOUNDATION_LOGISTICS_VALIDATOR_NAME,
+        FOUNDATION_PLACEMENT_VALIDATOR_NAME,
         FOUNDATION_RASTER_VALIDATOR_NAME,
         FOUNDATION_TERRAIN_VALIDATOR_NAME,
     )
@@ -105,6 +109,8 @@ def test_registry_names_are_stable():
     assert FOUNDATION_TERRAIN_VALIDATOR_NAME == "terrain/layers"
     assert FOUNDATION_GEOGRAPHY_VALIDATOR_NAME == "geography/references"
     assert FOUNDATION_LOGISTICS_VALIDATOR_NAME == "logistics/references"
+    assert FOUNDATION_PLACEMENT_VALIDATOR_NAME == "placement/references"
+    assert FOUNDATION_ASSET_VALIDATOR_NAME == "integration/assets"
     first = create_foundation_validator_registry().names
     second = create_foundation_validator_registry().names
     assert first == second
@@ -160,6 +166,29 @@ def test_logistics_wrapper_flags_bad_adjacency():
     assert any(item.code == "logistics.adjacency_endpoint" for item in report)
 
 
+def test_placement_wrapper_flags_bad_coordinate():
+    inputs = _clean_foundation_with_managers()
+    inputs["placement_entries"] = [{"province_id": 1, "x": 99.5, "y": 99.5}]
+    registry = create_foundation_validator_registry()
+    findings = registry.run(**inputs)
+    codes = [item.code for item in findings]
+    assert "placement.coordinate" in codes
+    report = run_foundation_validation(**inputs)
+    assert any(item.code == "placement.coordinate" for item in report)
+
+
+def test_asset_wrapper_flags_tag_collision():
+    inputs = _clean_foundation_with_managers()
+    inputs["vanilla_tags"] = ("GER",)
+    inputs["project_tags"] = ("ger",)
+    registry = create_foundation_validator_registry()
+    findings = registry.run(**inputs)
+    codes = [item.code for item in findings]
+    assert "integration.tag_collision" in codes
+    report = run_foundation_validation(**inputs)
+    assert any(item.code == "integration.tag_collision" for item in report)
+
+
 def test_common_api_runs_both_validators():
     inputs = _clean_foundation()
     inputs["definitions"] = {1: "land"}
@@ -188,7 +217,7 @@ def test_raster_and_terrain_findings_keep_registry_order():
     assert raster_pos < terrain_pos
 
 
-def test_all_four_validators_keep_registry_order():
+def test_all_six_validators_keep_registry_order():
     from domain.managers.adjacency import AdjacencyEntry, AdjacencyManager
     from domain.managers.state import StateManager
 
@@ -203,12 +232,17 @@ def test_all_four_validators_keep_registry_order():
     bad_adj = AdjacencyManager()
     bad_adj.add(AdjacencyEntry(1, 99, "sea"))
     inputs["adjacency_mgr"] = bad_adj
+    inputs["placement_entries"] = [{"province_id": 1, "x": 99.5, "y": 99.5}]
+    inputs["vanilla_tags"] = ("GER",)
+    inputs["project_tags"] = ("ger",)
     registry = create_foundation_validator_registry()
     findings = registry.run(**inputs)
     codes = [item.code for item in findings]
     assert codes == [
         "geography.state_membership",
+        "integration.tag_collision",
         "logistics.adjacency_endpoint",
+        "placement.coordinate",
         "raster.definition_missing",
         "terrain.index",
     ]
@@ -248,6 +282,20 @@ def test_run_foundation_validation_forwards_managers():
     assert any(item.code == "logistics.adjacency_endpoint" for item in report)
 
 
+def test_run_foundation_validation_forwards_placement_and_asset_inputs():
+    inputs = _clean_foundation_with_managers()
+    inputs["placement_entries"] = [{"province_id": 1, "x": 99.5, "y": 99.5}]
+    inputs["vanilla_tags"] = ("GER",)
+    inputs["project_tags"] = ("ger",)
+    direct = create_foundation_validator_registry().run(**inputs)
+    report = run_foundation_validation(**inputs)
+    assert [item.code for item in direct] == [item.code for item in report]
+    assert [item.code for item in direct] == [
+        "integration.tag_collision",
+        "placement.coordinate",
+    ]
+
+
 def test_wrappers_accept_all_common_kwargs():
     inputs = _clean_foundation()
     full = dict(inputs)
@@ -283,6 +331,40 @@ def test_wrappers_accept_all_common_kwargs_with_managers():
     assert report.total == 0
 
 
+def test_wrappers_accept_placement_and_asset_kwargs():
+    inputs = _clean_foundation_with_managers()
+    inputs.update(
+        {
+            "placement_entries": [],
+            "position_entries": [],
+            "building_entries": [],
+            "weather_entries": [],
+            "lifecycle": "draft",
+            "collision_tolerance": 1.0,
+            "target": None,
+            "asset_resolutions": None,
+            "output_files": None,
+            "assets": None,
+            "dirty_assets": None,
+            "bmp_headers": None,
+            "dds_headers": None,
+            "descriptor_text": None,
+            "descriptor_kind": "internal",
+            "vanilla_tags": (),
+            "dependency_tags": (),
+            "project_tags": (),
+            "acceptance_tags": (),
+            "foundation_ids": (),
+            "content_references": None,
+            "map_dimensions": None,
+        }
+    )
+    registry = create_foundation_validator_registry()
+    assert registry.run(**inputs) == []
+    report = run_foundation_validation(**inputs)
+    assert report.total == 0
+
+
 def test_deterministic_repeatability():
     inputs = _clean_foundation()
     inputs["definitions"] = {1: "land"}
@@ -301,13 +383,34 @@ def test_deterministic_repeatability():
 
 
 def test_no_input_mutation():
-    inputs = _clean_foundation()
+    inputs = _clean_foundation_with_managers()
+    inputs.update(
+        {
+            "placement_entries": [{"province_id": 1, "x": 0.5, "y": 0.5}],
+            "position_entries": [{"province_id": 2, "x": 2.5, "y": 0.5}],
+            "building_entries": [],
+            "weather_entries": [],
+            "lifecycle": "draft",
+            "collision_tolerance": 1.0,
+            "vanilla_tags": ("GER",),
+            "project_tags": ("AAA",),
+            "foundation_ids": (1, 2),
+            "content_references": {"states": [1]},
+            "map_dimensions": (4, 4),
+        }
+    )
     snapshots = {}
     for key, value in inputs.items():
         if isinstance(value, np.ndarray):
             snapshots[key] = value.copy()
         elif isinstance(value, dict):
             snapshots[key] = dict(value)
+        elif isinstance(value, list):
+            import copy
+
+            snapshots[key] = copy.deepcopy(value)
+        elif isinstance(value, tuple):
+            snapshots[key] = tuple(value)
         else:
             snapshots[key] = value
     registry = create_foundation_validator_registry()
@@ -331,6 +434,8 @@ def test_exports_preserve_shared_contract():
         "FOUNDATION_TERRAIN_VALIDATOR_NAME",
         "FOUNDATION_GEOGRAPHY_VALIDATOR_NAME",
         "FOUNDATION_LOGISTICS_VALIDATOR_NAME",
+        "FOUNDATION_PLACEMENT_VALIDATOR_NAME",
+        "FOUNDATION_ASSET_VALIDATOR_NAME",
         "GateDecision",
         "ValidationFinding",
         "ValidationReport",
