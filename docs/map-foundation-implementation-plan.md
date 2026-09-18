@@ -715,15 +715,15 @@ Update the logistics renderer to color components and highlight the current Belg
 - [x] **M4.1 — explicit adjacency review state:** project metadata now records `unreviewed`, `none_intended` with a note, or `defined` with a deterministic adjacency-layer hash; freeze/accepted planning blocks unreviewed or contradictory layers. Committed as `3f2a833`.
 - [x] **M4.2 — adjacency import/edit/round trip:** CSV and Clausewitz-rule parsers preserve supported fields/comments, optional imports preserve absent custom layers, writers round-trip comments, and the adjacency/rule editors expose geometry, wrap, rule requirements, invalid references, and undoable mutations. Committed as `e8a7588`.
 - [x] **M4.3 — original adjacency fixtures:** add focused synthetic strait, impassable, canal-rule, through-sea, map-edge, and broken-reference fixtures with validator coverage; local vanilla parsing remains opt-in. Committed as `b2137cd`.
-- [ ] **M4.4 — pure logistics graph analysis:** add component/edge analysis, connection candidates, port/convoy metadata, duplicate/self-loop reporting, and remove self-loop railway output fallbacks.
+- [x] **M4.4 — pure logistics graph analysis:** add deterministic component/edge analysis, connection candidates, port/convoy and region metadata, duplicate/self-loop reporting, validator integration, and remove self-loop railway output fallbacks. Committed as `086b97b`.
 - [ ] **M4.5 — intentional logistics exceptions and renderer:** persist stable graph/supply exceptions, invalidate them on graph changes, color components, and require connected-or-accepted logistics at freeze.
 
 ### M4 checkpoint — after M4.2
 
-- **Completed:** M4.1 review policy (`3f2a833`), M4.2 adjacency import/edit/round trip (`e8a7588`), and M4.3 synthetic adjacency fixtures (`b2137cd`).
+- **Completed:** M4.1 review policy (`3f2a833`), M4.2 adjacency import/edit/round trip (`e8a7588`), M4.3 synthetic adjacency fixtures (`b2137cd`), and M4.4 graph analysis/fallback removal (`086b97b`).
 - **Reviewed:** adjacency/rule mutations use the shared undoable manager-state command; imports distinguish absent files from empty layers and invalidate stale review metadata when a layer is replaced. Muse Spark performed a focused review after explicit transmission approval; its import adapter, stale-review, endpoint-validation, and UI performance findings were fixed before acceptance.
-- **Evidence:** focused adjacency/command/UI/parser/fixture tests passed, the full `tests/export` suite passed, and compilation/diff checks passed. The broader validator command still has the known Windows temporary-directory ACL failures in two fixture setups.
-- **Next controlled slice:** M4.4 pure logistics graph analysis, starting with graph data contracts and self-loop-free edge extraction. M4.5 exceptions/renderer remains pending.
+- **Evidence:** focused graph/validator/fixture/logistics-generation tests passed, the full `tests/export` suite passed, and compilation/diff checks passed. The byte-diff baseline records the intentional valid adjacent proposal replacing the former self-loop fallback.
+- **Next controlled slice:** M4.5 project-level logistics exceptions, graph-change invalidation, and component renderer/highlight support.
 
 ## M5 — positions, building geometry, and weather placement
 
