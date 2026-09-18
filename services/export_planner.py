@@ -187,6 +187,7 @@ class FoundationSnapshot:
     adjacency_rule_mgr: object = None
     strategic_region_mgr: object = None
     logistics_exception_mgr: object = None
+    map_placement_mgr: object = None
     colormap_settings: object = None
     default_map_settings: object = None
     assets: dict = field(default_factory=dict)
@@ -209,6 +210,7 @@ class FoundationSnapshot:
             "adjacency_rule_mgr": self.adjacency_rule_mgr,
             "strategic_region_mgr": self.strategic_region_mgr,
             "logistics_exception_mgr": self.logistics_exception_mgr,
+            "map_placement_mgr": self.map_placement_mgr,
         }
 
     def mutable_arrays(self) -> dict:
@@ -258,8 +260,10 @@ def take_snapshot(tile_map, province_map, terrain_map=None, height_map=None, riv
                   managers: dict | None = None, provincial_terrain=None,
                   colormap_settings=None, default_map_settings=None,
                   assets=None, dirty_assets=None, project_meta=None,
-                  profile_id: str = "hoi4-1.19") -> FoundationSnapshot:
+                  profile_id: str = "hoi4-1.19", map_placement_mgr=None) -> FoundationSnapshot:
     managers = dict(managers or {})
+    if map_placement_mgr is not None:
+        managers["map_placement_mgr"] = map_placement_mgr
     snapshot = FoundationSnapshot(
         width=int(province_map.shape[1]),
         height=int(province_map.shape[0]),
@@ -278,6 +282,7 @@ def take_snapshot(tile_map, province_map, terrain_map=None, height_map=None, riv
         adjacency_rule_mgr=_deepcopy_manager(managers.get("adjacency_rule_mgr")),
         strategic_region_mgr=_deepcopy_manager(managers.get("strategic_region_mgr")),
         logistics_exception_mgr=_deepcopy_manager(managers.get("logistics_exception_mgr")),
+        map_placement_mgr=_deepcopy_manager(managers.get("map_placement_mgr")),
         colormap_settings=copy.deepcopy(colormap_settings),
         default_map_settings=copy.deepcopy(default_map_settings),
         assets={
@@ -982,7 +987,7 @@ def _apply_state_empty_cleanup(snapshot, action) -> None:
     from services.export_service import _precheck_clean_empty_states
     if snapshot.state_mgr is None:
         return
-    _precheck_clean_empty_states(snapshot.state_mgr, snapshot.country_mgr, [])
+    _precheck_clean_empty_states(snapshot.state_mgr, snapshot.country_mgr, [], getattr(snapshot, "map_placement_mgr", None))
 
 
 def _apply_province_tiny_merge(snapshot, action) -> None:
@@ -1014,6 +1019,7 @@ def _apply_province_compact_ids(snapshot, action) -> None:
         railway_mgr=snapshot.railway_mgr,
         supply_mgr=snapshot.supply_mgr,
         adjacency_rule_mgr=snapshot.adjacency_rule_mgr,
+        map_placement_mgr=getattr(snapshot, "map_placement_mgr", None),
     )
     snapshot.province_map = _freeze_array(shim.province_map)
     snapshot.tile_map = _freeze_array(shim.tile_map)
@@ -1166,7 +1172,7 @@ def plan_export(tile_map, province_map, terrain_map=None, height_map=None, river
                 profile_name: str = "legacy_full", game_target=None, game_dir=None,
                 game_profile=None, repair_policy: str = "propose", lifecycle=None,
                 scope=None, dimensions=None, mod_name: str = "WorldTest", tag: str = "AAA",
-                acceptance_count: int = 2, vanilla_tags=()) -> ExportPlan:
+                acceptance_count: int = 2, vanilla_tags=(), map_placement_mgr=None) -> ExportPlan:
     if profile_name not in EXPORT_PROFILES:
         raise PlanRejected("unknown export profile %r; expected one of %s"
                            % (profile_name, ", ".join(EXPORT_PROFILES)))
@@ -1192,6 +1198,7 @@ def plan_export(tile_map, province_map, terrain_map=None, height_map=None, river
         "adjacency_rule_mgr": adjacency_rule_mgr,
         "strategic_region_mgr": strategic_region_mgr,
         "logistics_exception_mgr": logistics_exception_mgr,
+        "map_placement_mgr": map_placement_mgr,
     }
     snapshot = take_snapshot(
         tile_map, province_map, terrain_map, height_map, river_map,
@@ -1287,7 +1294,7 @@ def plan_export_from_project(project, canvas=None, tile_map=None, province_map=N
         raise PlanRejected("project has no map arrays to plan an export from")
     for key in ("state_mgr", "country_mgr", "continent_mgr", "adjacency_mgr",
                 "railway_mgr", "supply_mgr", "adjacency_rule_mgr", "strategic_region_mgr",
-                "logistics_exception_mgr",
+                "logistics_exception_mgr", "map_placement_mgr",
                 "colormap_settings", "default_map_settings", "assets", "dirty_assets",
                 "project_meta"):
         kwargs.setdefault(key, getattr(project, key, None))

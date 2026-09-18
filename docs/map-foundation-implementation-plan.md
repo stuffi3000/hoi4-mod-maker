@@ -772,6 +772,20 @@ Refactor `export/writers/map/buildings.py`:
 
 Allow one or more authored/generated weather positions per strategic region, with size/type where supported. Validate containment and spacing. A single `small` centroid can remain an initial proposal, not a silently final value.
 
+### M5 implementation tracking
+
+- [x] **M5.1 — authored placement model:** added deterministic province-slot, building, port, and weather records with float-preserving transforms, provenance/review state, stable serialization, compact-ID remap/drop operations, and focused tests. Project lifecycle and `placements.json` persistence clear legacy/missing placement data safely; export snapshots fork placements and remap the export copy during province compaction. Muse Spark implemented the model and lifecycle wiring in narrow slices; the parent reviewed and corrected generated-proposal review semantics and backward-compatible optional argument placement. Committed with the next M5.1 checkpoint.
+- [ ] **M5.2 — proposal generation:** make centroid placement an explicit deterministic proposal with interior/coast/slope/separation/port constraints and no silent fallback acceptance.
+- [ ] **M5.3 — placement editor and overlay:** add selection/editing and collision/provenance overlays.
+- [ ] **M5.4 — foundation building output:** stop writing one-of-everything placeholders and consume authored/reviewed map-object placements by profile.
+- [ ] **M5.5 — weather positions:** write and validate one or more authored/generated weather positions per strategic region.
+
+### M5 checkpoint — M5.1 complete
+
+- **Completed:** `MapPlacementManager` and four explicit record types preserve six index-addressed province slots, building/map-object transforms, port/naval spawn transforms, weather positions, provenance, and review status. Generated/fallback proposals remain visibly generated while explicit review can advance their status. `placements.json` round-trips through `Project`, service, and UI file operations; missing legacy placement files clear the manager. Province compaction remaps export-copy placements without mutating the live project.
+- **Evidence:** focused M5.1/model/compact/export tests passed; existing project IO/meta tests passed with a workspace temp root; compilation and diff checks passed.
+- **Next controlled slice:** M5.2 deterministic proposal generation, followed by profile-aware placement writers.
+
 ## M6 — graphics and asset-resolution pipeline
 
 ### M6.1 Create an explicit asset inventory

@@ -45,6 +45,7 @@ def export_full_mod(
     profile=None,
     dimensions: tuple[int, int] | None = None,
     supported_version: str | None = None,
+    map_placement_mgr=None,
 ) -> None:
     """Export complete MOD in one click. scope controls the export scope, None=export all.
 
@@ -114,6 +115,7 @@ def export_full_mod(
         railway_mgr = _copy.deepcopy(railway_mgr)
         supply_mgr = _copy.deepcopy(supply_mgr)
         adjacency_rule_mgr = _copy.deepcopy(adjacency_rule_mgr)
+        map_placement_mgr = _copy.deepcopy(map_placement_mgr)
         from domain.map_data import MapData as _MD
         _tmp = _MD.__new__(_MD)
         _tmp.province_map = province_map
@@ -125,6 +127,7 @@ def export_full_mod(
             continent_mgr=continent_mgr, adjacency_mgr=adjacency_mgr,
             railway_mgr=railway_mgr, supply_mgr=supply_mgr,
             adjacency_rule_mgr=adjacency_rule_mgr,
+            map_placement_mgr=map_placement_mgr,
         )
         provincial_terrain = _tmp.provincial_terrain
     province_count = int(province_map.max())
@@ -1499,7 +1502,7 @@ def export_with_profile(profile_name: str, output_dir: str, tile_map: np.ndarray
                         dirty_assets: set | None = None, game_target=None, profile=None,
                         dimensions=None, repair_policy: str = "apply-safe", lifecycle=None,
                         project_meta=None, acceptance_count: int = 2,
-                        with_manifest: bool = True):
+                        with_manifest: bool = True, map_placement_mgr=None):
     """Planner-driven staged export (M2.4/M2.5/M2.6 compatibility facade).
 
     Builds an ExportPlan without touching the caller's managers or arrays,
@@ -1515,6 +1518,7 @@ def export_with_profile(profile_name: str, output_dir: str, tile_map: np.ndarray
         adjacency_mgr=adjacency_mgr, railway_mgr=railway_mgr, supply_mgr=supply_mgr,
         adjacency_rule_mgr=adjacency_rule_mgr, strategic_region_mgr=strategic_region_mgr,
         logistics_exception_mgr=logistics_exception_mgr,
+        map_placement_mgr=map_placement_mgr,
         provincial_terrain=provincial_terrain, colormap_settings=colormap_settings,
         default_map_settings=default_map_settings, assets=assets, dirty_assets=dirty_assets,
         project_meta=project_meta, profile_name=profile_name, game_target=game_target,

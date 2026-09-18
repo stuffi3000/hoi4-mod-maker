@@ -197,6 +197,7 @@ class MapData:
         railway_mgr=None,
         supply_mgr=None,
         adjacency_rule_mgr=None,
+        map_placement_mgr=None,
     ) -> dict[int, int]:
         """Compact the ID of province_map and update all places referencing the province ID simultaneously.
 
@@ -215,6 +216,7 @@ class MapData:
             railway_mgr: RailwayManager — Update the provinces that the railway passes through
             supply_mgr: SupplyNodeManager — Update supply node province
             adjacency_rule_mgr: AdjacencyRuleManager — Update the required/icon province of the rule
+            map_placement_mgr: MapPlacementManager
 
         Return:
             {old_id: new_id} mapping, which the caller uses to update the pid reference it holds"""
@@ -289,7 +291,7 @@ class MapData:
         # Mapping may contain 0:0 (unallocated pixels), and the dirty data referencing No. 0 will also be cleared after culling.
         ref_mapping = {o: n for o, n in mapping.items() if o != 0}
         for mgr in (continent_mgr, adjacency_mgr, railway_mgr,
-                    supply_mgr, adjacency_rule_mgr):
+                    supply_mgr, adjacency_rule_mgr, map_placement_mgr):
             if mgr is not None:
                 mgr.remap_provinces(ref_mapping)
 

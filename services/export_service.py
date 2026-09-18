@@ -149,7 +149,7 @@ def _precheck_sync_terrain_tile(terrain_map, tile_map, fixed) -> None:
         fixed.append(f"Changed terrain on {count_lk:,} lake pixels to lakes")
 
 
-def _precheck_clean_empty_states(state_mgr, country_mgr, fixed) -> None:
+def _precheck_clean_empty_states(state_mgr, country_mgr, fixed, map_placement_mgr=None) -> None:
     """Step 2: Delete the empty State + compact the ID continuously.
 
     The empty state left by merging province must be deleted. After deletion, there will still be a gap in the ID → HOI4 statetemplate.cpp:651
@@ -162,10 +162,14 @@ def _precheck_clean_empty_states(state_mgr, country_mgr, fixed) -> None:
         preview = ", ".join(str(s) for s in empty_sids[:10])
         more = f"; {len(empty_sids)} total" if len(empty_sids) > 10 else ""
         fixed.append(f"Deleted {len(empty_sids)} empty states left by province merges: {preview}{more}")
+    if map_placement_mgr is not None and empty_sids:
+        map_placement_mgr.drop_states(list(empty_sids))
     mapping = state_mgr.compact_ids()
     if mapping:
         if country_mgr is not None:
             country_mgr.remap_state_ids(mapping)
+        if map_placement_mgr is not None:
+            map_placement_mgr.remap_states(dict(mapping))
         fixed.append(f"Renumbered {len(mapping)} states with consecutive IDs (HOI4 does not allow ID gaps)")
 
 
@@ -389,6 +393,7 @@ def pre_export_check_and_fix(
     profile=None,
     game_target=None,
     dimensions=None,
+    map_placement_mgr=None,
 ) -> ExportReport:
     """Automatically detect and fix known issues before exporting.
 
@@ -440,7 +445,7 @@ def pre_export_check_and_fix(
 
     # ── 2.5 Delete empty State + compaction ID consecutive ──
     if state_mgr:
-        _precheck_clean_empty_states(state_mgr, country_mgr, fixed)
+        _precheck_clean_empty_states(state_mgr, country_mgr, fixed, map_placement_mgr)
 
     # ── 3. Verify that all land provinces belong to State ──
     if state_mgr and state_mgr.states:
@@ -644,6 +649,7 @@ def export_mod(
     profile=None,
     dimensions: tuple[int, int] | None = None,
     supported_version: str | None = None,
+    map_placement_mgr=None,
 ) -> ExportReport:
     """Call the complete export pipeline. Throw an exception on failure. Return ExportReport.
 
@@ -663,6 +669,7 @@ def export_mod(
         profile=profile,
         game_target=game_target,
         dimensions=dimensions,
+        map_placement_mgr=map_placement_mgr,
     )
 
     # ── Fill State default resource/building ──
@@ -715,6 +722,7 @@ def export_mod(
         default_map_settings=default_map_settings,
         adjacency_rule_mgr=adjacency_rule_mgr,
         strategic_region_mgr=strategic_region_mgr,
+        map_placement_mgr=map_placement_mgr,
         provincial_terrain=canvas.map_data.provincial_terrain,
         scope=scope,
         assets=assets,

@@ -37,6 +37,7 @@ def save_project(
     project_meta=None,
     allow_newer_overwrite: bool = False,
     logistics_exception_mgr=None,
+    map_placement_mgr=None,
 ) -> None:
     """Save project to .hoi4proj file (zip format).
 
@@ -186,6 +187,11 @@ def save_project(
                 "logistics_exceptions.json",
                 json.dumps(logistics_exception_mgr.to_dict(), ensure_ascii=False, indent=2),
             )
+        if map_placement_mgr is not None:
+            zf.writestr(
+                "placements.json",
+                json.dumps(map_placement_mgr.to_dict(), ensure_ascii=False, indent=2),
+            )
 
         # Province-level terrain (Feature A: independent of graphical terrain_map)
         if provincial_terrain:
@@ -214,6 +220,7 @@ def load_project(
     adjacency_rule_mgr=None,
     strategic_region_mgr=None,
     logistics_exception_mgr=None,
+    map_placement_mgr=None,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray | None, dict[int, str], np.ndarray | None]:
     """Load project files.
 
@@ -334,6 +341,12 @@ def load_project(
                 )
                 for exception in loaded_exceptions.get_all():
                     logistics_exception_mgr.add(exception)
+        if map_placement_mgr is not None:
+            map_placement_mgr.clear()
+            if "placements.json" in zf.namelist():
+                map_placement_mgr.from_dict(
+                    json.loads(zf.read("placements.json"))
+                )
 
         # tile_snapshot (tile_map snapshot when the province is generated, old projects do not have it)
         tile_snapshot = None
@@ -367,10 +380,10 @@ def read_project_meta(path: str):
         raise NewerSchemaError(exc.schema_version, exc.data) from exc
 
 
-def load_project_with_meta(path: str, state_mgr, country_mgr, continent_mgr=None, adjacency_mgr=None, railway_mgr=None, supply_mgr=None, adjacency_rule_mgr=None, strategic_region_mgr=None, logistics_exception_mgr=None):
+def load_project_with_meta(path: str, state_mgr, country_mgr, continent_mgr=None, adjacency_mgr=None, railway_mgr=None, supply_mgr=None, adjacency_rule_mgr=None, strategic_region_mgr=None, logistics_exception_mgr=None, map_placement_mgr=None):
     """Load arrays/managers plus project metadata."""
     on_disk = read_project_meta(path)
-    result = load_project(path, state_mgr, country_mgr, continent_mgr=continent_mgr, adjacency_mgr=adjacency_mgr, railway_mgr=railway_mgr, supply_mgr=supply_mgr, adjacency_rule_mgr=adjacency_rule_mgr, strategic_region_mgr=strategic_region_mgr, logistics_exception_mgr=logistics_exception_mgr)
+    result = load_project(path, state_mgr, country_mgr, continent_mgr=continent_mgr, adjacency_mgr=adjacency_mgr, railway_mgr=railway_mgr, supply_mgr=supply_mgr, adjacency_rule_mgr=adjacency_rule_mgr, strategic_region_mgr=strategic_region_mgr, logistics_exception_mgr=logistics_exception_mgr, map_placement_mgr=map_placement_mgr)
     tile_map, province_map = result[0], result[1]
     height = int(tile_map.shape[0]) if tile_map is not None else 0
     width = int(tile_map.shape[1]) if tile_map is not None else 0
