@@ -432,3 +432,228 @@ def test_identity_invariant_to_inventory_stage_and_hashes():
     assert full["target"]["identity"] == empty["target"]["identity"]
     assert full["written_files"] != empty["written_files"]
     assert full["asset_resolutions"] != empty["asset_resolutions"]
+def test_validation_legacy_findings_serialized():
+    from domain.validation import ValidationReport
+    plan = _base_plan()
+    manifest = build_manifest_dict(plan, [])
+    validation = manifest["validation"]
+    assert validation["source"] == "plan.findings"
+    assert validation["context"] == "draft_preview"
+    assert validation["total"] == len(plan.findings)
+    assert validation["counts"]["warning"] + validation["counts"]["error"] + validation["counts"]["info"] + validation["counts"]["blocker"] == validation["total"]
+    assert isinstance(validation["findings"], list)
+    assert len(validation["findings"]) == validation["total"]
+    gate = validation["gate"]
+    assert gate["context"] == validation["context"]
+    assert isinstance(gate["allowed"], bool)
+    assert isinstance(gate["blocking"], list)
+    assert isinstance(gate["visible_warnings"], list)
+    assert isinstance(gate["waived"], list)
+    assert validation["accepted_exceptions"] == []
+    assert validation["accepted_keys"] == []
+    expected = ValidationReport(findings=list(plan.findings), source="plan.findings", context="draft_preview")
+    assert validation["total"] == expected.total
+    assert validation["counts"] == expected.counts
+    assert manifest["findings"] is not validation["findings"]
+
+
+def test_validation_explicit_report_with_accepted_warning():
+    from domain.validation import ValidationFinding, ValidationReport
+    plan = _base_plan()
+    finding = ValidationFinding(
+        code="test.warn",
+        severity="warning",
+        message="explicit warning",
+        layer="map",
+        waivable=True,
+        exception_id="EXP-001",
+        exception_reason="reviewed",
+        reviewed_by="qa",
+        reviewed_at="2026-01-01T00:00:00+00:00",
+    )
+    report = ValidationReport(findings=(finding,), source="test-source", context="draft_preview")
+    accepted = [{"exception_id": "EXP-001", "reason": "reviewed"}]
+    accepted_before = copy.deepcopy(accepted)
+    manifest = build_manifest_dict(plan, [], validation_report=report, accepted_exceptions=accepted)
+    validation = manifest["validation"]
+    assert validation["source"] == "test-source"
+    assert validation["context"] == "draft_preview"
+    assert validation["total"] == 1
+    assert validation["counts"] == {"info": 0, "warning": 1, "error": 0, "blocker": 0}
+    assert validation["accepted_keys"] == ["EXP-001"]
+    assert validation["accepted_exceptions"] == [{"exception_id": "EXP-001", "reason": "reviewed"}]
+    assert accepted == accepted_before
+    gate = validation["gate"]
+    assert gate["context"] == "draft_preview"
+    assert gate["allowed"] is True
+    assert gate["blocking"] == []
+    assert gate["visible_warnings"] == []
+    assert len(gate["waived"]) == 1
+    assert gate["waived"][0]["code"] == "test.warn"
+    as_dict = build_manifest_dict(plan, [], validation_report=report.to_dict(), accepted_exceptions=["EXP-001"])
+    assert as_dict["validation"]["total"] == 1
+    assert as_dict["validation"]["accepted_keys"] == ["EXP-001"]
+    assert len(as_dict["validation"]["gate"]["waived"]) == 1
+
+
+def test_validation_accepted_from_snapshot_metadata():
+    from domain.validation import ValidationFinding, ValidationReport
+    from domain.project_meta import ProjectMeta
+    plan = _base_plan()
+    meta = ProjectMeta(validation_exceptions=[{"exception_id": "EXP-9", "code": "test.warn", "reason": "ok", "reviewed_by": "qa", "reviewed_at": "2026-01-01"}])
+    meta_before = copy.deepcopy(meta.validation_exceptions)
+    plan.snapshot.project_meta = meta
+    finding = ValidationFinding(
+        code="test.warn",
+        severity="warning",
+        message="meta warning",
+        layer="map",
+        waivable=True,
+        exception_id="EXP-9",
+        exception_reason="ok",
+        reviewed_by="qa",
+        reviewed_at="2026-01-01T00:00:00+00:00",
+    )
+    report = ValidationReport(findings=(finding,), source="meta-source", context="draft_preview")
+    manifest = build_manifest_dict(plan, [], validation_report=report)
+    assert manifest["validation"]["accepted_keys"] == ["EXP-9"]
+    assert len(manifest["validation"]["gate"]["waived"]) == 1
+    assert plan.snapshot.project_meta.validation_exceptions == meta_before
+
+
+def test_validation_deterministic_context_selection():
+    plan = _base_plan()
+    for lifecycle, expected in (("draft", "draft_preview"), ("candidate", "foundation_candidate"), ("frozen", "freeze"), ("accepted", "accepted_lock")):
+        plan.lifecycle = lifecycle
+        manifest = build_manifest_dict(plan, [])
+        assert manifest["validation"]["context"] == expected
+        assert manifest["validation"]["gate"]["context"] == expected
+    plan.lifecycle = "draft"
+    overridden = build_manifest_dict(plan, [], validation_context="freeze")
+    assert overridden["validation"]["context"] == "freeze"
+    assert overridden["validation"]["gate"]["context"] == "freeze"
+    fallback = build_manifest_dict(plan, [], validation_context="not-a-context")
+    assert fallback["validation"]["context"] == "draft_preview"
+    acceptance_plan = _base_plan(profile_name="acceptance")
+    assert build_manifest_dict(acceptance_plan, [])["validation"]["context"] == "acceptance"
+    first = build_manifest_dict(plan, [])
+    second = build_manifest_dict(plan, [])
+    assert first["validation"] == second["validation"]
+
+
+def test_acceptance_default_and_explicit():
+    plan = _base_plan()
+    default = build_manifest_dict(plan, [])
+    assert default["acceptance"] == {"status": "not_run"}
+    assert default["engine_acceptance"] == {"status": "not_run"}
+    explicit = {"status": "pass", "checks_passed": 7, "engine_version": "1.19.3"}
+    explicit_before = copy.deepcopy(explicit)
+    manifest = build_manifest_dict(plan, [], acceptance=explicit)
+    assert manifest["acceptance"]["status"] == "pass"
+    assert manifest["acceptance"]["checks_passed"] == 7
+    assert manifest["acceptance"]["engine_version"] == "1.19.3"
+    assert explicit == explicit_before
+    assert list(manifest["acceptance"].keys())[0] == "status"
+    assert manifest["engine_acceptance"] == manifest["acceptance"]
+    via_alias = build_manifest_dict(plan, [], acceptance_result=explicit)
+    assert via_alias["acceptance"] == manifest["acceptance"]
+    plan.acceptance_result = {"status": "fail", "reason": "logs"}
+    from_plan = build_manifest_dict(plan, [])
+    assert from_plan["acceptance"]["status"] == "fail"
+    delattr(plan, "acceptance_result")
+    plan.engine_acceptance = {"status": "pass", "run_id": "abc"}
+    from_engine = build_manifest_dict(plan, [])
+    assert from_engine["acceptance"]["status"] == "pass"
+    delattr(plan, "engine_acceptance")
+
+
+def test_lock_compat_default_and_explicit():
+    plan = _base_plan()
+    default = build_manifest_dict(plan, [])
+    assert default["lock_compat"] == {"status": "not_run", "breaking": False, "differences": []}
+    explicit = {"status": "mismatch", "breaking": True, "differences": [{"field": "b"}, {"field": "a"}], "lock_hash": "abc"}
+    explicit_before = copy.deepcopy(explicit)
+    manifest = build_manifest_dict(plan, [], lock_compat=explicit)
+    assert manifest["lock_compat"]["status"] == "mismatch"
+    assert manifest["lock_compat"]["breaking"] is True
+    assert manifest["lock_compat"]["differences"] == [{"field": "a"}, {"field": "b"}]
+    assert manifest["lock_compat"]["lock_hash"] == "abc"
+    assert explicit == explicit_before
+    assert list(manifest["lock_compat"].keys())[:3] == ["status", "breaking", "differences"]
+    compatible = build_manifest_dict(plan, [], lock_compat={"status": "compatible", "breaking": False, "differences": []})
+    assert compatible["lock_compat"]["breaking"] is False
+
+
+def test_identity_invariant_to_validation_acceptance_lock():
+    from domain.validation import ValidationFinding, ValidationReport
+    plan = _base_plan()
+    base = build_manifest_dict(plan, [])
+    finding = ValidationFinding(code="test.info", severity="info", message="note", layer="map")
+    report = ValidationReport(findings=(finding,), source="explicit-source", context="draft_preview")
+    changed = build_manifest_dict(
+        plan,
+        [],
+        validation_report=report,
+        acceptance={"status": "pass", "checks": 3},
+        lock_compat={"status": "mismatch", "breaking": True, "differences": [{"field": "snapshot_fingerprint"}]},
+    )
+    assert changed["identity"] == base["identity"]
+    assert manifest_identity_hash(changed) == base["identity"]["identity_hash"]
+    assert changed["sources"] == base["sources"]
+    assert changed["target"]["identity"] == base["target"]["identity"]
+    assert changed["validation"] != base["validation"]
+    assert changed["acceptance"] != base["acceptance"]
+    assert changed["lock_compat"] != base["lock_compat"]
+
+
+def test_malformed_optional_inputs_produce_safe_sections():
+    plan = _base_plan()
+    first = build_manifest_dict(plan, [], validation_report=12345, acceptance="bad", lock_compat=42, validation_context="nope", accepted_exceptions=12345)
+    second = build_manifest_dict(plan, [], validation_report=12345, acceptance="bad", lock_compat=42, validation_context="nope", accepted_exceptions=12345)
+    assert first["validation"]["total"] == 0
+    assert first["validation"]["counts"] == {"info": 0, "warning": 0, "error": 0, "blocker": 0}
+    assert first["validation"]["findings"] == []
+    assert first["validation"]["context"] == "draft_preview"
+    assert first["validation"]["gate"]["allowed"] is True
+    assert first["acceptance"] == {"status": "not_run"}
+    assert first["lock_compat"] == {"status": "not_run", "breaking": False, "differences": []}
+    assert first["validation"] == second["validation"]
+    assert first["acceptance"] == second["acceptance"]
+    assert first["lock_compat"] == second["lock_compat"]
+
+
+def test_write_manifest_forwards_validation_acceptance_lock(m3_4_tmp):
+    import json
+    from pathlib import Path
+    from domain.validation import ValidationFinding, ValidationReport
+    from services.export_manifest import write_manifest
+    plan = _base_plan()
+    finding = ValidationFinding(code="test.warn", severity="warning", message="file check", layer="map")
+    report = ValidationReport(findings=(finding,), source="file-source", context="draft_preview")
+    first_path = write_manifest(
+        str(m3_4_tmp),
+        plan,
+        [],
+        validation_report=report,
+        acceptance={"status": "pass"},
+        lock_compat={"status": "compatible", "breaking": False, "differences": []},
+        manifest_name="first.json",
+    )
+    second_path = write_manifest(
+        str(m3_4_tmp),
+        plan,
+        [],
+        validation_report=report,
+        acceptance={"status": "pass"},
+        lock_compat={"status": "compatible", "breaking": False, "differences": []},
+        manifest_name="second.json",
+    )
+    first_data = json.loads(Path(first_path).read_text(encoding="utf-8"))
+    second_data = json.loads(Path(second_path).read_text(encoding="utf-8"))
+    assert first_data["validation"]["source"] == "file-source"
+    assert first_data["acceptance"] == {"status": "pass"}
+    assert first_data["lock_compat"] == {"status": "compatible", "breaking": False, "differences": []}
+    assert first_data["validation"] == second_data["validation"]
+    assert first_data["acceptance"] == second_data["acceptance"]
+    assert first_data["lock_compat"] == second_data["lock_compat"]
+    assert first_data["identity"] == second_data["identity"]

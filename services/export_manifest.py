@@ -1075,8 +1075,806 @@ def _compute_identity_hash(profile_name, portable_target, portable_project, map_
 
 
 
+def _validation_gate_contexts():
+    """Return known gate contexts, preferring the shared contract."""
+    try:
+        from domain.validation import GATE_CONTEXTS as shared_contexts
+        contexts = tuple(shared_contexts)
+        if contexts:
+            return contexts
+    except Exception:
+        pass
+    return ("draft_preview", "foundation_candidate", "freeze", "acceptance", "accepted_lock")
+
+
+def _normalize_gate_context(value):
+    """Return a valid gate context string or None without raising."""
+    try:
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            return None
+        text = value.strip()
+        if not text:
+            return None
+        if text in _validation_gate_contexts():
+            return text
+        return None
+    except Exception:
+        return None
+
+
+def _fallback_gate_context(plan):
+    """Derive a deterministic gate context from plan profile and lifecycle."""
+    try:
+        candidate = getattr(plan, "validation_context", None)
+        normalized = _normalize_gate_context(candidate)
+        if normalized:
+            return normalized
+    except Exception:
+        pass
+    profile_name = ""
+    lifecycle_name = ""
+    try:
+        profile_name = str(getattr(plan, "profile_name", "") or "").strip()
+    except Exception:
+        profile_name = ""
+    try:
+        lifecycle_name = str(getattr(plan, "lifecycle", "") or "").strip()
+    except Exception:
+        lifecycle_name = ""
+    if profile_name == "acceptance":
+        return "acceptance"
+    mapping = {
+        "draft": "draft_preview",
+        "candidate": "foundation_candidate",
+        "frozen": "freeze",
+        "accepted": "accepted_lock",
+    }
+    if lifecycle_name in mapping:
+        return mapping[lifecycle_name]
+    try:
+        contexts = _validation_gate_contexts()
+        if lifecycle_name in contexts:
+            return lifecycle_name
+        if profile_name in contexts:
+            return profile_name
+    except Exception:
+        pass
+    return "draft_preview"
+
+
+def _extract_report_context(value):
+    """Return the preserved report context when valid, else None."""
+    try:
+        from domain.validation import ValidationReport as SharedReport
+        if isinstance(value, SharedReport):
+            return _normalize_gate_context(value.context)
+    except Exception:
+        pass
+    try:
+        if isinstance(value, dict):
+            raw = value.get("context", None)
+        else:
+            raw = getattr(value, "context", None)
+        return _normalize_gate_context(raw)
+    except Exception:
+        return None
+
+
+def _extract_report_source(value):
+    """Return the preserved report source string without raising."""
+    try:
+        from domain.validation import ValidationReport as SharedReport
+        if isinstance(value, SharedReport):
+            try:
+                text = str(value.source or "").strip()
+                return text
+            except Exception:
+                return ""
+    except Exception:
+        pass
+    try:
+        if isinstance(value, dict):
+            raw = value.get("source", value.get("report_source", ""))
+        else:
+            raw = getattr(value, "source", "")
+        if raw is None:
+            return ""
+        return str(raw).strip()
+    except Exception:
+        return ""
+def _stable_sort_key(value):
+    """Return a deterministic sort key for arbitrary JSON-like values."""
+    try:
+        return json.dumps(value, ensure_ascii=True, sort_keys=True, default=str)
+    except Exception:
+        try:
+            return repr(value)
+        except Exception:
+            return ""
+
+
+def _deepcopy_value(value):
+    """Return a deep copy without mutating the input."""
+    try:
+        return copy.deepcopy(value)
+    except Exception:
+        return value
+
+
+def _is_shared_validation_report(value):
+    """Return True for shared ValidationReport instances without raising."""
+    try:
+        from domain.validation import ValidationReport as SharedReport
+        return isinstance(value, SharedReport)
+    except Exception:
+        return False
+
+
+def _mapping_looks_like_report(data):
+    """Return True when a mapping carries report-shaped keys."""
+    try:
+        if not isinstance(data, dict):
+            return False
+        for key_name in ("findings", "source", "context", "total", "counts"):
+            if key_name in data:
+                return True
+        return False
+    except Exception:
+        return False
+
+
+def _accepted_keys_for(value):
+    """Return sorted accepted-exception keys using the shared normalizer."""
+    try:
+        from domain.validation import _normalize_accepted_keys as shared_normalize
+        return sorted(shared_normalize(value))
+    except Exception:
+        return []
+
+
+def _accepted_records_for(value):
+    """Return sorted accepted-exception record copies without mutation."""
+    try:
+        if value is None:
+            return []
+        if isinstance(value, str):
+            return []
+        if isinstance(value, dict):
+            exceptions_value = value.get("validation_exceptions", None)
+            if isinstance(exceptions_value, (list, tuple, set, frozenset)):
+                return _accepted_records_for(exceptions_value)
+            try:
+                copied = dict(value)
+            except Exception:
+                return []
+            has_key = False
+            for key_name in ("exception_id", "id", "code", "reason", "reviewed_by", "reviewed_at"):
+                if key_name in copied:
+                    has_key = True
+                    break
+            if not has_key:
+                return []
+            try:
+                ordered = {str(key): copied[key] for key in sorted(copied, key=lambda item: str(item))}
+            except Exception:
+                ordered = copied
+            return [ordered]
+        try:
+            items = list(value)
+        except TypeError:
+            return []
+        records = []
+        for entry in items:
+            if isinstance(entry, dict):
+                try:
+                    copied = dict(entry)
+                except Exception:
+                    continue
+                try:
+                    ordered = {str(key): copied[key] for key in sorted(copied, key=lambda item: str(item))}
+                except Exception:
+                    ordered = copied
+                records.append(ordered)
+        try:
+            records.sort(key=_stable_sort_key)
+        except Exception:
+            pass
+        return records
+    except Exception:
+        return []
+def _collect_accepted_exceptions(plan, explicit_accepted, explicit_validation_exceptions, explicit_report):
+    """Collect accepted records, gate input, and keys without mutation."""
+    raw = None
+    has_explicit = False
+    try:
+        if explicit_accepted is not None:
+            raw = explicit_accepted
+            has_explicit = True
+        elif explicit_validation_exceptions is not None:
+            raw = explicit_validation_exceptions
+            has_explicit = True
+        elif isinstance(explicit_report, dict):
+            for key_name in ("accepted_exceptions", "validation_exceptions", "accepted", "accepted_keys"):
+                if key_name in explicit_report:
+                    try:
+                        candidate = explicit_report.get(key_name, None)
+                    except Exception:
+                        candidate = None
+                    if candidate is not None:
+                        raw = candidate
+                        has_explicit = True
+                        break
+    except Exception:
+        raw = None
+        has_explicit = False
+    if not has_explicit:
+        try:
+            for attr_name in ("accepted_exceptions", "validation_exceptions"):
+                try:
+                    candidate = getattr(plan, attr_name, None)
+                except Exception:
+                    candidate = None
+                if candidate is not None:
+                    raw = candidate
+                    has_explicit = True
+                    break
+        except Exception:
+            pass
+    if not has_explicit:
+        try:
+            snapshot = getattr(plan, "snapshot", None)
+        except Exception:
+            snapshot = None
+        meta = None
+        try:
+            if snapshot is not None:
+                meta = getattr(snapshot, "project_meta", None)
+        except Exception:
+            meta = None
+        if meta is None:
+            try:
+                meta = getattr(plan, "project_meta", None)
+            except Exception:
+                meta = None
+        if meta is not None:
+            try:
+                if isinstance(meta, dict):
+                    if "validation_exceptions" in meta:
+                        raw = meta.get("validation_exceptions", None)
+                    elif "accepted_exceptions" in meta:
+                        raw = meta.get("accepted_exceptions", None)
+                    else:
+                        raw = None
+                else:
+                    for attr_name in ("validation_exceptions", "accepted_exceptions"):
+                        try:
+                            candidate = getattr(meta, attr_name, None)
+                        except Exception:
+                            candidate = None
+                        if candidate is not None:
+                            raw = candidate
+                            break
+            except Exception:
+                raw = None
+    if raw is None:
+        raw = []
+    try:
+        records = _accepted_records_for(raw)
+    except Exception:
+        records = []
+    try:
+        keys = _accepted_keys_for(raw)
+    except Exception:
+        keys = []
+    return records, raw, keys
+
+
+def _safe_build_validation_report(findings_value, source_value, context_value):
+    """Build a shared ValidationReport tolerantly without mutation."""
+    try:
+        from domain.validation import ValidationReport as SharedReport
+        from domain.validation import coerce_finding as shared_coerce
+    except Exception:
+        return None
+    try:
+        normalized_context = _normalize_gate_context(context_value) or "draft_preview"
+    except Exception:
+        normalized_context = "draft_preview"
+    try:
+        if source_value is None:
+            source_text = ""
+        else:
+            source_text = str(source_value).strip() if source_value else ""
+    except Exception:
+        source_text = ""
+    collected = []
+    try:
+        if findings_value is None:
+            raw_items = []
+        elif isinstance(findings_value, (str, bytes)):
+            raw_items = []
+        else:
+            if hasattr(findings_value, "code") and hasattr(findings_value, "severity"):
+                raw_items = [findings_value]
+            elif isinstance(findings_value, dict):
+                raw_items = [findings_value]
+            else:
+                try:
+                    raw_items = list(findings_value)
+                except TypeError:
+                    raw_items = [findings_value]
+        for item in raw_items:
+            try:
+                collected.append(shared_coerce(item))
+            except Exception:
+                continue
+    except Exception:
+        collected = []
+    try:
+        return SharedReport(findings=tuple(collected), source=source_text, context=normalized_context)
+    except Exception:
+        try:
+            return SharedReport(findings=(), source=source_text, context="draft_preview")
+        except Exception:
+            return None
+def _resolve_validation_report(plan, explicit_report, explicit_context):
+    """Resolve findings, source, and deterministic context without mutation."""
+    try:
+        normalized_explicit = _normalize_gate_context(explicit_context)
+    except Exception:
+        normalized_explicit = None
+    try:
+        plan_report = getattr(plan, "validation_report", None)
+    except Exception:
+        plan_report = None
+    selected = None
+    try:
+        if normalized_explicit:
+            selected = normalized_explicit
+        else:
+            explicit_ctx = _extract_report_context(explicit_report) if explicit_report is not None else None
+            if explicit_ctx:
+                selected = explicit_ctx
+            else:
+                plan_ctx = _extract_report_context(plan_report) if plan_report is not None else None
+                if plan_ctx:
+                    selected = plan_ctx
+                else:
+                    selected = _fallback_gate_context(plan)
+    except Exception:
+        selected = None
+    if not selected:
+        selected = "draft_preview"
+    origin = "plan.findings"
+    source_text = "plan.findings"
+    findings_value = None
+    try:
+        if explicit_report is not None:
+            origin = "explicit"
+            if _is_shared_validation_report(explicit_report):
+                try:
+                    source_text = str(explicit_report.source or "").strip() or "explicit"
+                except Exception:
+                    source_text = "explicit"
+                try:
+                    findings_value = list(explicit_report.findings)
+                except Exception:
+                    findings_value = []
+            elif isinstance(explicit_report, dict) and _mapping_looks_like_report(explicit_report):
+                try:
+                    source_text = str(explicit_report.get("source", "") or "").strip() or "explicit"
+                except Exception:
+                    source_text = "explicit"
+                try:
+                    findings_value = explicit_report.get("findings", [])
+                except Exception:
+                    findings_value = []
+            elif isinstance(explicit_report, (list, tuple)):
+                source_text = "explicit"
+                findings_value = explicit_report
+            elif hasattr(explicit_report, "to_dict") and callable(getattr(explicit_report, "to_dict")):
+                try:
+                    data = explicit_report.to_dict()
+                except Exception:
+                    data = None
+                if isinstance(data, dict) and _mapping_looks_like_report(data):
+                    try:
+                        source_text = str(data.get("source", "") or "").strip() or "explicit"
+                    except Exception:
+                        source_text = "explicit"
+                    try:
+                        findings_value = data.get("findings", [])
+                    except Exception:
+                        findings_value = []
+                else:
+                    source_text = "explicit"
+                    findings_value = []
+            else:
+                source_text = "explicit"
+                findings_value = []
+        elif plan_report is not None:
+            origin = "plan.validation_report"
+            if _is_shared_validation_report(plan_report):
+                try:
+                    source_text = str(plan_report.source or "").strip() or "plan.validation_report"
+                except Exception:
+                    source_text = "plan.validation_report"
+                try:
+                    findings_value = list(plan_report.findings)
+                except Exception:
+                    findings_value = []
+            elif isinstance(plan_report, dict) and _mapping_looks_like_report(plan_report):
+                try:
+                    source_text = str(plan_report.get("source", "") or "").strip() or "plan.validation_report"
+                except Exception:
+                    source_text = "plan.validation_report"
+                try:
+                    findings_value = plan_report.get("findings", [])
+                except Exception:
+                    findings_value = []
+            elif isinstance(plan_report, (list, tuple)):
+                source_text = "plan.validation_report"
+                findings_value = plan_report
+            elif hasattr(plan_report, "to_dict") and callable(getattr(plan_report, "to_dict")):
+                try:
+                    data = plan_report.to_dict()
+                except Exception:
+                    data = None
+                if isinstance(data, dict) and _mapping_looks_like_report(data):
+                    try:
+                        source_text = str(data.get("source", "") or "").strip() or "plan.validation_report"
+                    except Exception:
+                        source_text = "plan.validation_report"
+                    try:
+                        findings_value = data.get("findings", [])
+                    except Exception:
+                        findings_value = []
+                else:
+                    source_text = "plan.validation_report"
+                    findings_value = []
+            else:
+                source_text = "plan.validation_report"
+                findings_value = []
+        else:
+            origin = "plan.findings"
+            source_text = "plan.findings"
+            try:
+                findings_value = getattr(plan, "findings", []) or []
+            except Exception:
+                findings_value = []
+    except Exception:
+        origin = "plan.findings"
+        source_text = "plan.findings"
+        findings_value = []
+    try:
+        report = _safe_build_validation_report(findings_value, source_text, selected)
+    except Exception:
+        report = None
+    if report is None:
+        try:
+            report = _safe_build_validation_report([], source_text or "plan.findings", selected or "draft_preview")
+        except Exception:
+            report = None
+    return report, origin, selected
+def _copy_finding_dicts(value):
+    """Copy finding-like dicts without mutation."""
+    try:
+        items = list(value or [])
+    except Exception:
+        return []
+    copied = []
+    for entry in items:
+        try:
+            if isinstance(entry, dict):
+                copied.append({str(key): _deepcopy_value(val) for key, val in entry.items()})
+            else:
+                copied.append(_deepcopy_value(entry))
+        except Exception:
+            continue
+    return copied
+
+
+def _safe_validation_fallback():
+    """Return a deterministic empty validation section without dependencies."""
+    return {
+        "source": "plan.findings",
+        "context": "draft_preview",
+        "total": 0,
+        "counts": {"info": 0, "warning": 0, "error": 0, "blocker": 0},
+        "findings": [],
+        "gate": {
+            "context": "draft_preview",
+            "allowed": True,
+            "blocking": [],
+            "visible_warnings": [],
+            "waived": [],
+        },
+        "accepted_exceptions": [],
+        "accepted_keys": [],
+        "report_source": "plan.findings",
+        "report_context": "draft_preview",
+        "report_origin": "plan.findings",
+    }
+
+
+def _build_validation_section(plan, explicit_report, explicit_context, explicit_accepted, explicit_validation_exceptions):
+    """Serialize validation findings, gate state, and exceptions deterministically."""
+    try:
+        report, origin, selected = _resolve_validation_report(plan, explicit_report, explicit_context)
+    except Exception:
+        return _safe_validation_fallback()
+    if report is None:
+        return _safe_validation_fallback()
+    try:
+        records, raw_accepted, keys = _collect_accepted_exceptions(plan, explicit_accepted, explicit_validation_exceptions, explicit_report)
+    except Exception:
+        records = []
+        raw_accepted = []
+        keys = []
+    try:
+        gate = report.evaluate(selected, accepted=raw_accepted)
+        gate_dict = gate.to_dict()
+    except Exception:
+        try:
+            gate = report.evaluate(selected, accepted=())
+            gate_dict = gate.to_dict()
+        except Exception:
+            gate_dict = {"context": selected, "allowed": True, "blocking": [], "visible_warnings": [], "waived": []}
+    try:
+        report_dict = report.to_dict()
+    except Exception:
+        report_dict = {"source": "", "context": selected, "total": 0, "counts": {"info": 0, "warning": 0, "error": 0, "blocker": 0}, "findings": []}
+    try:
+        gate_context = str(gate_dict.get("context", selected) or selected)
+    except Exception:
+        gate_context = selected
+    try:
+        allowed = bool(gate_dict.get("allowed", True))
+    except Exception:
+        allowed = True
+    try:
+        blocking = _copy_finding_dicts(gate_dict.get("blocking", []))
+    except Exception:
+        blocking = []
+    try:
+        visible = _copy_finding_dicts(gate_dict.get("visible_warnings", []))
+    except Exception:
+        visible = []
+    try:
+        waived = _copy_finding_dicts(gate_dict.get("waived", []))
+    except Exception:
+        waived = []
+    ordered_gate = {
+        "context": gate_context,
+        "allowed": allowed,
+        "blocking": blocking,
+        "visible_warnings": visible,
+        "waived": waived,
+    }
+    try:
+        source_text = str(report_dict.get("source", "") or "")
+    except Exception:
+        source_text = ""
+    try:
+        total = int(report_dict.get("total", 0) or 0)
+    except Exception:
+        total = 0
+    try:
+        counts_raw = report_dict.get("counts", {}) or {}
+        counts = {}
+        for severity in ("info", "warning", "error", "blocker"):
+            try:
+                counts[severity] = int(counts_raw.get(severity, 0) or 0)
+            except Exception:
+                counts[severity] = 0
+    except Exception:
+        counts = {"info": 0, "warning": 0, "error": 0, "blocker": 0}
+    try:
+        findings_list = _copy_finding_dicts(report_dict.get("findings", []))
+    except Exception:
+        findings_list = []
+    try:
+        records_copy = _deepcopy_value(records)
+        if not isinstance(records_copy, list):
+            records_copy = []
+    except Exception:
+        records_copy = []
+    try:
+        keys_copy = list(keys or [])
+    except Exception:
+        keys_copy = []
+    try:
+        report_context_text = str(report_dict.get("context", selected) or selected)
+    except Exception:
+        report_context_text = selected
+    return {
+        "source": source_text,
+        "context": selected,
+        "total": total,
+        "counts": counts,
+        "findings": findings_list,
+        "gate": ordered_gate,
+        "accepted_exceptions": records_copy,
+        "accepted_keys": keys_copy,
+        "report_source": source_text,
+        "report_context": report_context_text,
+        "report_origin": origin,
+    }
+
+
+def _convert_to_plain_dict(value):
+    """Convert mapping-like results to plain dicts without mutation."""
+    try:
+        if value is None:
+            return None
+        if isinstance(value, dict):
+            return dict(value)
+        converter = getattr(value, "to_dict", None)
+        if callable(converter):
+            try:
+                data = converter()
+                if isinstance(data, dict):
+                    return dict(data)
+            except Exception:
+                pass
+        return None
+    except Exception:
+        return None
+
+
+def _ordered_mapping_with_status_first(data, default_status):
+    """Return a stable mapping with status first and remaining keys sorted."""
+    try:
+        working = dict(data) if isinstance(data, dict) else {}
+    except Exception:
+        working = {}
+    try:
+        raw_status = working.get("status", None)
+        if isinstance(raw_status, str) and raw_status.strip():
+            status_text = raw_status.strip()
+        else:
+            status_text = default_status
+    except Exception:
+        status_text = default_status
+    ordered = {"status": status_text}
+    try:
+        for key in sorted(working, key=lambda item: str(item)):
+            if str(key) == "status":
+                continue
+            try:
+                ordered[str(key)] = _deepcopy_value(working[key])
+            except Exception:
+                continue
+    except Exception:
+        pass
+    return ordered
+
+
+def _build_acceptance_section(plan, explicit_acceptance, explicit_acceptance_result):
+    """Serialize acceptance as a stable mapping without inventing passes."""
+    raw = None
+    try:
+        if explicit_acceptance is not None:
+            raw = explicit_acceptance
+        elif explicit_acceptance_result is not None:
+            raw = explicit_acceptance_result
+        else:
+            try:
+                candidate = getattr(plan, "acceptance_result", None)
+                if candidate is not None:
+                    raw = candidate
+                else:
+                    try:
+                        candidate_two = getattr(plan, "engine_acceptance", None)
+                    except Exception:
+                        candidate_two = None
+                    if candidate_two is not None:
+                        raw = candidate_two
+            except Exception:
+                raw = None
+    except Exception:
+        raw = None
+    if raw is None:
+        return {"status": "not_run"}
+    try:
+        data = _convert_to_plain_dict(raw)
+    except Exception:
+        data = None
+    if data is None:
+        return {"status": "not_run"}
+    try:
+        if not data:
+            return {"status": "not_run"}
+        return _ordered_mapping_with_status_first(data, "unknown")
+    except Exception:
+        return {"status": "not_run"}
+
+
+def _build_lock_compat_section(plan, explicit_lock):
+    """Serialize lock compatibility without filesystem input."""
+    raw = None
+    try:
+        if explicit_lock is not None:
+            raw = explicit_lock
+        else:
+            for attr_name in ("lock_compat", "lock_compat_result", "foundation_lock_compat", "lock_compatibility"):
+                try:
+                    candidate = getattr(plan, attr_name, None)
+                except Exception:
+                    candidate = None
+                if candidate is not None:
+                    raw = candidate
+                    break
+    except Exception:
+        raw = None
+    if raw is None:
+        return {"status": "not_run", "breaking": False, "differences": []}
+    try:
+        data = _convert_to_plain_dict(raw)
+    except Exception:
+        data = None
+    if data is None:
+        return {"status": "not_run", "breaking": False, "differences": []}
+    try:
+        if not data:
+            return {"status": "not_run", "breaking": False, "differences": []}
+    except Exception:
+        pass
+    try:
+        raw_status = data.get("status", None)
+        if isinstance(raw_status, str) and raw_status.strip():
+            status_text = raw_status.strip()
+        else:
+            status_text = "unknown"
+    except Exception:
+        status_text = "unknown"
+    try:
+        raw_breaking = data.get("breaking", False)
+        breaking = bool(raw_breaking) if not isinstance(raw_breaking, bool) else raw_breaking
+    except Exception:
+        breaking = False
+    try:
+        raw_diffs = data.get("differences", [])
+        if isinstance(raw_diffs, (list, tuple)):
+            diffs = []
+            for entry in raw_diffs:
+                try:
+                    if isinstance(entry, dict):
+                        diffs.append({str(key): _deepcopy_value(val) for key, val in entry.items()})
+                    else:
+                        diffs.append(_deepcopy_value(entry))
+                except Exception:
+                    continue
+            try:
+                diffs.sort(key=_stable_sort_key)
+            except Exception:
+                pass
+        else:
+            diffs = []
+    except Exception:
+        diffs = []
+    ordered = {"status": status_text, "breaking": breaking, "differences": diffs}
+    try:
+        for key in sorted(data, key=lambda item: str(item)):
+            if str(key) in ("status", "breaking", "differences"):
+                continue
+            try:
+                ordered[str(key)] = _deepcopy_value(data[key])
+            except Exception:
+                continue
+    except Exception:
+        pass
+    return ordered
+
+
+
 def build_manifest_dict(plan, written_files: list, stage_results: list | None = None,
-                        placeholders: list | None = None, provenance: list | None = None) -> dict:
+                        placeholders: list | None = None, provenance: list | None = None,
+                        validation_report=None, acceptance=None, acceptance_result=None,
+                        lock_compat=None, validation_context=None,
+                        accepted_exceptions=None, validation_exceptions=None) -> dict:
     snapshot = getattr(plan, "snapshot", None)
     tool_version = _tool_version()
     created_at = _utc_now_iso()
@@ -1176,6 +1974,22 @@ def build_manifest_dict(plan, written_files: list, stage_results: list | None = 
     except Exception:
         plan_resolutions = []
     enriched_assets = _enrich_asset_resolutions(plan_resolutions, snapshot_assets, written_hashes)
+    try:
+        validation_section = _build_validation_section(plan, validation_report, validation_context, accepted_exceptions, validation_exceptions)
+    except Exception:
+        validation_section = _safe_validation_fallback()
+    try:
+        acceptance_section = _build_acceptance_section(plan, acceptance, acceptance_result)
+    except Exception:
+        acceptance_section = {"status": "not_run"}
+    try:
+        engine_acceptance_section = dict(acceptance_section)
+    except Exception:
+        engine_acceptance_section = {"status": "not_run"}
+    try:
+        lock_section = _build_lock_compat_section(plan, lock_compat)
+    except Exception:
+        lock_section = {"status": "not_run", "breaking": False, "differences": []}
     return {
         "manifest_schema": MANIFEST_SCHEMA,
         "manifest_version": MANIFEST_VERSION,
@@ -1218,13 +2032,19 @@ def build_manifest_dict(plan, written_files: list, stage_results: list | None = 
         "provenance": _sorted_strings(provenance),
         "stages": _sorted_stages(stage_results),
         "written_files": enriched_files,
+        "validation": validation_section,
+        "acceptance": acceptance_section,
+        "engine_acceptance": engine_acceptance_section,
+        "lock_compat": lock_section,
     }
 
 
 def write_manifest(output_dir: str, plan, written_files: list, stage_results: list | None = None,
                    placeholders: list | None = None, provenance: list | None = None,
-                   manifest_name: str = "foundation_manifest.json") -> str:
-    payload = build_manifest_dict(plan, written_files, stage_results, placeholders, provenance)
+                   manifest_name: str = "foundation_manifest.json", validation_report=None,
+                   acceptance=None, acceptance_result=None, lock_compat=None,
+                   validation_context=None, accepted_exceptions=None, validation_exceptions=None) -> str:
+    payload = build_manifest_dict(plan, written_files, stage_results, placeholders, provenance, validation_report=validation_report, acceptance=acceptance, acceptance_result=acceptance_result, lock_compat=lock_compat, validation_context=validation_context, accepted_exceptions=accepted_exceptions, validation_exceptions=validation_exceptions)
     path = os.path.join(output_dir, manifest_name)
     with open(path, "w", encoding="utf-8") as handle:
         json.dump(payload, handle, ensure_ascii=False, indent=2, sort_keys=True)
