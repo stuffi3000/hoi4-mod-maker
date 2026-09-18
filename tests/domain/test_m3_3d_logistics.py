@@ -11,6 +11,7 @@ from domain.managers.adjacency import AdjacencyEntry, AdjacencyManager
 from domain.managers.adjacency_rule import AdjacencyRule, AdjacencyRuleManager
 from domain.managers.railway import RailwayEntry, RailwayManager
 from domain.managers.supply_node import SupplyNode, SupplyNodeManager
+from domain.logistics_exceptions import LogisticsExceptionManager
 from domain.validation import FINDING_SEVERITIES, ValidationFinding
 from domain.validators.logistics import CODES, validate_logistics_references
 
@@ -314,6 +315,7 @@ def _run_combined():
     return validate_logistics_references(
         prov, tile, adjacency_mgr=adj, railway_mgr=rail, supply_mgr=sup,
         adjacency_rule_mgr=rules,
+        logistics_exception_mgr=LogisticsExceptionManager(),
     )
 
 

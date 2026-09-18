@@ -114,6 +114,7 @@ class MapCanvas(InputMixin, OverlayMixin, NameLabelsMixin, RefImageMixin, QGraph
         self._terrain_underlay_source: str = "height"
         self._sr_color_rgb = None      # np.ndarray (H, W, 3) or None
         self._railway_color_rgb = None # np.ndarray (H, W, 3) or None
+        self._logistics_component_rgb = None  # np.ndarray (H, W, 3) or None
         # Province attribute terrain (gameplay terrain) color buffer
         self._provincial_terrain_color_rgb = None  # np.ndarray (H, W, 3) or None
         # continent color buffer
@@ -395,6 +396,7 @@ class MapCanvas(InputMixin, OverlayMixin, NameLabelsMixin, RefImageMixin, QGraph
         self._country_color_rgb = None
         self._sr_color_rgb = None
         self._railway_color_rgb = None
+        self._logistics_component_rgb = None
         self._provincial_terrain_color_rgb = None
         self._continent_color_rgb = None
         self.clear_name_labels()  # The old label coordinates will be invalidated along with the map.
@@ -771,6 +773,12 @@ class MapCanvas(InputMixin, OverlayMixin, NameLabelsMixin, RefImageMixin, QGraph
     def set_railway_colors(self, rgb: np.ndarray) -> None:
         """Store rail grade color RGB array and trigger rendering"""
         self._railway_color_rgb = rgb
+        if self._display_mode == "logistics":
+            self._full_render()
+
+    def set_logistics_component_colors(self, rgb: np.ndarray | None) -> None:
+        """Store graph-component colors and trigger logistics rendering."""
+        self._logistics_component_rgb = rgb
         if self._display_mode == "logistics":
             self._full_render()
 

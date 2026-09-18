@@ -1764,6 +1764,33 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
         self._tool_panel._logi_adj_status.setText(tr("logistics_adj_count", self._project.adjacency_mgr.count()))
         self._tool_panel._logi_rail_status.setText(tr("logistics_rail_count", self._project.railway_mgr.count()))
         self._tool_panel._logi_sup_status.setText(tr("logistics_supply_count", self._project.supply_mgr.count()))
+        # Keep the canvas overlay bound to the current project managers after
+        # new/open/import operations and refresh the deterministic graph view.
+        self._canvas._supply_mgr = self._project.supply_mgr
+        self._canvas._railway_mgr = self._project.railway_mgr
+        try:
+            from domain.logistics_graph import analyze_logistics_graph
+            from features.map.logistics.renderer import build_logistics_component_colors
+
+            province_map = np.asarray(self._canvas.province_map)
+            known_provinces = {
+                int(value) for value in np.unique(province_map) if int(value) > 0
+            }
+            graph = analyze_logistics_graph(
+                self._project.railway_mgr,
+                self._project.supply_mgr,
+                known_provinces=known_provinces,
+            )
+            colors = build_logistics_component_colors(
+                province_map,
+                graph,
+                exception_manager=getattr(self._project, "logistics_exception_mgr", None),
+            )
+            self._canvas._logistics_graph = graph
+            self._canvas.set_logistics_component_colors(colors)
+        except (AttributeError, TypeError, ValueError):
+            self._canvas._logistics_graph = None
+            self._canvas.set_logistics_component_colors(None)
         if hasattr(self, "_refresh_feature_statuses"):
             self._refresh_feature_statuses()
 

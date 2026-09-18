@@ -24,6 +24,8 @@ Stable finding codes emitted here (all use layer ``logistics``):
   are only reported when tile data allows a surface check.
 - ``logistics.graph``: disconnected railway/supply components and
   supply nodes without railway reachability.
+- ``logistics.exception_coverage``: disconnected cases that lack a current
+  intentional exception at the requested lifecycle.
 - ``logistics.duplicate_route``: identical railway routes defined more
   than once (either orientation counts as the same path).
 
@@ -85,6 +87,7 @@ CODES = (
     "logistics.supply_node",
     "logistics.port",
     "logistics.graph",
+    "logistics.exception_coverage",
     "logistics.duplicate_route",
 )
 
@@ -369,9 +372,11 @@ def validate_logistics_references(
     railway_mgr: Any | None = None,
     supply_mgr: Any | None = None,
     adjacency_rule_mgr: Any | None = None,
+    logistics_exception_mgr: Any | None = None,
     country_mgr: Any | None = None,
     profile: Any | None = None,
     wrap_horizontal: bool | None = None,
+    lifecycle: str = "draft",
 ) -> list[ValidationFinding]:
     """Validate adjacency, railway, supply, port, and graph references.
 
@@ -715,7 +720,16 @@ def validate_logistics_references(
         supply_nodes,
         known_provinces=known_ids,
     )
-    if graph.supply_provinces and not graph.railway_provinces and not supply_details:
+    exception_coverage = None
+    if logistics_exception_mgr is not None:
+        from domain.logistics_exceptions import evaluate_exception_coverage
+
+        exception_coverage = evaluate_exception_coverage(logistics_exception_mgr, graph)
+    graph_attention_required = (
+        exception_coverage is None
+        or bool(exception_coverage.missing_keys or exception_coverage.stale_keys)
+    )
+    if graph.supply_provinces and not graph.railway_provinces and not supply_details and graph_attention_required:
         missing_ids = tuple(graph.supply_off_rail)
         findings.append(
             ValidationFinding(
@@ -730,7 +744,7 @@ def validate_logistics_references(
                 waivable=True,
             )
         )
-    elif graph.components and graph.component_count > 1:
+    elif graph.components and graph.component_count > 1 and graph_attention_required:
         largest = set(graph.components[0].provinces)
         outside = sorted(set(graph.vertices) - largest)
         off_rail = list(graph.supply_off_rail)
@@ -758,6 +772,34 @@ def validate_logistics_references(
                 coordinates=_coords_for(set(outside[:_GRAPH_AFFECTED_LIMIT]), first_coords),
                 evidence="; ".join(parts) + "; affected_total=%d" % len(outside),
                 waivable=True,
+            )
+        )
+
+    if exception_coverage is not None and (
+        exception_coverage.missing_keys or exception_coverage.stale_keys
+    ):
+        severity = "blocker" if str(lifecycle) in ("frozen", "accepted") else "warning"
+        missing = ",".join(exception_coverage.missing_keys[:8]) or "none"
+        stale = ",".join(exception_coverage.stale_keys[:8]) or "none"
+        findings.append(
+            ValidationFinding(
+                code="logistics.exception_coverage",
+                severity=severity,
+                message="%d logistics exception cases require review"
+                % (len(exception_coverage.missing_keys) + len(exception_coverage.stale_keys)),
+                layer=LAYER,
+                affected_ids=tuple(
+                    sorted(set(exception_coverage.missing_keys) | set(exception_coverage.stale_keys))
+                )[:_GRAPH_AFFECTED_LIMIT],
+                evidence=(
+                    "relevant=%d; accepted=%d; missing=%s; stale=%s"
+                    % (
+                        len(exception_coverage.relevant_keys),
+                        len(exception_coverage.accepted_keys),
+                        missing,
+                        stale,
+                    )
+                ),
             )
         )
 

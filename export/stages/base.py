@@ -31,6 +31,7 @@ class StageContext:
     supply_mgr: object = None
     adjacency_rule_mgr: object = None
     strategic_region_mgr: object = None
+    logistics_exception_mgr: object = None
     colormap_settings: object = None
     default_map_settings: object = None
     assets: dict = field(default_factory=dict)
@@ -74,6 +75,7 @@ def build_context_from_plan(plan, output_dir: str) -> StageContext:
         supply_mgr=managers["supply_mgr"],
         adjacency_rule_mgr=managers["adjacency_rule_mgr"],
         strategic_region_mgr=managers["strategic_region_mgr"],
+        logistics_exception_mgr=managers["logistics_exception_mgr"],
         colormap_settings=copy.deepcopy(snapshot.colormap_settings),
         default_map_settings=copy.deepcopy(snapshot.default_map_settings),
         assets=dict(snapshot.assets or {}),

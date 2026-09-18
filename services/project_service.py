@@ -17,6 +17,7 @@ def save_project(
     supply_mgr=None,
     adjacency_rule_mgr=None,
     strategic_region_mgr=None,
+    logistics_exception_mgr=None,
 ) -> None:
     """Save the project to .hoi4proj. If it fails, an exception will be thrown, and the UI layer will capture and display it."""
     from domain.project_io import save_project as _save
@@ -35,6 +36,7 @@ def save_project(
         supply_mgr=supply_mgr,
         adjacency_rule_mgr=adjacency_rule_mgr,
         strategic_region_mgr=strategic_region_mgr,
+        logistics_exception_mgr=logistics_exception_mgr,
         provincial_terrain=canvas.map_data.provincial_terrain,
         tile_snapshot=canvas.map_data.tile_snapshot,
     )
@@ -51,6 +53,7 @@ def load_project(
     supply_mgr=None,
     adjacency_rule_mgr=None,
     strategic_region_mgr=None,
+    logistics_exception_mgr=None,
 ) -> None:
     """Load from .hoi4proj and update canvas and manager in place. An exception will be thrown if it fails."""
     from domain.project_io import load_project as _load
@@ -62,6 +65,7 @@ def load_project(
         supply_mgr=supply_mgr,
         adjacency_rule_mgr=adjacency_rule_mgr,
         strategic_region_mgr=strategic_region_mgr,
+        logistics_exception_mgr=logistics_exception_mgr,
     )
     canvas.tile_map = tm
     canvas.province_map = pm

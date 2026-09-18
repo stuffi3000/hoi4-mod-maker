@@ -152,6 +152,8 @@ def _foundation_logistics_check(
     railway_mgr=None,
     supply_mgr=None,
     adjacency_rule_mgr=None,
+    logistics_exception_mgr=None,
+    lifecycle="draft",
     **_ignored,
 ):
     return validate_logistics_references(
@@ -161,9 +163,11 @@ def _foundation_logistics_check(
         railway_mgr=railway_mgr,
         supply_mgr=supply_mgr,
         adjacency_rule_mgr=adjacency_rule_mgr,
+        logistics_exception_mgr=logistics_exception_mgr,
         country_mgr=country_mgr,
         profile=profile,
         wrap_horizontal=wrap_horizontal,
+        lifecycle=lifecycle,
     )
 
 
@@ -315,6 +319,7 @@ def run_foundation_validation(
     railway_mgr=None,
     supply_mgr=None,
     adjacency_rule_mgr=None,
+    logistics_exception_mgr=None,
     placement_entries=None,
     position_entries=None,
     building_entries=None,
@@ -365,6 +370,7 @@ def run_foundation_validation(
         railway_mgr=railway_mgr,
         supply_mgr=supply_mgr,
         adjacency_rule_mgr=adjacency_rule_mgr,
+        logistics_exception_mgr=logistics_exception_mgr,
         placement_entries=placement_entries,
         position_entries=position_entries,
         building_entries=building_entries,

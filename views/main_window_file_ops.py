@@ -240,6 +240,7 @@ class MainWindowFileOpsMixin:
         self._project.strategic_region_mgr.clear()
         self._project.railway_mgr.clear()
         self._project.supply_mgr.clear()
+        self._project.logistics_exception_mgr.clear()
         self._cmd_history.clear()
         self._refresh_sr_list()
         self._refresh_logistics_counts()
@@ -280,6 +281,7 @@ class MainWindowFileOpsMixin:
                 supply_mgr=self._project.supply_mgr,
                 adjacency_rule_mgr=self._project.adjacency_rule_mgr,
                 strategic_region_mgr=self._project.strategic_region_mgr,
+                logistics_exception_mgr=self._project.logistics_exception_mgr,
             )
             self._current_project_path = path
             self._status_info.setText(tr("file_ops_saved", path))
@@ -309,6 +311,7 @@ class MainWindowFileOpsMixin:
                 supply_mgr=self._project.supply_mgr,
                 adjacency_rule_mgr=self._project.adjacency_rule_mgr,
                 strategic_region_mgr=self._project.strategic_region_mgr,
+                logistics_exception_mgr=self._project.logistics_exception_mgr,
             )
             self._cmd_history.clear()
             # After loading, detect province ID holes and prompt
@@ -534,6 +537,7 @@ class MainWindowFileOpsMixin:
         self._project.strategic_region_mgr.clear()
         self._project.railway_mgr.clear()
         self._project.supply_mgr.clear()
+        self._project.logistics_exception_mgr.clear()
         if result.get("adjacencies") is not None:
             self._project.adjacency_mgr.clear()
         if result.get("adjacency_rules") is not None:

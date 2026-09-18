@@ -186,6 +186,7 @@ class FoundationSnapshot:
     supply_mgr: object = None
     adjacency_rule_mgr: object = None
     strategic_region_mgr: object = None
+    logistics_exception_mgr: object = None
     colormap_settings: object = None
     default_map_settings: object = None
     assets: dict = field(default_factory=dict)
@@ -207,6 +208,7 @@ class FoundationSnapshot:
             "supply_mgr": self.supply_mgr,
             "adjacency_rule_mgr": self.adjacency_rule_mgr,
             "strategic_region_mgr": self.strategic_region_mgr,
+            "logistics_exception_mgr": self.logistics_exception_mgr,
         }
 
     def mutable_arrays(self) -> dict:
@@ -275,6 +277,7 @@ def take_snapshot(tile_map, province_map, terrain_map=None, height_map=None, riv
         supply_mgr=_deepcopy_manager(managers.get("supply_mgr")),
         adjacency_rule_mgr=_deepcopy_manager(managers.get("adjacency_rule_mgr")),
         strategic_region_mgr=_deepcopy_manager(managers.get("strategic_region_mgr")),
+        logistics_exception_mgr=_deepcopy_manager(managers.get("logistics_exception_mgr")),
         colormap_settings=copy.deepcopy(colormap_settings),
         default_map_settings=copy.deepcopy(default_map_settings),
         assets={
@@ -734,11 +737,22 @@ def analyze_region_split(snapshot) -> list:
         layer="regions",
     )]
 
-def collect_findings(snapshot, game_profile, dimensions=None, profile_name: str = "legacy_full") -> list:
+def collect_findings(
+    snapshot,
+    game_profile,
+    dimensions=None,
+    profile_name: str = "legacy_full",
+    lifecycle: str | None = None,
+) -> list:
     findings: list = []
     province_map = np.asarray(snapshot.province_map)
     province_count = int(province_map.max()) if province_map.size else 0
     width, height = int(snapshot.width), int(snapshot.height)
+    active_lifecycle = str(
+        lifecycle
+        if lifecycle is not None
+        else getattr(snapshot.project_meta, "lifecycle", "draft")
+    )
     if dimensions is not None:
         try:
             req_w, req_h = int(dimensions[0]), int(dimensions[1])
@@ -830,8 +844,8 @@ def collect_findings(snapshot, game_profile, dimensions=None, profile_name: str 
         try:
             from domain.adjacency_review import evaluate_adjacency_review
             review_context = (
-                "freeze" if str(getattr(snapshot.project_meta, "lifecycle", ""))
-                in ("frozen", "accepted") else "foundation_candidate"
+                "freeze" if active_lifecycle in ("frozen", "accepted")
+                else "foundation_candidate"
             )
             decision = evaluate_adjacency_review(
                 snapshot.adjacency_mgr,
@@ -850,6 +864,39 @@ def collect_findings(snapshot, game_profile, dimensions=None, profile_name: str 
                 ))
         except (ImportError, TypeError, ValueError):
             # Metadata is an optional compatibility input for direct callers.
+            pass
+    # M4.5: disconnected logistics cases need a current, reasoned exception
+    # before a frozen project can be exported. Keep direct legacy snapshots
+    # without an exception manager unchanged.
+    if snapshot.logistics_exception_mgr is not None:
+        try:
+            from domain.logistics_exceptions import evaluate_exception_coverage
+            from domain.logistics_graph import analyze_logistics_graph
+
+            known_provinces = {
+                int(value) for value in np.unique(province_map)
+                if int(value) > 0
+            }
+            graph = analyze_logistics_graph(
+                snapshot.railway_mgr,
+                snapshot.supply_mgr,
+                known_provinces=known_provinces,
+            )
+            coverage = evaluate_exception_coverage(
+                snapshot.logistics_exception_mgr,
+                graph,
+            )
+            if coverage.missing_keys or coverage.stale_keys:
+                severity = "blocker" if active_lifecycle in ("frozen", "accepted") else "warning"
+                findings.append(ValidationNote(
+                    "logistics.exception_coverage",
+                    severity,
+                    "%d logistics exception cases require review"
+                    % (len(coverage.missing_keys) + len(coverage.stale_keys)),
+                    layer="logistics",
+                ))
+        except ImportError:
+            # Keep the planner compatible with snapshots created before M4.5.
             pass
     return findings
 
@@ -1113,7 +1160,7 @@ def apply_repair_actions(snapshot, actions: list) -> list:
 def plan_export(tile_map, province_map, terrain_map=None, height_map=None, river_map=None,
                 state_mgr=None, country_mgr=None, continent_mgr=None, adjacency_mgr=None,
                 railway_mgr=None, supply_mgr=None, adjacency_rule_mgr=None,
-                strategic_region_mgr=None, provincial_terrain=None,
+                strategic_region_mgr=None, logistics_exception_mgr=None, provincial_terrain=None,
                 colormap_settings=None, default_map_settings=None,
                 assets=None, dirty_assets=None, project_meta=None,
                 profile_name: str = "legacy_full", game_target=None, game_dir=None,
@@ -1144,6 +1191,7 @@ def plan_export(tile_map, province_map, terrain_map=None, height_map=None, river
         "supply_mgr": supply_mgr,
         "adjacency_rule_mgr": adjacency_rule_mgr,
         "strategic_region_mgr": strategic_region_mgr,
+        "logistics_exception_mgr": logistics_exception_mgr,
     }
     snapshot = take_snapshot(
         tile_map, province_map, terrain_map, height_map, river_map,
@@ -1152,7 +1200,13 @@ def plan_export(tile_map, province_map, terrain_map=None, height_map=None, river
         assets=assets, dirty_assets=dirty_assets, project_meta=project_meta,
         profile_id=getattr(profile, "profile_id", "hoi4-1.19") if profile is not None else "hoi4-1.19",
     )
-    findings = collect_findings(snapshot, profile, dimensions, profile_name)
+    findings = collect_findings(
+        snapshot,
+        profile,
+        dimensions,
+        profile_name,
+        lifecycle=active_lifecycle,
+    )
     repairs: list = []
     repairs.extend(analyze_terrain_tile_sync(snapshot))
     repairs.extend(analyze_state_empty_cleanup(snapshot))
@@ -1233,6 +1287,7 @@ def plan_export_from_project(project, canvas=None, tile_map=None, province_map=N
         raise PlanRejected("project has no map arrays to plan an export from")
     for key in ("state_mgr", "country_mgr", "continent_mgr", "adjacency_mgr",
                 "railway_mgr", "supply_mgr", "adjacency_rule_mgr", "strategic_region_mgr",
+                "logistics_exception_mgr",
                 "colormap_settings", "default_map_settings", "assets", "dirty_assets",
                 "project_meta"):
         kwargs.setdefault(key, getattr(project, key, None))

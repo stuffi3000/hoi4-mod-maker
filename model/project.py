@@ -19,6 +19,7 @@ from domain.managers.railway import RailwayManager
 from domain.managers.supply_node import SupplyNodeManager
 from domain.managers.adjacency_rule import AdjacencyRuleManager
 from domain.managers.strategic_region import StrategicRegionManager
+from domain.logistics_exceptions import LogisticsExceptionManager
 from domain.managers.colormap_settings import ColormapSettings
 from domain.managers.default_map_settings import DefaultMapSettings
 from domain.project_meta import (
@@ -43,6 +44,7 @@ class Project:
         self.supply_mgr = SupplyNodeManager()
         self.adjacency_rule_mgr = AdjacencyRuleManager()
         self.strategic_region_mgr = StrategicRegionManager()
+        self.logistics_exception_mgr = LogisticsExceptionManager()
         self.colormap_settings = ColormapSettings.default()
         self.default_map_settings = DefaultMapSettings()
         self.project_meta: ProjectMeta = default_meta()
@@ -119,6 +121,7 @@ class Project:
         self.supply_mgr = SupplyNodeManager()
         self.adjacency_rule_mgr = AdjacencyRuleManager()
         self.strategic_region_mgr = StrategicRegionManager()
+        self.logistics_exception_mgr = LogisticsExceptionManager()
         self.colormap_settings = ColormapSettings.default()
         self.default_map_settings = DefaultMapSettings()
         existing_profile = getattr(getattr(self, "project_meta", None), "profile_id", "hoi4-1.19")
@@ -150,6 +153,7 @@ class Project:
             supply_mgr=self.supply_mgr,
             adjacency_rule_mgr=self.adjacency_rule_mgr,
             strategic_region_mgr=self.strategic_region_mgr,
+            logistics_exception_mgr=self.logistics_exception_mgr,
             provincial_terrain=self.map_data.provincial_terrain,
             tile_snapshot=self.map_data.tile_snapshot,
             project_meta=self.project_meta,
@@ -286,6 +290,7 @@ class Project:
             supply_mgr=self.supply_mgr,
             adjacency_rule_mgr=self.adjacency_rule_mgr,
             strategic_region_mgr=self.strategic_region_mgr,
+            logistics_exception_mgr=self.logistics_exception_mgr,
         )
         tile_map, province_map, terrain_map, height_map, river_map, provincial_terrain, tile_snapshot, project_meta = result
         self.project_meta = project_meta

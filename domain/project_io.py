@@ -36,6 +36,7 @@ def save_project(
     tile_snapshot: np.ndarray | None = None,
     project_meta=None,
     allow_newer_overwrite: bool = False,
+    logistics_exception_mgr=None,
 ) -> None:
     """Save project to .hoi4proj file (zip format).
 
@@ -180,6 +181,11 @@ def save_project(
                 "strategic_regions.json",
                 json.dumps(strategic_region_mgr.to_dict(), ensure_ascii=False, indent=2),
             )
+        if logistics_exception_mgr is not None:
+            zf.writestr(
+                "logistics_exceptions.json",
+                json.dumps(logistics_exception_mgr.to_dict(), ensure_ascii=False, indent=2),
+            )
 
         # Province-level terrain (Feature A: independent of graphical terrain_map)
         if provincial_terrain:
@@ -207,6 +213,7 @@ def load_project(
     supply_mgr=None,
     adjacency_rule_mgr=None,
     strategic_region_mgr=None,
+    logistics_exception_mgr=None,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray | None, dict[int, str], np.ndarray | None]:
     """Load project files.
 
@@ -319,6 +326,14 @@ def load_project(
         if strategic_region_mgr is not None and "strategic_regions.json" in zf.namelist():
             strategic_region_mgr.clear()
             strategic_region_mgr.from_dict(json.loads(zf.read("strategic_regions.json")))
+        if logistics_exception_mgr is not None:
+            logistics_exception_mgr.clear()
+            if "logistics_exceptions.json" in zf.namelist():
+                loaded_exceptions = logistics_exception_mgr.from_dict(
+                    json.loads(zf.read("logistics_exceptions.json"))
+                )
+                for exception in loaded_exceptions.get_all():
+                    logistics_exception_mgr.add(exception)
 
         # tile_snapshot (tile_map snapshot when the province is generated, old projects do not have it)
         tile_snapshot = None
@@ -352,10 +367,10 @@ def read_project_meta(path: str):
         raise NewerSchemaError(exc.schema_version, exc.data) from exc
 
 
-def load_project_with_meta(path: str, state_mgr, country_mgr, continent_mgr=None, adjacency_mgr=None, railway_mgr=None, supply_mgr=None, adjacency_rule_mgr=None, strategic_region_mgr=None):
+def load_project_with_meta(path: str, state_mgr, country_mgr, continent_mgr=None, adjacency_mgr=None, railway_mgr=None, supply_mgr=None, adjacency_rule_mgr=None, strategic_region_mgr=None, logistics_exception_mgr=None):
     """Load arrays/managers plus project metadata."""
     on_disk = read_project_meta(path)
-    result = load_project(path, state_mgr, country_mgr, continent_mgr=continent_mgr, adjacency_mgr=adjacency_mgr, railway_mgr=railway_mgr, supply_mgr=supply_mgr, adjacency_rule_mgr=adjacency_rule_mgr, strategic_region_mgr=strategic_region_mgr)
+    result = load_project(path, state_mgr, country_mgr, continent_mgr=continent_mgr, adjacency_mgr=adjacency_mgr, railway_mgr=railway_mgr, supply_mgr=supply_mgr, adjacency_rule_mgr=adjacency_rule_mgr, strategic_region_mgr=strategic_region_mgr, logistics_exception_mgr=logistics_exception_mgr)
     tile_map, province_map = result[0], result[1]
     height = int(tile_map.shape[0]) if tile_map is not None else 0
     width = int(tile_map.shape[1]) if tile_map is not None else 0
