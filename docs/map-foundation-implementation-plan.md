@@ -588,8 +588,8 @@ Add a test that exports the same synthetic project twice and compares the comple
 - [ ] **M3.3 — validation suites:** implement and register the raster, terrain/river/mask, geography/reference, logistics, placement, and asset/integration suites.
   - [x] **M3.3a — raster/definition:** core raster dimensions, definition coverage, IDs, surface classification, connectivity, and bounding-box findings.
   - [x] **M3.3b — terrain/river/mask:** terrain indices/surface agreement plus river and layer-mask shape/value findings.
-  - [ ] **M3.3c — geography/reference:** state, region, continent, and cross-reference findings.
-  - [ ] **M3.3d — adjacency/logistics:** adjacency, railway, supply-node, port, and graph findings.
+  - [x] **M3.3c — geography/reference:** state, region, continent, and cross-reference findings, including profile-aware wrap and state/region compatibility checks.
+  - [x] **M3.3d — adjacency/logistics:** adjacency, railway, supply-node, port, and graph findings, including profile-aware wrap and duplicate-route checks.
   - [ ] **M3.3e — placement:** coordinate, building, port, collision, and weather-position findings.
   - [ ] **M3.3f — asset/integration:** asset disposition/format, descriptor, tag-collision, and missing-reference findings.
 - [ ] **M3.4 — foundation manifest:** extend the manifest with path-independent identity, full inventory/provenance, validation, acceptance, and lock metadata.
@@ -616,6 +616,13 @@ Add a test that exports the same synthetic project twice and compares the comple
 - **Reviewed:** both pure validators return typed findings with stable codes, deterministic ordering, useful coordinates/evidence, and no input mutation; `run_foundation_validation()` aggregates both through the shared registry/report contract.
 - **Evidence:** 18 raster tests, 20 terrain tests, 11 registry tests, and 32 existing validation/province tests passed; compilation and diff checks passed.
 - **Next controlled slice:** M3.3c geography/reference validation. Logistics, placement, asset/integration, manifest, and deterministic-output work remain pending.
+
+### M3 checkpoint — after M3.3d
+
+- **Completed:** M3.3c geography/reference and M3.3d adjacency/logistics validators, centrally registered with the existing raster and terrain suites in `682354f`.
+- **Reviewed:** both new suites are pure, deterministic, typed-finding producers with manager-compatible read-only adapters, profile/explicit horizontal-wrap handling, sorted evidence/coordinates, and no input mutation. Geography reports state/region/country/continent references and state/region incompatibility; logistics reports adjacency, railway, supply, port, graph, and duplicate-route errors/warnings.
+- **Evidence:** the combined M3.3 registry/geography/logistics/raster/terrain suite passed; shared validation, manager, adjacency, compaction, and province-paint regression tests also passed; diff checks passed. Two independent Muse review workers found and drove the follow-up fixes before acceptance.
+- **Next controlled slice:** M3.3e placement validation. Asset/integration validation, the foundation manifest, and deterministic-output enforcement remain pending.
 
 ## M4 — special adjacencies and logistics semantics
 
