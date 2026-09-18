@@ -581,10 +581,10 @@ Add a test that exports the same synthetic project twice and compares the comple
 - [x] **M3.1a — typed findings and gate policy:** shared `ValidationFinding`, deterministic registry, and lifecycle gate policy are implemented in `domain/validation.py` with focused tests.
 - [x] **M3.2a — shared report foundation:** immutable `ValidationReport` and legacy readiness/verifier adapters are implemented in `domain/validation.py` and `services/validation_service.py`.
 - [x] **M3.2b — readiness/export-service clients:** make live readiness and pre-write export checks consume the shared report while preserving legacy return compatibility.
-- [ ] **M3.2c — artifact/CLI/UI clients:** make artifact verification, export progress/dialog, and CLI reports consume the shared report.
+- [x] **M3.2c — artifact/CLI/UI clients:** make artifact verification, export progress/dialog, and CLI reports consume the shared report.
   - [x] **M3.2c1 — artifact verifier:** add the quiet single-pass `ValidationReport` adapter while preserving `verify_quiet()` and `verify_all()` compatibility.
-  - [ ] **M3.2c2 — CLI reports:** route CLI human-readable/JSON validation output through the shared report without changing exit-code behavior.
-  - [ ] **M3.2c3 — export UI:** route export progress/result verification through the shared report without broadening the UI scope.
+  - [x] **M3.2c2 — CLI reports:** route CLI human-readable/JSON validation output through the shared report without changing exit-code behavior.
+  - [x] **M3.2c3 — export UI:** route export progress/result verification through the shared report without broadening the UI scope.
 - [ ] **M3.3 — validation suites:** implement and register the raster, terrain/river/mask, geography/reference, logistics, placement, and asset/integration suites.
 - [ ] **M3.4 — foundation manifest:** extend the manifest with path-independent identity, full inventory/provenance, validation, acceptance, and lock metadata.
 - [ ] **M3.5 — deterministic output:** enforce and test byte-identical foundation output for identical snapshots and options.
@@ -596,6 +596,13 @@ Add a test that exports the same synthetic project twice and compares the comple
 - **Evidence:** 8 new verifier tests plus 19 shared-report regression tests passed; compilation and diff checks passed.
 - **Environment note:** the existing M1 target-hook suite still encounters the known Windows temporary-directory ACL failure in five fixture setups; two tests pass.
 - **Next controlled slice:** M3.2c2 CLI reports. M3.2c3 export UI and all later M3 work remain pending.
+
+### M3 checkpoint — after M3.2c
+
+- **Completed:** M3.2c2 CLI reports (`5fa4408`) and M3.2c3 export UI (`d0838de`).
+- **Reviewed:** planner human-readable and JSON outputs now expose shared plan/artifact reports; the export worker carries plan findings and the dialog uses the single-pass artifact report while preserving legacy display behavior and exit codes.
+- **Evidence:** 6 CLI tests, 4 UI tests, 22 planner tests, and the shared-report regression suites passed; compilation and diff checks passed.
+- **Next controlled slice:** M3.3 validation suites, split by validator family. Manifest and deterministic-output work remain pending.
 
 ## M4 — special adjacencies and logistics semantics
 
