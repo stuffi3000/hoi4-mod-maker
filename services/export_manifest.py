@@ -2,12 +2,16 @@
 
 Makes generated, preserved, inherited, and omitted assets visible for every
 profile and supports lock comparison for the M3/M8 freeze workflow.
+
+M3.4 adds a deterministic, path-independent foundation-manifest foundation.
 """
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import os
+from dataclasses import fields, is_dataclass
 from datetime import datetime, timezone
 
 
@@ -64,6 +68,53 @@ CONTENT_ONLY_PATHS = (
 )
 
 DEPRECATED_PATHS_FALLBACK = ("map/colors.txt",)
+
+MANIFEST_SCHEMA = "foundation-manifest/3.4"
+MANIFEST_VERSION = "3.4"
+MANIFEST_GENERATOR = "hoi4-mod-maker/export_manifest"
+IDENTITY_HASH_ALGORITHM = "sha256-canonical-json-v1"
+
+CRITICAL_ARRAYS = ("tile", "province", "terrain", "height", "river")
+MANAGER_KEYS = (
+    "state_mgr",
+    "country_mgr",
+    "continent_mgr",
+    "adjacency_mgr",
+    "railway_mgr",
+    "supply_mgr",
+    "adjacency_rule_mgr",
+    "strategic_region_mgr",
+)
+AUXILIARY_KEYS = (
+    "provincial_terrain",
+    "colormap_settings",
+    "default_map_settings",
+    "assets",
+    "dirty_assets",
+)
+PORTABLE_TARGET_KEYS = (
+    "profile_id",
+    "raw_version",
+    "display_version",
+    "revision",
+    "checksum",
+    "supported_version",
+)
+TARGET_DIAGNOSTIC_KEYS = (
+    "install_dir",
+    "validated_at",
+    "source",
+    "required_files",
+    "missing_files",
+)
+SCOPE_PATH_KEYS = frozenset({
+    "replace_path",
+    "output_dir",
+    "install_dir",
+    "game_dir",
+    "game_install_dir",
+})
+CANONICAL_EXCLUDE_TOP_KEYS = ("metadata", "created_at", "tool_version")
 
 
 def _utc_now_iso() -> str:
@@ -158,43 +209,703 @@ def validate_staged_artifacts(output_dir: str, plan) -> list[str]:
     return errors
 
 
+def _hash_array(arr) -> str:
+    if arr is None:
+        return "none"
+    try:
+        import numpy as np
+        digest = hashlib.sha256()
+        digest.update(str(arr.shape).encode("utf-8"))
+        digest.update(str(arr.dtype).encode("utf-8"))
+        digest.update(np.ascontiguousarray(arr).tobytes())
+        return digest.hexdigest()
+    except Exception:
+        return "unhashable"
+
+
+def _canonicalize(value, active=None):
+    if active is None:
+        active = set()
+    if value is None or isinstance(value, (bool, int, str)):
+        return value
+    if isinstance(value, float):
+        return value
+    try:
+        import numpy as np
+        if isinstance(value, np.generic):
+            return _canonicalize(value.item(), active)
+        if isinstance(value, np.ndarray):
+            arr = np.ascontiguousarray(value)
+            return {
+                "__ndarray__": True,
+                "dtype": str(arr.dtype),
+                "shape": list(arr.shape),
+                "sha256": hashlib.sha256(arr.tobytes()).hexdigest(),
+            }
+    except ImportError:
+        pass
+    if isinstance(value, (bytes, bytearray, memoryview)):
+        raw = bytes(value)
+        return {"__bytes__": True, "size": len(raw),
+                "sha256": hashlib.sha256(raw).hexdigest()}
+    object_id = id(value)
+    if object_id in active:
+        return "<cycle>"
+    active.add(object_id)
+    try:
+        if is_dataclass(value) and not isinstance(value, type):
+            return {
+                "__class__": value.__class__.__module__ + "." + value.__class__.__qualname__,
+                "fields": {item.name: _canonicalize(getattr(value, item.name), active)
+                            for item in fields(value)},
+            }
+        if isinstance(value, dict):
+            items = [
+                (str(key), _canonicalize(item, active))
+                for key, item in value.items()
+            ]
+            return {"__dict__": sorted(items, key=lambda item: item[0])}
+        if isinstance(value, (list, tuple)):
+            return [_canonicalize(item, active) for item in value]
+        if isinstance(value, (set, frozenset)):
+            items = [_canonicalize(item, active) for item in value]
+            return sorted(items, key=lambda item: repr(item))
+        attrs = getattr(value, "__dict__", None)
+        if isinstance(attrs, dict):
+            ignored = {"_cache", "_cached", "_event_bus", "_listeners"}
+            return {
+                "__class__": value.__class__.__module__ + "." + value.__class__.__qualname__,
+                "attrs": {
+                    str(key): _canonicalize(item, active)
+                    for key, item in sorted(attrs.items(), key=lambda pair: str(pair[0]))
+                    if str(key) not in ignored and not callable(item)
+                },
+            }
+        return {"__class__": value.__class__.__module__ + "." + value.__class__.__qualname__}
+    finally:
+        active.remove(object_id)
+
+
+def _digest_canonical(value) -> str:
+    payload = json.dumps(_canonicalize(value), ensure_ascii=True, sort_keys=True,
+                         separators=(",", ":"), allow_nan=True)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+
+def _source_array_hashes(snapshot) -> dict:
+    if snapshot is None:
+        return {key: "none" for key in CRITICAL_ARRAYS}
+    mapping = {
+        "tile": getattr(snapshot, "tile_map", None),
+        "province": getattr(snapshot, "province_map", None),
+        "terrain": getattr(snapshot, "terrain_map", None),
+        "height": getattr(snapshot, "height_map", None),
+        "river": getattr(snapshot, "river_map", None),
+    }
+    return {key: _hash_array(value) for key, value in mapping.items()}
+
+
+def _source_manager_hashes(snapshot) -> dict:
+    if snapshot is None:
+        return {key: "none" for key in MANAGER_KEYS}
+    managers = None
+    getter = getattr(snapshot, "managers_dict", None)
+    if callable(getter):
+        try:
+            managers = getter()
+        except Exception:
+            managers = None
+    if not isinstance(managers, dict):
+        try:
+            managers = {key: getattr(snapshot, key, None) for key in MANAGER_KEYS}
+        except Exception:
+            managers = {}
+    result: dict = {}
+    for key in MANAGER_KEYS:
+        manager = managers.get(key) if isinstance(managers, dict) else None
+        if manager is None:
+            result[key] = "none"
+            continue
+        try:
+            result[key] = _digest_canonical(manager)
+        except Exception:
+            result[key] = "unhashable"
+    return result
+
+
+def _source_auxiliary_hashes(snapshot) -> dict:
+    if snapshot is None:
+        return {key: "none" for key in AUXILIARY_KEYS}
+    values = {
+        "provincial_terrain": getattr(snapshot, "provincial_terrain", {}),
+        "colormap_settings": getattr(snapshot, "colormap_settings", None),
+        "default_map_settings": getattr(snapshot, "default_map_settings", None),
+        "assets": getattr(snapshot, "assets", {}),
+        "dirty_assets": getattr(snapshot, "dirty_assets", ()),
+    }
+    result: dict = {}
+    for key in AUXILIARY_KEYS:
+        try:
+            result[key] = _digest_canonical(values.get(key))
+        except Exception:
+            result[key] = "unhashable"
+    return result
+
+
+def _target_to_dict(game_target):
+    if game_target is None:
+        return None
+    to_dict = getattr(game_target, "to_dict", None)
+    if callable(to_dict):
+        try:
+            data = to_dict()
+            if isinstance(data, dict):
+                return dict(data)
+        except Exception:
+            pass
+    if isinstance(game_target, dict):
+        return dict(game_target)
+    data: dict = {}
+    for key in PORTABLE_TARGET_KEYS + TARGET_DIAGNOSTIC_KEYS:
+        try:
+            if hasattr(game_target, key):
+                data[key] = getattr(game_target, key)
+        except Exception:
+            continue
+    if data:
+        return data
+    return None
+
+
+def _portable_target_identity(game_target, game_profile=None, snapshot=None) -> dict:
+    data = _target_to_dict(game_target) or {}
+    identity = {key: data.get(key) for key in PORTABLE_TARGET_KEYS}
+    profile_id = None
+    if game_profile is not None:
+        if isinstance(game_profile, dict):
+            profile_id = game_profile.get("profile_id")
+        elif isinstance(game_profile, str):
+            profile_id = game_profile
+        else:
+            try:
+                profile_id = getattr(game_profile, "profile_id", None)
+            except Exception:
+                profile_id = None
+    if profile_id is None:
+        profile_id = data.get("profile_id")
+    if profile_id is None and snapshot is not None:
+        try:
+            profile_id = getattr(snapshot, "profile_id", None)
+        except Exception:
+            profile_id = None
+    identity["game_profile"] = profile_id
+    return identity
+
+
+def _target_diagnostics(game_target) -> dict:
+    data = _target_to_dict(game_target) or {}
+    required = data.get("required_files") or {}
+    if isinstance(required, dict):
+        try:
+            required = {str(key): bool(value) for key, value in sorted(required.items(), key=lambda kv: str(kv[0]))}
+        except Exception:
+            required = {str(key): bool(value) for key, value in required.items()}
+    else:
+        required = {}
+    missing = data.get("missing_files") or []
+    try:
+        missing = sorted(str(value) for value in missing)
+    except Exception:
+        try:
+            missing = [str(value) for value in list(missing)]
+        except Exception:
+            missing = []
+    is_usable = None
+    if game_target is not None and not isinstance(game_target, dict):
+        try:
+            prop = getattr(game_target, "is_usable", None)
+            if prop is not None:
+                is_usable = bool(prop() if callable(prop) else prop)
+        except Exception:
+            is_usable = None
+    return {
+        "install_dir": data.get("install_dir"),
+        "validated_at": data.get("validated_at"),
+        "source": data.get("source"),
+        "required_files": required,
+        "missing_files": missing,
+        "is_usable": is_usable,
+    }
+
+
+def _game_profile_detail(game_profile):
+    if game_profile is None:
+        return None
+    if isinstance(game_profile, str):
+        return {"profile_id": game_profile}
+    if isinstance(game_profile, dict):
+        return {
+            "profile_id": game_profile.get("profile_id"),
+            "display_name": game_profile.get("display_name"),
+            "supported_version_pattern": game_profile.get("supported_version_pattern"),
+        }
+    try:
+        return {
+            "profile_id": getattr(game_profile, "profile_id", None),
+            "display_name": getattr(game_profile, "display_name", None),
+            "supported_version_pattern": getattr(game_profile, "supported_version_pattern", None),
+        }
+    except Exception:
+        return None
+
+
+def _portable_project(snapshot) -> dict:
+    if snapshot is None:
+        return {"schema_version": None, "profile_id": None, "generator_version": None}
+    try:
+        profile_id = getattr(snapshot, "profile_id", None)
+    except Exception:
+        profile_id = None
+    meta = None
+    try:
+        meta = getattr(snapshot, "project_meta", None)
+    except Exception:
+        meta = None
+    schema_version = None
+    generator_version = None
+    meta_profile = None
+    if meta is not None:
+        try:
+            if isinstance(meta, dict):
+                schema_version = meta.get("schema_version")
+                generator_version = meta.get("generator_version")
+                game = meta.get("game") or {}
+                if isinstance(game, dict):
+                    meta_profile = game.get("profile_id")
+                if meta_profile is None:
+                    meta_profile = meta.get("profile_id")
+            else:
+                schema_version = getattr(meta, "schema_version", None)
+                generator_version = getattr(meta, "generator_version", None)
+                try:
+                    meta_profile = getattr(meta, "profile_id", None)
+                except Exception:
+                    meta_profile = None
+        except Exception:
+            pass
+    resolved = profile_id if profile_id is not None else meta_profile
+    return {
+        "schema_version": schema_version,
+        "profile_id": resolved,
+        "generator_version": generator_version,
+    }
+
+
+def _portable_scope(scope) -> dict:
+    base = dict(scope or {})
+    return {str(key): base[key] for key in base if str(key) not in SCOPE_PATH_KEYS}
+
+
+
 def _asset_counts(plan) -> dict:
     counts: dict = {}
     for resolution in getattr(plan, "asset_resolutions", []) or []:
-        counts[resolution.disposition] = counts.get(resolution.disposition, 0) + 1
+        if isinstance(resolution, dict):
+            disposition = resolution.get("disposition", "unknown")
+        else:
+            disposition = getattr(resolution, "disposition", "unknown")
+        counts[disposition] = counts.get(disposition, 0) + 1
     return counts
+
+
+def _manager_count(manager):
+    if manager is None:
+        return None
+    try:
+        states = getattr(manager, "states", None)
+        if isinstance(states, dict):
+            return int(len(states))
+        countries = getattr(manager, "countries", None)
+        if isinstance(countries, dict):
+            return int(len(countries))
+        count_fn = getattr(manager, "count", None)
+        if callable(count_fn):
+            try:
+                return int(count_fn())
+            except Exception:
+                pass
+        names = getattr(manager, "_names", None)
+        if isinstance(names, list):
+            return int(len(names))
+        get_all = getattr(manager, "get_all", None)
+        if callable(get_all):
+            try:
+                return int(len(get_all()))
+            except Exception:
+                pass
+        for attr in ("regions", "entries", "nodes", "railways", "adjacencies", "rules"):
+            try:
+                value = getattr(manager, attr, None)
+            except Exception:
+                continue
+            if isinstance(value, dict):
+                return int(len(value))
+            if isinstance(value, (list, tuple, set, frozenset)):
+                return int(len(value))
+        try:
+            return int(len(manager))
+        except Exception:
+            return None
+    except Exception:
+        return None
+
+
+def _stable_counts(plan, snapshot) -> dict:
+    province_ids = 0
+    province_max = 0
+    prov_map = None
+    try:
+        prov_map = getattr(snapshot, "province_map", None) if snapshot is not None else None
+    except Exception:
+        prov_map = None
+    if prov_map is not None:
+        try:
+            import numpy as np
+            arr = np.asanyarray(prov_map)
+            if arr.size:
+                try:
+                    province_max = int(arr.max())
+                except Exception:
+                    province_max = 0
+                try:
+                    uniq = np.unique(arr.ravel())
+                    count = 0
+                    for value in uniq.tolist():
+                        try:
+                            if int(value) != 0:
+                                count += 1
+                        except Exception:
+                            count += 1
+                    province_ids = int(count)
+                except Exception:
+                    province_ids = 0
+        except Exception:
+            province_ids = 0
+            province_max = 0
+    try:
+        width = int(getattr(snapshot, "width", 0) or 0) if snapshot is not None else 0
+    except Exception:
+        width = 0
+    try:
+        height = int(getattr(snapshot, "height", 0) or 0) if snapshot is not None else 0
+    except Exception:
+        height = 0
+    mgr_dict = None
+    if snapshot is not None:
+        getter = getattr(snapshot, "managers_dict", None)
+        if callable(getter):
+            try:
+                mgr_dict = getter()
+            except Exception:
+                mgr_dict = None
+        if not isinstance(mgr_dict, dict):
+            try:
+                mgr_dict = {key: getattr(snapshot, key, None) for key in MANAGER_KEYS}
+            except Exception:
+                mgr_dict = {}
+    else:
+        mgr_dict = {}
+    managers: dict = {}
+    for key in MANAGER_KEYS:
+        try:
+            managers[key] = _manager_count((mgr_dict or {}).get(key))
+        except Exception:
+            managers[key] = None
+    return {
+        "province_ids": int(province_ids),
+        "province_max": int(province_max),
+        "map_pixels": int(width * height) if width and height else 0,
+        "managers": managers,
+    }
+
+
+def _repair_to_dict(entry):
+    if hasattr(entry, "to_dict"):
+        try:
+            return entry.to_dict()
+        except Exception:
+            pass
+    if isinstance(entry, dict):
+        return dict(entry)
+    return {"value": str(entry)}
+
+
+def _finding_to_dict(entry):
+    if hasattr(entry, "to_dict"):
+        try:
+            return entry.to_dict()
+        except Exception:
+            pass
+    if isinstance(entry, dict):
+        return dict(entry)
+    return {"value": str(entry)}
+
+
+def _sorted_written_files(written_files) -> list:
+    items = []
+    for entry in list(written_files or []):
+        if hasattr(entry, "to_dict"):
+            try:
+                items.append(entry.to_dict())
+                continue
+            except Exception:
+                pass
+        if isinstance(entry, dict):
+            items.append(dict(entry))
+        else:
+            items.append(entry)
+    def _key(item):
+        if isinstance(item, dict):
+            return str(item.get("rel_path", repr(item)))
+        return str(item)
+    try:
+        return sorted(items, key=_key)
+    except Exception:
+        return items
+
+
+def _sorted_asset_resolutions(asset_resolutions) -> list:
+    items = []
+    for entry in list(asset_resolutions or []):
+        if hasattr(entry, "to_dict"):
+            try:
+                items.append(entry.to_dict())
+                continue
+            except Exception:
+                pass
+        if isinstance(entry, dict):
+            items.append(dict(entry))
+        else:
+            items.append(entry)
+    def _key(item):
+        if isinstance(item, dict):
+            return str(item.get("rel_path", repr(item)))
+        return str(item)
+    try:
+        return sorted(items, key=_key)
+    except Exception:
+        return items
+
+
+def _sorted_strings(values) -> list:
+    items = list(values or [])
+    try:
+        def _key(value):
+            if isinstance(value, dict):
+                try:
+                    return json.dumps(value, sort_keys=True, default=str)
+                except Exception:
+                    return repr(value)
+            return str(value)
+        return sorted(items, key=_key)
+    except Exception:
+        return items
+
+
+def _sorted_stages(stage_results) -> list:
+    out = []
+    for entry in list(stage_results or []):
+        if hasattr(entry, "to_dict"):
+            try:
+                data = entry.to_dict()
+            except Exception:
+                continue
+        elif isinstance(entry, dict):
+            data = dict(entry)
+        else:
+            continue
+        if not isinstance(data, dict):
+            continue
+        owned = data.get("owned_files") or []
+        try:
+            data["owned_files"] = sorted(str(value) for value in owned)
+        except Exception:
+            pass
+        written = data.get("written") or []
+        try:
+            norm = []
+            for item in written:
+                if hasattr(item, "to_dict"):
+                    try:
+                        norm.append(item.to_dict())
+                        continue
+                    except Exception:
+                        pass
+                if isinstance(item, dict):
+                    norm.append(dict(item))
+                else:
+                    norm.append(item)
+            def _wkey(item):
+                if isinstance(item, dict):
+                    return str(item.get("rel_path", repr(item)))
+                return str(item)
+            data["written"] = sorted(norm, key=_wkey)
+        except Exception:
+            pass
+        out.append(data)
+    return out
+
+
+def _compute_identity_hash(profile_name, portable_target, portable_project, map_size, layers, portable_scope, sources, snapshot_fingerprint) -> str:
+    payload = {
+        "layers": list(layers or []),
+        "map_size": dict(map_size or {}),
+        "profile": profile_name,
+        "project": dict(portable_project or {}),
+        "scope": dict(portable_scope or {}),
+        "snapshot_fingerprint": snapshot_fingerprint,
+        "sources": sources,
+        "target": dict(portable_target or {}),
+    }
+    canonical = json.dumps(_canonicalize(payload), ensure_ascii=True, sort_keys=True,
+                           separators=(",", ":"), allow_nan=True)
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
 
 
 def build_manifest_dict(plan, written_files: list, stage_results: list | None = None,
                         placeholders: list | None = None, provenance: list | None = None) -> dict:
     snapshot = getattr(plan, "snapshot", None)
+    tool_version = _tool_version()
+    created_at = _utc_now_iso()
+    profile_name = getattr(plan, "profile_name", "legacy_full")
+    lifecycle = getattr(plan, "lifecycle", "draft")
+    repair_policy = getattr(plan, "repair_policy", "propose")
+    layers = list(getattr(plan, "layers", []) or [])
+    scope = dict(getattr(plan, "scope", {}) or {})
+    mod_name = getattr(plan, "mod_name", "")
+    game_target = getattr(plan, "game_target", None)
+    game_profile = getattr(plan, "game_profile", None)
+    try:
+        snapshot_fingerprint = getattr(snapshot, "fingerprint", "") if snapshot is not None else ""
+    except Exception:
+        snapshot_fingerprint = ""
+    if snapshot is not None:
+        try:
+            width = int(getattr(snapshot, "width", 0) or 0)
+        except Exception:
+            width = 0
+        try:
+            height = int(getattr(snapshot, "height", 0) or 0)
+        except Exception:
+            height = 0
+        map_size = {"width": width, "height": height}
+    else:
+        map_size = {}
+    legacy_target = None
+    try:
+        if game_target is not None and hasattr(game_target, "to_dict"):
+            legacy_target = game_target.to_dict()
+        elif isinstance(game_target, dict):
+            legacy_target = dict(game_target)
+        else:
+            legacy_target = _target_to_dict(game_target)
+    except Exception:
+        try:
+            legacy_target = _target_to_dict(game_target)
+        except Exception:
+            legacy_target = None
+    game_profile_id = None
+    try:
+        if isinstance(game_profile, dict):
+            game_profile_id = game_profile.get("profile_id")
+        elif isinstance(game_profile, str):
+            game_profile_id = game_profile
+        elif game_profile is not None:
+            game_profile_id = getattr(game_profile, "profile_id", None)
+    except Exception:
+        game_profile_id = None
+    sources = {
+        "arrays": _source_array_hashes(snapshot),
+        "managers": _source_manager_hashes(snapshot),
+        "auxiliary": _source_auxiliary_hashes(snapshot),
+    }
+    portable_target = _portable_target_identity(game_target, game_profile, snapshot)
+    diagnostics_target = _target_diagnostics(game_target)
+    portable_project = _portable_project(snapshot)
+    game_profile_detail = _game_profile_detail(game_profile)
+    counts = _stable_counts(plan, snapshot)
+    portable_scope = _portable_scope(scope)
+    try:
+        identity_hash = _compute_identity_hash(
+            profile_name, portable_target, portable_project,
+            map_size, layers, portable_scope, sources, snapshot_fingerprint,
+        )
+    except Exception:
+        identity_hash = "unhashable"
+    try:
+        proposed = [_repair_to_dict(entry) for entry in (getattr(plan, "proposed_repairs", []) or [])]
+    except Exception:
+        proposed = []
+    try:
+        applied = [_repair_to_dict(entry) for entry in (getattr(plan, "applied_repairs", []) or [])]
+    except Exception:
+        applied = []
+    try:
+        findings = [_finding_to_dict(entry) for entry in (getattr(plan, "findings", []) or [])]
+    except Exception:
+        findings = []
+    try:
+        blockers = list(getattr(plan, "blockers", []) or [])
+    except Exception:
+        blockers = []
+    try:
+        acceptance_tags = list(getattr(plan, "acceptance_tags", []) or [])
+    except Exception:
+        acceptance_tags = []
     return {
-        "tool_version": _tool_version(),
-        "created_at": _utc_now_iso(),
-        "profile": getattr(plan, "profile_name", "legacy_full"),
-        "lifecycle": getattr(plan, "lifecycle", "draft"),
-        "repair_policy": getattr(plan, "repair_policy", "propose"),
-        "layers": list(getattr(plan, "layers", []) or []),
-        "mod_name": getattr(plan, "mod_name", ""),
-        "game_target": (plan.game_target.to_dict()
-                        if getattr(plan, "game_target", None) is not None
-                        and hasattr(plan.game_target, "to_dict") else None),
-        "game_profile": getattr(getattr(plan, "game_profile", None), "profile_id", None),
-        "snapshot_fingerprint": getattr(snapshot, "fingerprint", "") if snapshot is not None else "",
-        "map_size": {"width": getattr(snapshot, "width", 0), "height": getattr(snapshot, "height", 0)}
-        if snapshot is not None else {},
-        "proposed_repairs": [r.to_dict() for r in (getattr(plan, "proposed_repairs", []) or [])],
-        "applied_repairs": [r.to_dict() for r in (getattr(plan, "applied_repairs", []) or [])],
+        "manifest_schema": MANIFEST_SCHEMA,
+        "manifest_version": MANIFEST_VERSION,
+        "metadata": {
+            "tool_version": tool_version,
+            "created_at": created_at,
+            "generator": MANIFEST_GENERATOR,
+        },
+        "tool_version": tool_version,
+        "profile": profile_name,
+        "lifecycle": lifecycle,
+        "repair_policy": repair_policy,
+        "layers": layers,
+        "scope": dict(scope),
+        "counts": counts,
+        "mod_name": mod_name,
+        "game_target": legacy_target,
+        "target": {
+            "identity": portable_target,
+            "diagnostics": diagnostics_target,
+        },
+        "game_profile": game_profile_id,
+        "game_profile_detail": game_profile_detail,
+        "project": portable_project,
+        "snapshot_fingerprint": snapshot_fingerprint,
+        "map_size": map_size,
+        "sources": sources,
+        "identity": {
+            "identity_hash": identity_hash,
+            "algorithm": IDENTITY_HASH_ALGORITHM,
+        },
+        "proposed_repairs": proposed,
+        "applied_repairs": applied,
         "asset_counts": _asset_counts(plan),
-        "asset_resolutions": [a.to_dict() for a in (getattr(plan, "asset_resolutions", []) or [])],
-        "findings": [f.to_dict() if hasattr(f, "to_dict") else dict(f)
-                     for f in (getattr(plan, "findings", []) or [])],
-        "blockers": list(getattr(plan, "blockers", []) or []),
-        "acceptance_tags": list(getattr(plan, "acceptance_tags", []) or []),
-        "placeholders": list(placeholders or []),
-        "provenance": list(provenance or []),
-        "stages": [s.to_dict() if hasattr(s, "to_dict") else dict(s) for s in (stage_results or [])],
-        "written_files": [w.to_dict() if hasattr(w, "to_dict") else dict(w) for w in (written_files or [])],
+        "asset_resolutions": _sorted_asset_resolutions(getattr(plan, "asset_resolutions", []) or []),
+        "findings": findings,
+        "blockers": blockers,
+        "acceptance_tags": acceptance_tags,
+        "placeholders": _sorted_strings(placeholders),
+        "provenance": _sorted_strings(provenance),
+        "stages": _sorted_stages(stage_results),
+        "written_files": _sorted_written_files(written_files),
     }
 
 
@@ -204,8 +915,51 @@ def write_manifest(output_dir: str, plan, written_files: list, stage_results: li
     payload = build_manifest_dict(plan, written_files, stage_results, placeholders, provenance)
     path = os.path.join(output_dir, manifest_name)
     with open(path, "w", encoding="utf-8") as handle:
-        json.dump(payload, handle, ensure_ascii=False, indent=2)
+        json.dump(payload, handle, ensure_ascii=False, indent=2, sort_keys=True)
     return path
+
+
+def canonical_manifest_dict(manifest: dict) -> dict:
+    if not isinstance(manifest, dict):
+        return {}
+    try:
+        data = copy.deepcopy(dict(manifest))
+    except Exception:
+        data = dict(manifest)
+    for key in CANONICAL_EXCLUDE_TOP_KEYS:
+        data.pop(key, None)
+    game_target = data.get("game_target")
+    if isinstance(game_target, dict):
+        try:
+            data["game_target"] = {key: game_target.get(key) for key in PORTABLE_TARGET_KEYS}
+        except Exception:
+            pass
+    target = data.get("target")
+    if isinstance(target, dict):
+        identity = target.get("identity")
+        if isinstance(identity, dict):
+            data["target"] = {"identity": dict(identity)}
+        else:
+            data["target"] = {"identity": {}}
+    scope = data.get("scope")
+    if isinstance(scope, dict):
+        try:
+            data["scope"] = {key: scope[key] for key in scope if str(key) not in SCOPE_PATH_KEYS}
+        except Exception:
+            pass
+    return data
+
+
+def canonical_manifest_json(manifest: dict) -> str:
+    return json.dumps(canonical_manifest_dict(manifest), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def manifest_identity_hash(manifest: dict) -> str:
+    if isinstance(manifest, dict):
+        identity = manifest.get("identity") or {}
+        if isinstance(identity, dict) and identity.get("identity_hash"):
+            return str(identity.get("identity_hash"))
+    return ""
 
 
 def write_report(output_dir: str, plan, written_files: list, manifest_path: str,
