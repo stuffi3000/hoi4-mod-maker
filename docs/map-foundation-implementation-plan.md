@@ -710,6 +710,21 @@ Add project-level exceptions keyed by stable component identity or supply-node I
 
 Update the logistics renderer to color components and highlight the current Belgium findings: 327 components and 48 supply nodes absent from the railway graph. Freeze requires each relevant case to be connected or accepted with a reason.
 
+### M4 implementation tracking
+
+- [x] **M4.1 — explicit adjacency review state:** project metadata now records `unreviewed`, `none_intended` with a note, or `defined` with a deterministic adjacency-layer hash; freeze/accepted planning blocks unreviewed or contradictory layers. Committed as `3f2a833`.
+- [x] **M4.2 — adjacency import/edit/round trip:** CSV and Clausewitz-rule parsers preserve supported fields/comments, optional imports preserve absent custom layers, writers round-trip comments, and the adjacency/rule editors expose geometry, wrap, rule requirements, invalid references, and undoable mutations. Committed as `e8a7588`.
+- [ ] **M4.3 — original adjacency fixtures:** add focused strait, impassable, canal-rule, through-sea, map-edge, and broken-reference fixtures with optional local vanilla parsing.
+- [ ] **M4.4 — pure logistics graph analysis:** add component/edge analysis, connection candidates, port/convoy metadata, duplicate/self-loop reporting, and remove self-loop railway output fallbacks.
+- [ ] **M4.5 — intentional logistics exceptions and renderer:** persist stable graph/supply exceptions, invalidate them on graph changes, color components, and require connected-or-accepted logistics at freeze.
+
+### M4 checkpoint — after M4.2
+
+- **Completed:** M4.1 review policy (`3f2a833`) and M4.2 adjacency import/edit/round trip (`e8a7588`).
+- **Reviewed:** adjacency/rule mutations use the shared undoable manager-state command; imports distinguish absent files from empty layers and invalidate stale review metadata when a layer is replaced. Muse Spark performed a focused review after explicit transmission approval; its import adapter, stale-review, endpoint-validation, and UI performance findings were fixed before acceptance.
+- **Evidence:** focused adjacency/command/UI tests passed, the full `tests/export` suite passed, and compilation/diff checks passed.
+- **Next controlled slice:** M4.3 original adjacency fixtures. M4.4 graph analysis and M4.5 exceptions/renderer remain pending.
+
 ## M5 — positions, building geometry, and weather placement
 
 ### M5.1 Add an authored placement model
