@@ -494,13 +494,23 @@ def import_mod_map(mod_dir: str) -> dict[str, Any]:
         if supply_data:
             warnings.append(f"Read {len(supply_data)} supply hubs")
 
-    # 12. Read adjacencies (optional)
-    adjacencies_data: list[dict] = []
+    # 12. Read adjacencies (optional). None means the source file was absent;
+    # callers can preserve a valid custom layer instead of replacing it with []
+    # from an unrelated import.
+    adjacencies_data: list[dict] | None = None
     adj_path = os.path.join(map_dir, "adjacencies.csv")
     if os.path.isfile(adj_path):
         adjacencies_data = _parse_adjacencies(adj_path)
         if adjacencies_data:
             warnings.append(f"Read {len(adjacencies_data)} adjacencies")
+
+    # 12b. Read adjacency rules (optional)
+    adjacency_rules_data: list[dict] | None = None
+    rules_path = os.path.join(map_dir, "adjacency_rules.txt")
+    if os.path.isfile(rules_path):
+        adjacency_rules_data = _parse_adjacency_rules(rules_path)
+        if adjacency_rules_data:
+            warnings.append(f"Read {len(adjacency_rules_data)} adjacency rules")
 
     # 13. Read country colors (optional)
     country_colors: dict[str, tuple[int, int, int]] = {}
@@ -530,6 +540,7 @@ def import_mod_map(mod_dir: str) -> dict[str, Any]:
         "railways": railways_data,
         "supply_nodes": supply_data,
         "adjacencies": adjacencies_data,
+        "adjacency_rules": adjacency_rules_data,
         "assets": assets,
         "country_colors": country_colors,
         "country_history": country_history,
@@ -655,38 +666,43 @@ def _parse_supply_nodes(path: str) -> list[dict]:
 
 def _parse_adjacencies(path: str) -> list[dict]:
     """Parse map/adjacencies.csv. Format: From;To;Type;Through;start_x;start_y;stop_x;stop_y;rule;Comment"""
-    result = []
-    with open(path, "r", encoding="utf-8-sig", errors="ignore") as f:
-        for line in f:
-            line = line.strip()
-            if not line or line.startswith("#") or line.startswith("From"):
-                continue
-            parts = line.split(";")
-            if len(parts) < 4:
-                continue
-            try:
-                from_id = int(parts[0])
-                to_id = int(parts[1])
-                if from_id < 0 or to_id < 0:
-                    continue  # Sentinel Row -1;-1;...
-                adj_type = parts[2].strip() or "sea"
-                through = int(parts[3]) if len(parts) > 3 and parts[3].strip().lstrip('-').isdigit() else -1
-                start_x = int(parts[4]) if len(parts) > 4 and parts[4].strip().lstrip('-').isdigit() else -1
-                start_y = int(parts[5]) if len(parts) > 5 and parts[5].strip().lstrip('-').isdigit() else -1
-                stop_x = int(parts[6]) if len(parts) > 6 and parts[6].strip().lstrip('-').isdigit() else -1
-                stop_y = int(parts[7]) if len(parts) > 7 and parts[7].strip().lstrip('-').isdigit() else -1
-                rule = parts[8].strip() if len(parts) > 8 else ""
-                comment = parts[9].strip() if len(parts) > 9 else ""
-                result.append({
-                    "from_id": from_id, "to_id": to_id,
-                    "type": adj_type, "through_id": through,
-                    "start_x": start_x, "start_y": start_y,
-                    "stop_x": stop_x, "stop_y": stop_y,
-                    "rule": rule, "comment": comment,
-                })
-            except (ValueError, IndexError):
-                continue
-    return result
+    from services.adjacency_io import parse_adjacencies_csv
+
+    return [
+        {
+            "from_id": entry.from_id,
+            "to_id": entry.to_id,
+            "type": entry.type,
+            "through_id": entry.through_id,
+            "start_x": entry.start_x,
+            "start_y": entry.start_y,
+            "stop_x": entry.stop_x,
+            "stop_y": entry.stop_y,
+            "rule": entry.rule_name,
+            "rule_name": entry.rule_name,
+            "comment": entry.comment,
+        }
+        for entry in parse_adjacencies_csv(path)
+    ]
+
+
+def _parse_adjacency_rules(path: str) -> list[dict]:
+    """Parse adjacency_rules.txt into JSON-compatible manager records."""
+    from services.adjacency_io import parse_adjacency_rules
+
+    return [
+        {
+            "name": rule.name,
+            "contested": dict(rule.contested),
+            "enemy": dict(rule.enemy),
+            "friend": dict(rule.friend),
+            "neutral": dict(rule.neutral),
+            "required_provinces": list(rule.required_provinces),
+            "icon_province": rule.icon_province,
+            "comment": rule.comment,
+        }
+        for rule in parse_adjacency_rules(path)
+    ]
 
 
 # ── Art asset scan ───────────────────────────────────────────

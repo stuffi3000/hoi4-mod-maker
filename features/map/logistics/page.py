@@ -38,6 +38,7 @@ class LogisticsPage(QWidget):
 
     # Output signal
     open_adjacency_dialog_requested = pyqtSignal()
+    open_adjacency_rule_dialog_requested = pyqtSignal()
     open_railway_list_requested = pyqtSignal()
     generate_logistics_requested = pyqtSignal()
     logistics_railway_level_changed = pyqtSignal(int)
@@ -69,6 +70,11 @@ class LogisticsPage(QWidget):
         adj_btn.setStyleSheet(_PRIMARY_BTN_STYLE)
         adj_btn.clicked.connect(lambda: self.open_adjacency_dialog_requested.emit())
         adj_lay.addWidget(adj_btn)
+
+        rule_btn = QPushButton(tr("logistics_adj_rule_editor_btn"))
+        rule_btn.setStyleSheet(_SECONDARY_BTN_STYLE)
+        rule_btn.clicked.connect(lambda: self.open_adjacency_rule_dialog_requested.emit())
+        adj_lay.addWidget(rule_btn)
 
         lay.addWidget(adj_box)
 

@@ -46,6 +46,7 @@ class AdjacencyRule:
     # control conditions
     required_provinces: list[int] = field(default_factory=list)
     icon_province: int = -1  # -1 = don’t write
+    comment: str = ""
 
     def get_relation(self, relation: str) -> dict[str, bool]:
         """Get the access permissions of a relationship dict."""
@@ -149,6 +150,7 @@ class AdjacencyRuleManager:
                 neutral=dict(rule.neutral),
                 required_provinces=new_required,
                 icon_province=new_icon,
+                comment=rule.comment,
             )
         self._rules = new_rules
 
@@ -165,6 +167,7 @@ class AdjacencyRuleManager:
                     "neutral": dict(r.neutral),
                     "required_provinces": list(r.required_provinces),
                     "icon_province": r.icon_province,
+                    "comment": r.comment,
                 }
                 for r in self._rules.values()
             ]
@@ -181,6 +184,7 @@ class AdjacencyRuleManager:
                 neutral={k: bool(v) for k, v in (d.get("neutral") or {}).items()},
                 required_provinces=[int(p) for p in d.get("required_provinces", [])],
                 icon_province=int(d.get("icon_province", -1)),
+                comment=str(d.get("comment", "") or ""),
             )
             # Complement missing pass types
             for rel in ALL_RELATIONS:

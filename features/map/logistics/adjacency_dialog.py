@@ -21,6 +21,9 @@ from PyQt5.QtWidgets import (
 import numpy as np
 
 from domain.managers.adjacency import AdjacencyManager, AdjacencyEntry
+from domain.managers.adjacency_rule import AdjacencyRuleManager
+from commands.map.logistics_edit import apply_manager_edit
+from services.adjacency_io import adjacency_geometry
 from ui.i18n import tr
 
 
@@ -88,12 +91,18 @@ class AdjacencyDialog(QDialog):
 
     def __init__(self, adjacency_mgr: AdjacencyManager, parent=None,
                  province_map: np.ndarray | None = None,
-                 tile_map: np.ndarray | None = None) -> None:
+                 tile_map: np.ndarray | None = None,
+                 history=None, project=None,
+                 rule_mgr: AdjacencyRuleManager | None = None) -> None:
         super().__init__(parent)
         self._mgr = adjacency_mgr
         self._province_map = province_map
         self._tile_map = tile_map
+        self._history = history
+        self._project = project
+        self._rule_mgr = rule_mgr
         self._pick_target: str | None = None  # 'from' / 'to' / 'through'
+        self._editing_key: tuple[int, int, str] | None = None
         self.setWindowTitle(tr("adj_dlg_title"))
         self.setMinimumSize(400, 520)
         self.setWindowFlags(self.windowFlags() | Qt.Tool)
@@ -164,6 +173,24 @@ class AdjacencyDialog(QDialog):
         through_row.addWidget(through_pick)
         form.addRow(tr("adj_dlg_through_label"), through_row)
 
+        # Explicit geometry is part of the import/export contract.  Empty
+        # values remain -1, while a completely empty sea geometry can still
+        # be inferred from the map when saving.
+        geometry_row = QHBoxLayout()
+        self._start_x_edit = QLineEdit()
+        self._start_y_edit = QLineEdit()
+        self._stop_x_edit = QLineEdit()
+        self._stop_y_edit = QLineEdit()
+        for edit in (self._start_x_edit, self._start_y_edit,
+                     self._stop_x_edit, self._stop_y_edit):
+            edit.setPlaceholderText("-1")
+            geometry_row.addWidget(edit)
+        form.addRow(tr("adj_dlg_geometry_label"), geometry_row)
+
+        self._rule_edit = QLineEdit()
+        self._rule_edit.setPlaceholderText(tr("adj_dlg_rule_placeholder"))
+        form.addRow(tr("adj_dlg_rule_label"), self._rule_edit)
+
         # comment
         self._comment_edit = QLineEdit()
         self._comment_edit.setPlaceholderText(tr("adj_dlg_comment_placeholder"))
@@ -190,12 +217,37 @@ class AdjacencyDialog(QDialog):
 
     def _refresh_list(self) -> None:
         self._list.clear()
+        known_provinces = (
+            set(int(pid) for pid in np.unique(self._province_map))
+            if self._province_map is not None else None
+        )
         for e in self._mgr.get_all():
             label = f"[{e.type}] {e.from_id} → {e.to_id}"
             if e.through_id >= 0:
                 label += f" (via {e.through_id})"
             if e.comment:
                 label += f"  # {e.comment}"
+            if e.rule_name:
+                label += f"  [{e.rule_name}]"
+                rule = self._rule_mgr.get(e.rule_name) if self._rule_mgr is not None else None
+                if rule is None:
+                    label += " ⚠ missing rule"
+                elif rule.required_provinces:
+                    required = ",".join(str(pid) for pid in rule.required_provinces)
+                    label += f"  requires {required}"
+            width = self._province_map.shape[1] if self._province_map is not None else None
+            geometry = adjacency_geometry(
+                e,
+                width,
+                self._province_map.shape[0] if self._province_map is not None else None,
+            )
+            if geometry["wrap_horizontal"]:
+                label += "  ↔ wrap"
+            if geometry["in_bounds"] is False:
+                label += "  ⚠ invalid geometry"
+            invalid = self._invalid_province_references(e, known_provinces)
+            if invalid:
+                label += "  ⚠ invalid " + ",".join(str(pid) for pid in invalid)
             item = QListWidgetItem(label)
             self._list.addItem(item)
 
@@ -205,13 +257,35 @@ class AdjacencyDialog(QDialog):
         entries = self._mgr.get_all()
         if 0 <= row < len(entries):
             e = entries[row]
+            self._editing_key = (e.from_id, e.to_id, e.type)
             self._from_edit.setText(str(e.from_id))
             self._to_edit.setText(str(e.to_id))
             self._through_edit.setText(str(e.through_id) if e.through_id >= 0 else "")
+            self._start_x_edit.setText(str(e.start_x) if e.start_x >= 0 else "")
+            self._start_y_edit.setText(str(e.start_y) if e.start_y >= 0 else "")
+            self._stop_x_edit.setText(str(e.stop_x) if e.stop_x >= 0 else "")
+            self._stop_y_edit.setText(str(e.stop_y) if e.stop_y >= 0 else "")
+            self._rule_edit.setText(e.rule_name)
             idx = self._type_combo.findData(e.type)
             if idx >= 0:
                 self._type_combo.setCurrentIndex(idx)
             self._comment_edit.setText(e.comment)
+
+    def _invalid_province_references(
+        self,
+        entry: AdjacencyEntry,
+        known_provinces: set[int] | None = None,
+    ) -> list[int]:
+        if known_provinces is None:
+            return []
+        references = [entry.from_id, entry.to_id]
+        if entry.through_id >= 0:
+            references.append(entry.through_id)
+        if self._rule_mgr is not None and entry.rule_name:
+            rule = self._rule_mgr.get(entry.rule_name)
+            if rule is not None:
+                references.extend(rule.required_provinces)
+        return sorted({pid for pid in references if pid > 0 and pid not in known_provinces})
 
     def _on_delete(self) -> None:
         row = self._list.currentRow()
@@ -220,9 +294,13 @@ class AdjacencyDialog(QDialog):
         entries = self._mgr.get_all()
         if 0 <= row < len(entries):
             e = entries[row]
-            self._mgr.remove(e.from_id, e.to_id, e.type)
-            self._refresh_list()
-            self.changed.emit()
+            if self._apply_edit(
+                tr("adj_dlg_delete_command"),
+                lambda manager: manager.remove(e.from_id, e.to_id, e.type),
+            ):
+                self._editing_key = None
+                self._refresh_list()
+                self.changed.emit()
 
     # ─────────── Form ────────────
 
@@ -230,8 +308,13 @@ class AdjacencyDialog(QDialog):
         self._from_edit.clear()
         self._to_edit.clear()
         self._through_edit.clear()
+        for edit in (self._start_x_edit, self._start_y_edit,
+                     self._stop_x_edit, self._stop_y_edit):
+            edit.clear()
+        self._rule_edit.clear()
         self._comment_edit.clear()
         self._type_combo.setCurrentIndex(0)
+        self._editing_key = None
 
     def _on_save(self) -> None:
         try:
@@ -240,20 +323,46 @@ class AdjacencyDialog(QDialog):
         except ValueError:
             QMessageBox.warning(self, tr("dlg_error"), tr("adj_dlg_err_invalid_id"))
             return
+        if from_id <= 0 or to_id <= 0 or from_id == to_id:
+            QMessageBox.warning(self, tr("dlg_error"), tr("adj_dlg_err_invalid_id"))
+            return
         t = self._type_combo.currentData()
         through_text = self._through_edit.text().strip()
-        through_id = int(through_text) if through_text else -1
+        try:
+            through_id = int(through_text) if through_text else -1
+            coordinates = [
+                int(edit.text().strip()) if edit.text().strip() else -1
+                for edit in (
+                    self._start_x_edit, self._start_y_edit,
+                    self._stop_x_edit, self._stop_y_edit,
+                )
+            ]
+        except ValueError:
+            QMessageBox.warning(self, tr("dlg_error"), tr("adj_dlg_err_invalid_geometry"))
+            return
 
         # Automatically calculate coordinates and through (sea type)
-        start_x = start_y = stop_x = stop_y = -1
-        if t == "sea" and self._province_map is not None and self._tile_map is not None:
+        start_x, start_y, stop_x, stop_y = coordinates
+        if (
+            t == "sea"
+            and all(value < 0 for value in coordinates)
+            and self._province_map is not None
+            and self._tile_map is not None
+        ):
             sx, sy, ex, ey, auto_through, _ = _auto_strait_params(
                 from_id, to_id, self._province_map, self._tile_map
             )
             start_x, start_y, stop_x, stop_y = sx, sy, ex, ey
+            coordinates = [start_x, start_y, stop_x, stop_y]
             if through_id <= 0 and auto_through > 0:
                 through_id = auto_through
                 self._through_edit.setText(str(through_id))
+
+        if t == "impassable":
+            through_id = -1
+            start_x = start_y = stop_x = stop_y = -1
+
+        rule_name = self._rule_edit.text().strip() if t == "sea" else ""
 
         entry = AdjacencyEntry(
             from_id=from_id,
@@ -262,9 +371,20 @@ class AdjacencyDialog(QDialog):
             through_id=through_id if t == "sea" else -1,
             start_x=start_x, start_y=start_y,
             stop_x=stop_x, stop_y=stop_y,
+            rule_name=rule_name,
             comment=self._comment_edit.text().strip(),
         )
-        self._mgr.add(entry)
+
+        editing_key = self._editing_key
+
+        def mutate(manager) -> None:
+            if editing_key is not None:
+                manager.remove(*editing_key)
+            manager.add(entry)
+
+        if not self._apply_edit(tr("adj_dlg_save_command"), mutate):
+            return
+        self._editing_key = (entry.from_id, entry.to_id, entry.type)
         self._refresh_list()
         self.changed.emit()
         coord_info = f" ({start_x},{start_y})→({stop_x},{stop_y})" if start_x >= 0 else ""
@@ -289,6 +409,16 @@ class AdjacencyDialog(QDialog):
         self._status.setText(tr("adj_dlg_filled_fmt", self._pick_target, pid))
         self._pick_target = None
         self.pick_mode_changed.emit(False, "")
+
+    def _apply_edit(self, label: str, mutate) -> bool:
+        return apply_manager_edit(
+            self._mgr,
+            label,
+            mutate,
+            history=self._history,
+            project=self._project,
+            invalidate_adjacency_review=True,
+        )
 
     def closeEvent(self, event) -> None:
         if self._pick_target is not None:

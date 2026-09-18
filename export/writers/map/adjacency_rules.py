@@ -24,7 +24,10 @@ def write_adjacency_rules_txt(output_dir: str, rule_mgr=None) -> None:
     parts.append("")
 
     if rule_mgr is not None:
-        for rule in rule_mgr.get_all():
+        for rule in sorted(rule_mgr.get_all(), key=lambda item: str(item.name)):
+            if getattr(rule, "comment", ""):
+                for comment_line in str(rule.comment).splitlines():
+                    parts.append(f"# {comment_line}")
             parts.append(rule.to_block())
             parts.append("")
 

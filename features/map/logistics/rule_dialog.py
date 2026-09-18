@@ -20,6 +20,7 @@ from PyQt5.QtWidgets import (
 from domain.managers.adjacency_rule import (
     AdjacencyRuleManager, AdjacencyRule, ALL_PASS_TYPES, ALL_RELATIONS,
 )
+from commands.map.logistics_edit import apply_manager_edit
 from ui.i18n import tr
 
 
@@ -31,9 +32,12 @@ class AdjacencyRuleDialog(QDialog):
 
     pick_mode_changed = pyqtSignal(bool, str)
 
-    def __init__(self, rule_mgr: AdjacencyRuleManager, parent=None) -> None:
+    def __init__(self, rule_mgr: AdjacencyRuleManager, parent=None,
+                 history=None, project=None) -> None:
         super().__init__(parent)
         self._mgr = rule_mgr
+        self._history = history
+        self._project = project
         self._current_rule: AdjacencyRule | None = None
         self._pick_target: str | None = None
         self.setWindowTitle(tr("rule_dlg_title"))
@@ -211,7 +215,11 @@ class AdjacencyRuleDialog(QDialog):
         if self._mgr.get(name) is not None:
             QMessageBox.warning(self, tr("dlg_error"), tr("rule_dlg_err_name_exists", name))
             return
-        self._mgr.add(AdjacencyRule(name=name))
+        if not self._apply_edit(
+            tr("rule_dlg_new_command"),
+            lambda manager: manager.add(AdjacencyRule(name=name)),
+        ):
+            return
         self._refresh_list()
         # Select the new
         for i in range(self._list.count()):
@@ -228,10 +236,15 @@ class AdjacencyRuleDialog(QDialog):
         )
         if ret != QMessageBox.Yes:
             return
-        self._mgr.remove(self._current_rule.name)
+        old_name = self._current_rule.name
+        if not self._apply_edit(
+            tr("rule_dlg_delete_command"),
+            lambda manager: manager.remove(old_name),
+        ):
+            return
         self._current_rule = None
         self._refresh_list()
-        self._name_edit.clear()
+        self._clear_form()
 
     # ─────────── Field editing callback ───────────
 
@@ -245,45 +258,79 @@ class AdjacencyRuleDialog(QDialog):
             QMessageBox.warning(self, tr("dlg_error"), tr("rule_dlg_err_name_exists", new_name))
             self._name_edit.setText(self._current_rule.name)
             return
-        # Rename = delete old and add new
+        # Rename = delete old and add new.  Mutate the cloned manager supplied
+        # by apply_manager_edit so the live state is never changed before the
+        # command is recorded.
         old = self._current_rule.name
-        self._mgr.remove(old)
-        self._current_rule.name = new_name
-        self._mgr.add(self._current_rule)
+        def rename(manager) -> None:
+            rule = manager.get(old)
+            if rule is None:
+                return
+            manager.remove(old)
+            rule.name = new_name
+            manager.add(rule)
+
+        if not self._apply_edit(tr("rule_dlg_rename_command"), rename):
+            return
+        self._current_rule = self._mgr.get(new_name)
         self._refresh_list()
+        self._load_to_form()
 
     def _on_check_toggled(self, rel: str, pt: str, checked: bool) -> None:
         if self._current_rule is None:
             return
-        self._current_rule.get_relation(rel)[pt] = bool(checked)
+        name = self._current_rule.name
+        if self._apply_rule_edit(
+            tr("rule_dlg_edit_command"),
+            lambda rule: rule.get_relation(rel).__setitem__(pt, bool(checked)),
+            name=name,
+        ):
+            self._load_to_form()
 
     def _on_icon_changed(self) -> None:
         if self._current_rule is None:
             return
         text = self._icon_edit.text().strip()
         if not text:
-            self._current_rule.icon_province = -1
-            return
-        try:
-            self._current_rule.icon_province = int(text)
-        except ValueError:
-            QMessageBox.warning(self, tr("dlg_error"), tr("rule_dlg_err_icon_int"))
+            value = -1
+        else:
+            try:
+                value = int(text)
+            except ValueError:
+                QMessageBox.warning(self, tr("dlg_error"), tr("rule_dlg_err_icon_int"))
+                self._load_to_form()
+                return
+        if self._apply_rule_edit(
+            tr("rule_dlg_edit_command"),
+            lambda rule: setattr(rule, "icon_province", value),
+        ):
+            self._load_to_form()
 
     def _on_add_required_manually(self) -> None:
         if self._current_rule is None:
             return
         v, ok = QInputDialog.getInt(self, tr("rule_dlg_add_province_title"), tr("rule_dlg_add_province_prompt"), value=1, min=1, max=999999)
         if ok:
-            self._current_rule.required_provinces.append(v)
-            self._req_list.addItem(QListWidgetItem(str(v)))
+            def add_required(rule) -> None:
+                if v not in rule.required_provinces:
+                    rule.required_provinces.append(v)
+
+            if self._apply_rule_edit(
+                tr("rule_dlg_edit_command"),
+                add_required,
+            ):
+                self._load_to_form()
 
     def _on_remove_required(self) -> None:
         if self._current_rule is None:
             return
         row = self._req_list.currentRow()
         if 0 <= row < len(self._current_rule.required_provinces):
-            self._current_rule.required_provinces.pop(row)
-            self._req_list.takeItem(row)
+            if self._apply_rule_edit(
+                tr("rule_dlg_edit_command"),
+                lambda rule: rule.required_provinces.pop(row),
+            ):
+                self._load_to_form()
 
     # ─────────── Pickup mode ────────────
 
@@ -307,15 +354,48 @@ class AdjacencyRuleDialog(QDialog):
         if self._current_rule is None:
             return
         if self._pick_target == "required_add":
-            self._current_rule.required_provinces.append(pid)
-            self._req_list.addItem(QListWidgetItem(str(pid)))
-            self._status.setText(tr("rule_dlg_added_req_fmt", pid))
+            def add_required(rule) -> None:
+                if pid not in rule.required_provinces:
+                    rule.required_provinces.append(pid)
+
+            if self._apply_rule_edit(
+                tr("rule_dlg_edit_command"),
+                add_required,
+            ):
+                self._load_to_form()
+                self._status.setText(tr("rule_dlg_added_req_fmt", pid))
         elif self._pick_target == "icon":
-            self._current_rule.icon_province = pid
-            self._icon_edit.setText(str(pid))
-            self._status.setText(tr("rule_dlg_icon_set_fmt", pid))
+            if self._apply_rule_edit(
+                tr("rule_dlg_edit_command"),
+                lambda rule: setattr(rule, "icon_province", pid),
+            ):
+                self._load_to_form()
+                self._status.setText(tr("rule_dlg_icon_set_fmt", pid))
         self._pick_target = None
         self.pick_mode_changed.emit(False, "")
+
+    def _apply_rule_edit(self, label: str, mutate, *, name: str | None = None) -> bool:
+        rule_name = name or (self._current_rule.name if self._current_rule else "")
+
+        def mutate_manager(manager) -> None:
+            rule = manager.get(rule_name)
+            if rule is not None:
+                mutate(rule)
+
+        changed = self._apply_edit(label, mutate_manager)
+        if changed:
+            self._current_rule = self._mgr.get(rule_name)
+        return changed
+
+    def _apply_edit(self, label: str, mutate) -> bool:
+        return apply_manager_edit(
+            self._mgr,
+            label,
+            mutate,
+            history=self._history,
+            project=self._project,
+            invalidate_adjacency_review=True,
+        )
 
     def closeEvent(self, event) -> None:
         if self._pick_target is not None:

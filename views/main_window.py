@@ -484,6 +484,7 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
 
         # Logistics signal → controller
         tp.open_adjacency_dialog_requested.connect(self._open_adjacency_dialog)
+        tp.open_adjacency_rule_dialog_requested.connect(self._open_adjacency_rule_dialog)
         tp.open_railway_list_requested.connect(self._open_railway_dialog)
         tp.generate_logistics_requested.connect(self._open_logistics_generation)
         tp.logistics_railway_level_changed.connect(
@@ -1223,7 +1224,10 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
         self._project.strategic_region_mgr.clear()
         self._project.railway_mgr.clear()
         self._project.supply_mgr.clear()
-        self._project.adjacency_mgr.clear()
+        if result.get("adjacencies") is not None:
+            self._project.adjacency_mgr.clear()
+        if result.get("adjacency_rules") is not None:
+            self._project.adjacency_rule_mgr.clear()
 
         # Preserve imported art assets
         self._project.assets = dict(result.get("assets", {}))

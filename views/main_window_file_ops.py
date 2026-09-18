@@ -135,7 +135,7 @@ def _populate_imported_data(project, result: dict) -> None:
 
     # Fill in adjacencies
     from domain.managers.adjacency import AdjacencyEntry
-    for ad in result.get("adjacencies", []):
+    for ad in result.get("adjacencies") or []:
         entry = AdjacencyEntry(
             from_id=ad["from_id"],
             to_id=ad["to_id"],
@@ -145,10 +145,36 @@ def _populate_imported_data(project, result: dict) -> None:
             start_y=ad.get("start_y", -1),
             stop_x=ad.get("stop_x", -1),
             stop_y=ad.get("stop_y", -1),
-            rule_name=ad.get("rule", ""),
+            rule_name=ad.get("rule_name", ad.get("rule", "")),
             comment=ad.get("comment", ""),
         )
         project.adjacency_mgr.add(entry)
+
+    from domain.managers.adjacency_rule import AdjacencyRule
+    for raw_rule in result.get("adjacency_rules") or []:
+        try:
+            project.adjacency_rule_mgr.add(AdjacencyRule(
+                name=str(raw_rule["name"]),
+                contested=dict(raw_rule.get("contested") or {}),
+                enemy=dict(raw_rule.get("enemy") or {}),
+                friend=dict(raw_rule.get("friend") or {}),
+                neutral=dict(raw_rule.get("neutral") or {}),
+                required_provinces=[int(pid) for pid in raw_rule.get("required_provinces", [])],
+                icon_province=int(raw_rule.get("icon_province", -1)),
+                comment=str(raw_rule.get("comment", "") or ""),
+            ))
+        except (KeyError, TypeError, ValueError):
+            continue
+
+    # Replacing either adjacency layer invalidates a prior review hash. Do
+    # this after population so an omitted optional file can preserve the
+    # caller's custom layer without claiming it was reviewed against import.
+    if result.get("adjacencies") is not None or result.get("adjacency_rules") is not None:
+        meta = getattr(project, "project_meta", None)
+        if meta is not None:
+            meta.adjacency_review = "unreviewed"
+            meta.adjacency_review_note = ""
+            meta.adjacency_review_hash = None
 
 
 class MainWindowFileOpsMixin:
@@ -508,7 +534,10 @@ class MainWindowFileOpsMixin:
         self._project.strategic_region_mgr.clear()
         self._project.railway_mgr.clear()
         self._project.supply_mgr.clear()
-        self._project.adjacency_mgr.clear()
+        if result.get("adjacencies") is not None:
+            self._project.adjacency_mgr.clear()
+        if result.get("adjacency_rules") is not None:
+            self._project.adjacency_rule_mgr.clear()
         self._cmd_history.clear()
 
         # Imported art assets (colormap/world_normal, etc.) are retained and will not be overwritten when exporting

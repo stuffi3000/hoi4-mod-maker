@@ -1802,6 +1802,9 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
             self._project.adjacency_mgr, parent=self,
             province_map=self._canvas.province_map,
             tile_map=self._canvas.tile_map,
+            history=self._controllers["logistics"].history,
+            project=self._project,
+            rule_mgr=self._project.adjacency_rule_mgr,
         )
         dlg.changed.connect(self._refresh_logistics_counts)
         dlg.pick_mode_changed.connect(self._on_adjacency_pick_mode)
@@ -1812,6 +1815,33 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
     def _on_adjacency_pick_mode(self, on: bool, target: str) -> None:
         ctrl: LogisticsController = self._controllers["logistics"]
         ctrl.set_adjacency_pick(on, target)
+
+    def _open_adjacency_rule_dialog(self) -> None:
+        if self._adjacency_rule_dialog is not None:
+            self._adjacency_rule_dialog.raise_()
+            self._adjacency_rule_dialog.activateWindow()
+            return
+        from features.map.logistics.rule_dialog import AdjacencyRuleDialog
+        dlg = AdjacencyRuleDialog(
+            self._project.adjacency_rule_mgr,
+            parent=self,
+            history=self._controllers["logistics"].history,
+            project=self._project,
+        )
+        dlg.pick_mode_changed.connect(self._on_adjacency_rule_pick_mode)
+        dlg.finished.connect(self._on_adjacency_rule_dialog_closed)
+        self._adjacency_rule_dialog = dlg
+        dlg.show()
+
+    def _on_adjacency_rule_pick_mode(self, on: bool, target: str) -> None:
+        ctrl: LogisticsController = self._controllers["logistics"]
+        ctrl.set_rule_pick(on, target)
+
+    def _on_adjacency_rule_dialog_closed(self, *_args) -> None:
+        self._adjacency_rule_dialog = None
+        ctrl: LogisticsController = self._controllers["logistics"]
+        if ctrl.pick_target in ("rule_required", "rule_icon"):
+            ctrl.pick_target = None
 
     def _on_adjacency_dialog_closed(self, *_args) -> None:
         self._adjacency_dialog = None
