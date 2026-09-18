@@ -1,4 +1,4 @@
-"""M3.3 central foundation registry tests (no game install)."""
+﻿"""M3.3 central foundation registry tests (no game install)."""
 from __future__ import annotations
 
 import numpy as np
@@ -8,6 +8,8 @@ from data.constants import TILE_LAND, TILE_SEA
 from data.terrain_types import TERRAIN_PALETTE_INDEX
 from domain.validation import ValidationFinding, ValidationReport
 from domain.validators import (
+    FOUNDATION_GEOGRAPHY_VALIDATOR_NAME,
+    FOUNDATION_LOGISTICS_VALIDATOR_NAME,
     FOUNDATION_RASTER_VALIDATOR_NAME,
     FOUNDATION_TERRAIN_VALIDATOR_NAME,
     create_foundation_validator_registry,
@@ -48,11 +50,51 @@ def _clean_foundation():
     }
 
 
-def test_registry_has_exactly_two_deterministic_entries():
+def _clean_managers():
+    from domain.managers.adjacency import AdjacencyManager
+    from domain.managers.adjacency_rule import AdjacencyRuleManager
+    from domain.managers.continent import ContinentManager
+    from domain.managers.country import CountryManager
+    from domain.managers.railway import RailwayManager
+    from domain.managers.state import StateManager
+    from domain.managers.strategic_region import StrategicRegionManager
+    from domain.managers.supply_node import SupplyNodeManager
+
+    state_mgr = StateManager()
+    state_mgr.create_state([1])
+    strategic_region_mgr = StrategicRegionManager()
+    region = strategic_region_mgr.create_region()
+    region.province_ids = [1, 2]
+    continent_mgr = ContinentManager()
+    country_mgr = CountryManager()
+    country_mgr.create_country("AAA", allow_vanilla_tag=True)
+    country_mgr.assign_state(1, "AAA")
+    country_mgr.set_capital("AAA", 1)
+    return {
+        "state_mgr": state_mgr,
+        "country_mgr": country_mgr,
+        "continent_mgr": continent_mgr,
+        "strategic_region_mgr": strategic_region_mgr,
+        "adjacency_mgr": AdjacencyManager(),
+        "railway_mgr": RailwayManager(),
+        "supply_mgr": SupplyNodeManager(),
+        "adjacency_rule_mgr": AdjacencyRuleManager(),
+    }
+
+
+def _clean_foundation_with_managers():
+    inputs = _clean_foundation()
+    inputs.update(_clean_managers())
+    return inputs
+
+
+def test_registry_has_exactly_four_deterministic_entries():
     registry = create_foundation_validator_registry()
-    assert len(registry) == 2
+    assert len(registry) == 4
     assert registry.names == tuple(sorted(registry.names))
     assert registry.names == (
+        FOUNDATION_GEOGRAPHY_VALIDATOR_NAME,
+        FOUNDATION_LOGISTICS_VALIDATOR_NAME,
         FOUNDATION_RASTER_VALIDATOR_NAME,
         FOUNDATION_TERRAIN_VALIDATOR_NAME,
     )
@@ -61,6 +103,8 @@ def test_registry_has_exactly_two_deterministic_entries():
 def test_registry_names_are_stable():
     assert FOUNDATION_RASTER_VALIDATOR_NAME == "raster/definition"
     assert FOUNDATION_TERRAIN_VALIDATOR_NAME == "terrain/layers"
+    assert FOUNDATION_GEOGRAPHY_VALIDATOR_NAME == "geography/references"
+    assert FOUNDATION_LOGISTICS_VALIDATOR_NAME == "logistics/references"
     first = create_foundation_validator_registry().names
     second = create_foundation_validator_registry().names
     assert first == second
@@ -74,6 +118,46 @@ def test_clean_foundation_has_no_findings():
     assert isinstance(report, ValidationReport)
     assert report.findings == ()
     assert report.total == 0
+
+
+def test_clean_managers_fixture_has_no_findings():
+    inputs = _clean_foundation_with_managers()
+    registry = create_foundation_validator_registry()
+    assert registry.run(**inputs) == []
+    report = run_foundation_validation(**inputs)
+    assert isinstance(report, ValidationReport)
+    assert report.findings == ()
+    assert report.total == 0
+
+
+def test_geography_wrapper_flags_missing_state():
+    from domain.managers.state import StateManager
+
+    inputs = _clean_foundation_with_managers()
+    bad_states = StateManager()
+    bad_states.create_state([2])
+    inputs["state_mgr"] = bad_states
+    registry = create_foundation_validator_registry()
+    findings = registry.run(**inputs)
+    codes = [item.code for item in findings]
+    assert "geography.state_membership" in codes
+    report = run_foundation_validation(**inputs)
+    assert any(item.code == "geography.state_membership" for item in report)
+
+
+def test_logistics_wrapper_flags_bad_adjacency():
+    from domain.managers.adjacency import AdjacencyEntry, AdjacencyManager
+
+    inputs = _clean_foundation_with_managers()
+    bad_adj = AdjacencyManager()
+    bad_adj.add(AdjacencyEntry(1, 99, "sea"))
+    inputs["adjacency_mgr"] = bad_adj
+    registry = create_foundation_validator_registry()
+    findings = registry.run(**inputs)
+    codes = [item.code for item in findings]
+    assert "logistics.adjacency_endpoint" in codes
+    report = run_foundation_validation(**inputs)
+    assert any(item.code == "logistics.adjacency_endpoint" for item in report)
 
 
 def test_common_api_runs_both_validators():
@@ -104,6 +188,32 @@ def test_raster_and_terrain_findings_keep_registry_order():
     assert raster_pos < terrain_pos
 
 
+def test_all_four_validators_keep_registry_order():
+    from domain.managers.adjacency import AdjacencyEntry, AdjacencyManager
+    from domain.managers.state import StateManager
+
+    inputs = _clean_foundation_with_managers()
+    inputs["definitions"] = {1: "land"}
+    bad_terrain = inputs["terrain_map"].copy()
+    bad_terrain[0, 0] = 99
+    inputs["terrain_map"] = bad_terrain
+    bad_states = StateManager()
+    bad_states.create_state([2])
+    inputs["state_mgr"] = bad_states
+    bad_adj = AdjacencyManager()
+    bad_adj.add(AdjacencyEntry(1, 99, "sea"))
+    inputs["adjacency_mgr"] = bad_adj
+    registry = create_foundation_validator_registry()
+    findings = registry.run(**inputs)
+    codes = [item.code for item in findings]
+    assert codes == [
+        "geography.state_membership",
+        "logistics.adjacency_endpoint",
+        "raster.definition_missing",
+        "terrain.index",
+    ]
+
+
 def test_run_foundation_validation_report_metadata():
     inputs = _clean_foundation()
     inputs["definitions"] = {1: "land"}
@@ -124,9 +234,40 @@ def test_run_foundation_validation_custom_context_source():
     assert report.source == "unit-test"
 
 
+def test_run_foundation_validation_forwards_managers():
+    from domain.managers.adjacency import AdjacencyEntry, AdjacencyManager
+
+    inputs = _clean_foundation_with_managers()
+    assert run_foundation_validation(**inputs).total == 0
+    bad_adj = AdjacencyManager()
+    bad_adj.add(AdjacencyEntry(1, 99, "sea"))
+    inputs["adjacency_mgr"] = bad_adj
+    direct = create_foundation_validator_registry().run(**inputs)
+    report = run_foundation_validation(**inputs)
+    assert [item.code for item in direct] == [item.code for item in report]
+    assert any(item.code == "logistics.adjacency_endpoint" for item in report)
+
+
 def test_wrappers_accept_all_common_kwargs():
     inputs = _clean_foundation()
     full = dict(inputs)
+    full.update(
+        {
+            "profile": None,
+            "expected_dimensions": None,
+            "include_engine_boundary": False,
+            "mixed_threshold": 0.0,
+            "terrain_indices": None,
+        }
+    )
+    registry = create_foundation_validator_registry()
+    assert registry.run(**full) == []
+    report = run_foundation_validation(**full)
+    assert report.total == 0
+
+
+def test_wrappers_accept_all_common_kwargs_with_managers():
+    full = _clean_foundation_with_managers()
     full.update(
         {
             "profile": None,
@@ -186,6 +327,10 @@ def test_exports_preserve_shared_contract():
         "FINDING_SEVERITIES",
         "GATE_CONTEXTS",
         "SEVERITY_RANK",
+        "FOUNDATION_RASTER_VALIDATOR_NAME",
+        "FOUNDATION_TERRAIN_VALIDATOR_NAME",
+        "FOUNDATION_GEOGRAPHY_VALIDATOR_NAME",
+        "FOUNDATION_LOGISTICS_VALIDATOR_NAME",
         "GateDecision",
         "ValidationFinding",
         "ValidationReport",
