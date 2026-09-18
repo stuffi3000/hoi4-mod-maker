@@ -388,7 +388,9 @@ def export_full_mod(
     if _enabled("map"):
         failed_coastal = _write_buildings(states, province_map, tile_map, output_dir, sea_ids,
                          land_to_sea=land_to_sea,
-                         pid_count=pid_count_g, sum_x=sum_x_g, sum_y=sum_y_g)
+                         pid_count=pid_count_g, sum_x=sum_x_g, sum_y=sum_y_g,
+                         placement_manager=map_placement_mgr,
+                         profile_name="legacy_full" if map_placement_mgr is not None else None)
         if failed_coastal:
             # These coastal provinces whose coordinates are unreliable must be changed from CSV land to sea,
             # Otherwise HOI4 will re-detect coastal but buildings.txt has no port → crash
@@ -404,7 +406,9 @@ def export_full_mod(
                               coastal_set=coastal_set)
         _write_empty_unitstacks(output_dir)
         _write_positions(province_map, tile_map, output_dir,
-                         pid_count=pid_count_g, sum_x=sum_x_g, sum_y=sum_y_g)
+                         pid_count=pid_count_g, sum_x=sum_x_g, sum_y=sum_y_g,
+                         placement_manager=map_placement_mgr,
+                         profile_name="legacy_full" if map_placement_mgr is not None else None)
 
     # === Country ===
     if _enabled("countries"):
@@ -853,11 +857,12 @@ def _write_railways(states, province_map, output_dir):
 
 
 def _write_buildings(states, province_map, tile_map, output_dir, sea_ids=None,
-                     land_to_sea=None, pid_count=None, sum_x=None, sum_y=None):
+                     land_to_sea=None, pid_count=None, sum_x=None, sum_y=None, placement_manager=None, map_placement_mgr=None, profile_name=None):
     from export.writers.map.buildings import write_buildings
     return write_buildings(states, province_map, tile_map, output_dir, sea_ids,
                            land_to_sea=land_to_sea,
-                           pid_count=pid_count, sum_x=sum_x, sum_y=sum_y)
+                           pid_count=pid_count, sum_x=sum_x, sum_y=sum_y,
+                           placement_manager=placement_manager, map_placement_mgr=map_placement_mgr, profile_name=profile_name)
 
 
 def _write_empty_unitstacks(output_dir):
@@ -884,10 +889,11 @@ def _write_strategic_regions(province_map, tile_map, output_dir,
 
 
 def _write_positions(province_map, tile_map, output_dir,
-                     pid_count=None, sum_x=None, sum_y=None):
+                     pid_count=None, sum_x=None, sum_y=None, placement_manager=None, map_placement_mgr=None, profile_name=None):
     from export.writers.map.positions import write_positions_txt
     return write_positions_txt(province_map, tile_map, output_dir,
-                               pid_count=pid_count, sum_x=sum_x, sum_y=sum_y)
+                               pid_count=pid_count, sum_x=sum_x, sum_y=sum_y,
+                               placement_manager=placement_manager, map_placement_mgr=map_placement_mgr, profile_name=profile_name)
 
 
 # ───────────────── Country ──────────────────

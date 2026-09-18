@@ -1,11 +1,7 @@
 """Placements stage: buildings, positions, and unit stacks (M2.4)."""
 from __future__ import annotations
-
 import numpy as np
-
 from export.stages.base import record_written, snapshot_output_files
-
-
 NAME = "placements"
 OWNED_FILES = (
     "map/buildings.txt",
@@ -18,8 +14,6 @@ OWNED_FILES = (
 PROFILES = ("foundation", "acceptance", "scaffold", "legacy_full")
 REQUIRES = ("states", "coastal_set")
 PROVIDES = ("coastal_set",)
-
-
 def run(ctx):
     from domain.export_contract import StageResult
     before = snapshot_output_files(ctx.output_dir)
@@ -31,12 +25,14 @@ def run(ctx):
             _write_empty_unitstacks,
             _write_positions,
         )
+        mgr = getattr(ctx, "map_placement_mgr", None)
+        profile = getattr(ctx, "profile_name", None)
         failed_coastal = _write_buildings(
             states, np.asarray(ctx.province_map), np.asarray(ctx.tile_map), ctx.output_dir,
             sea_ids=list(ctx.scratch.get("sea_ids") or []),
             land_to_sea=dict(ctx.scratch.get("land_to_sea") or {}),
             pid_count=ctx.scratch.get("pid_count"), sum_x=ctx.scratch.get("sum_x"),
-            sum_y=ctx.scratch.get("sum_y"))
+            sum_y=ctx.scratch.get("sum_y"), placement_manager=mgr, profile_name=profile)
         if failed_coastal:
             coastal_set = set(ctx.scratch.get("coastal_set") or ())
             coastal_set -= set(failed_coastal)
@@ -49,8 +45,12 @@ def run(ctx):
         _write_empty_unitstacks(ctx.output_dir)
         _write_positions(np.asarray(ctx.province_map), np.asarray(ctx.tile_map), ctx.output_dir,
                          pid_count=ctx.scratch.get("pid_count"), sum_x=ctx.scratch.get("sum_x"),
-                         sum_y=ctx.scratch.get("sum_y"))
+                         sum_y=ctx.scratch.get("sum_y"), placement_manager=mgr, profile_name=profile)
         notes.append("placements written for %d states" % len(states))
+        if mgr is not None and profile == "foundation":
+            notes.append("foundation placements from reviewed manager records (incomplete provinces omitted)")
+        elif mgr is not None and profile in ("acceptance", "scaffold", "legacy_full"):
+            notes.append("placements include generated placeholders for %s compatibility" % profile)
     else:
         notes.append("map layer disabled or no states; placement files skipped")
     written = record_written(ctx, before)
