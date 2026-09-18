@@ -586,8 +586,8 @@ Add a test that exports the same synthetic project twice and compares the comple
   - [x] **M3.2c2 — CLI reports:** route CLI human-readable/JSON validation output through the shared report without changing exit-code behavior.
   - [x] **M3.2c3 — export UI:** route export progress/result verification through the shared report without broadening the UI scope.
 - [ ] **M3.3 — validation suites:** implement and register the raster, terrain/river/mask, geography/reference, logistics, placement, and asset/integration suites.
-  - [ ] **M3.3a — raster/definition:** core raster dimensions, definition coverage, IDs, surface classification, connectivity, and bounding-box findings.
-  - [ ] **M3.3b — terrain/river/mask:** terrain indices/surface agreement plus river and layer-mask shape/value findings.
+  - [x] **M3.3a — raster/definition:** core raster dimensions, definition coverage, IDs, surface classification, connectivity, and bounding-box findings.
+  - [x] **M3.3b — terrain/river/mask:** terrain indices/surface agreement plus river and layer-mask shape/value findings.
   - [ ] **M3.3c — geography/reference:** state, region, continent, and cross-reference findings.
   - [ ] **M3.3d — adjacency/logistics:** adjacency, railway, supply-node, port, and graph findings.
   - [ ] **M3.3e — placement:** coordinate, building, port, collision, and weather-position findings.
@@ -609,6 +609,13 @@ Add a test that exports the same synthetic project twice and compares the comple
 - **Reviewed:** planner human-readable and JSON outputs now expose shared plan/artifact reports; the export worker carries plan findings and the dialog uses the single-pass artifact report while preserving legacy display behavior and exit codes.
 - **Evidence:** 6 CLI tests, 4 UI tests, 22 planner tests, and the shared-report regression suites passed; compilation and diff checks passed.
 - **Next controlled slice:** M3.3 validation suites, split by validator family. Manifest and deterministic-output work remain pending.
+
+### M3 checkpoint — after M3.3b
+
+- **Completed:** M3.3a raster/definition and M3.3b terrain/river/mask validators, centrally registered in `1c0dc8d` after standalone commits `b5e7ce7` and `1d7793c`.
+- **Reviewed:** both pure validators return typed findings with stable codes, deterministic ordering, useful coordinates/evidence, and no input mutation; `run_foundation_validation()` aggregates both through the shared registry/report contract.
+- **Evidence:** 18 raster tests, 20 terrain tests, 11 registry tests, and 32 existing validation/province tests passed; compilation and diff checks passed.
+- **Next controlled slice:** M3.3c geography/reference validation. Logistics, placement, asset/integration, manifest, and deterministic-output work remain pending.
 
 ## M4 — special adjacencies and logistics semantics
 
