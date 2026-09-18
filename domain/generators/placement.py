@@ -65,17 +65,27 @@ from data.constants import TILE_LAND
 from data.constants import TILE_SEA
 from data.constants import TILE_LAKE
 from domain.managers.map_placement import POSITION_SLOT_COUNT
+from domain.managers.map_placement import POSITION_SLOT_MAX
+from domain.managers.map_placement import POSITION_SLOT_MIN
 from domain.managers.map_placement import PortPlacement
 from domain.managers.map_placement import ProvincePositionSlot
 
 __all__ = [
     "DIAGNOSTIC_CODES",
+    "INGEST_DIAGNOSTIC_CODES",
     "PORT_DIAGNOSTIC_CODES",
+    "PlacementAcceptanceReport",
     "PlacementDiagnostic",
     "PlacementProposalResult",
+    "PlacementStoreReport",
     "PortProposalResult",
+    "PortStoreReport",
+    "ProposalIngestDiagnostic",
+    "accept_stored_placements",
     "generate_placement_proposals",
     "generate_port_proposals",
+    "store_placement_proposals",
+    "store_port_proposals",
 ]
 
 DIAGNOSTIC_CODES = (
@@ -984,3 +994,637 @@ def generate_port_proposals(
         ports=result_ports, diagnostics=result_diagnostics
     )
     return result
+
+
+INGEST_DIAGNOSTIC_CODES = (
+    "protected",
+    "exists_unreviewed_generated",
+    "missing",
+)
+
+
+@dataclass(frozen=True)
+class ProposalIngestDiagnostic:
+    """Deterministic explanation for a skipped or missing proposal record.
+
+    Attributes:
+        kind: Either slot or port, naming the affected collection.
+        province_id: Province the diagnostic refers to.
+        slot: Slot index for slot records, None for port records.
+        code: One of protected, exists_unreviewed_generated, or missing.
+            protected means the manager already holds an authored or
+            reviewed record at that key and the existing record was kept.
+            exists_unreviewed_generated means the manager already holds
+            an unreviewed generated record at that key and it was kept
+            because replace_generated was False. missing means an
+            acceptance request named a key with no stored record.
+        message: Human readable deterministic detail.
+    """
+
+    kind: str
+    province_id: int
+    slot: int | None
+    code: str
+    message: str
+
+
+@dataclass
+class PlacementStoreReport:
+    """Concise deterministic outcome of slot proposal ingestion.
+
+    Attributes:
+        stored_keys: Newly stored (province_id, slot) keys in sorted order.
+        replaced_keys: Explicitly replaced unreviewed generated keys in
+            sorted order. Only ever non empty when replace_generated is
+            True.
+        skipped: ProposalIngestDiagnostic records for proposals that were
+            not stored, sorted by kind, province id, slot, code, message.
+    """
+
+    stored_keys: list = dataclass_field(default_factory=list)
+    replaced_keys: list = dataclass_field(default_factory=list)
+    skipped: list = dataclass_field(default_factory=list)
+
+    def __post_init__(self):
+        self.stored_keys = sorted(
+            [(int(pid), int(slot)) for pid, slot in self.stored_keys]
+        )
+        self.replaced_keys = sorted(
+            [(int(pid), int(slot)) for pid, slot in self.replaced_keys]
+        )
+        self.skipped = sorted(
+            list(self.skipped),
+            key=lambda diag: (
+                str(diag.kind),
+                int(diag.province_id),
+                -1 if diag.slot is None else int(diag.slot),
+                str(diag.code),
+                str(diag.message),
+            ),
+        )
+
+    @property
+    def stored_count(self):
+        return len(self.stored_keys)
+
+    @property
+    def replaced_count(self):
+        return len(self.replaced_keys)
+
+    @property
+    def skipped_count(self):
+        return len(self.skipped)
+
+
+@dataclass
+class PortStoreReport:
+    """Concise deterministic outcome of port proposal ingestion.
+
+    Attributes:
+        stored_ids: Newly stored port province ids in sorted order.
+        replaced_ids: Explicitly replaced unreviewed generated port ids in
+            sorted order. Only ever non empty when replace_generated is
+            True.
+        skipped: ProposalIngestDiagnostic records for proposals that were
+            not stored, sorted by kind, province id, slot, code, message.
+    """
+
+    stored_ids: list = dataclass_field(default_factory=list)
+    replaced_ids: list = dataclass_field(default_factory=list)
+    skipped: list = dataclass_field(default_factory=list)
+
+    def __post_init__(self):
+        self.stored_ids = sorted([int(pid) for pid in self.stored_ids])
+        self.replaced_ids = sorted([int(pid) for pid in self.replaced_ids])
+        self.skipped = sorted(
+            list(self.skipped),
+            key=lambda diag: (
+                str(diag.kind),
+                int(diag.province_id),
+                -1 if diag.slot is None else int(diag.slot),
+                str(diag.code),
+                str(diag.message),
+            ),
+        )
+
+    @property
+    def stored_count(self):
+        return len(self.stored_ids)
+
+    @property
+    def replaced_count(self):
+        return len(self.replaced_ids)
+
+    @property
+    def skipped_count(self):
+        return len(self.skipped)
+
+
+@dataclass
+class PlacementAcceptanceReport:
+    """Concise deterministic outcome of explicit proposal acceptance.
+
+    Attributes:
+        accepted_slot_keys: Accepted (province_id, slot) keys in order.
+        accepted_port_ids: Accepted port province ids in sorted order.
+        missing: ProposalIngestDiagnostic records for requested keys with
+            no stored record, sorted by kind, province id, slot, message.
+    """
+
+    accepted_slot_keys: list = dataclass_field(default_factory=list)
+    accepted_port_ids: list = dataclass_field(default_factory=list)
+    missing: list = dataclass_field(default_factory=list)
+
+    def __post_init__(self):
+        self.accepted_slot_keys = sorted(
+            [(int(pid), int(slot)) for pid, slot in self.accepted_slot_keys]
+        )
+        self.accepted_port_ids = sorted(
+            [int(pid) for pid in self.accepted_port_ids]
+        )
+        self.missing = sorted(
+            list(self.missing),
+            key=lambda diag: (
+                str(diag.kind),
+                int(diag.province_id),
+                -1 if diag.slot is None else int(diag.slot),
+                str(diag.code),
+                str(diag.message),
+            ),
+        )
+
+    @property
+    def accepted_count(self):
+        return len(self.accepted_slot_keys) + len(self.accepted_port_ids)
+
+    @property
+    def missing_count(self):
+        return len(self.missing)
+
+
+def _require_store_manager(manager, method_names):
+    """Return the manager after checking the required methods exist."""
+    if manager is None:
+        raise TypeError(
+            "manager must be a MapPlacementManager-like object, got None"
+        )
+    missing = [
+        name for name in method_names if not callable(getattr(manager, name, None))
+    ]
+    if missing:
+        raise TypeError(
+            f"manager is missing required methods: {sorted(missing)}"
+        )
+    return manager
+
+
+def _require_replace_flag(replace_generated):
+    """Validate the explicit replacement flag as a real boolean."""
+    if not isinstance(replace_generated, bool):
+        raise ValueError(
+            "replace_generated must be a boolean, "
+            f"got {replace_generated!r}"
+        )
+    return bool(replace_generated)
+
+
+def _is_replaceable_generated(record):
+    """Tell whether a stored record may be replaced under the flag."""
+    return (
+        getattr(record, "provenance", None) == "generated"
+        and getattr(record, "review_status", None) == "unreviewed"
+    )
+
+
+def _validate_unreviewed_generated(record, expected_type, kind):
+    """Enforce the generator-to-manager proposal contract before mutation."""
+    if not isinstance(record, expected_type):
+        raise TypeError(
+            f"{kind} proposal records must be {expected_type.__name__} "
+            f"instances, got {type(record).__name__}"
+        )
+    if record.provenance != "generated" or record.review_status != "unreviewed":
+        raise ValueError(
+            f"{kind} proposals must remain generated and unreviewed until "
+            f"explicit acceptance; got provenance={record.provenance!r}, "
+            f"review_status={record.review_status!r}"
+        )
+    return record
+
+
+def _coerce_accept_slot_keys(slot_keys):
+    """Validate acceptance slot keys into a sorted unique key list."""
+    if slot_keys is None:
+        return []
+    if isinstance(slot_keys, (str, bytes)):
+        raise TypeError(
+            "slot_keys must be an iterable of (province_id, slot) pairs, "
+            f"got {slot_keys!r}"
+        )
+    try:
+        raw_items = list(slot_keys)
+    except TypeError as exc_info:
+        raise TypeError(
+            "slot_keys must be an iterable of (province_id, slot) pairs, "
+            f"got {slot_keys!r}"
+        ) from exc_info
+    seen = set()
+    for raw in raw_items:
+        if isinstance(raw, (str, bytes)):
+            raise TypeError(
+                "slot_keys entries must be (province_id, slot) pairs, "
+                f"got {raw!r}"
+            )
+        try:
+            pair = tuple(raw)
+        except TypeError as exc_info:
+            raise TypeError(
+                "slot_keys entries must be (province_id, slot) pairs, "
+                f"got {raw!r}"
+            ) from exc_info
+        if len(pair) != 2:
+            raise TypeError(
+                "slot_keys entries must be (province_id, slot) pairs, "
+                f"got {raw!r}"
+            )
+        raw_pid, raw_slot = pair
+        if isinstance(raw_pid, bool):
+            raise ValueError(
+                "slot province_id must be a positive integer, "
+                f"got {raw_pid!r}"
+            )
+        try:
+            pid = operator_module.index(raw_pid)
+        except TypeError as exc_info:
+            raise TypeError(
+                "slot province_id must be a positive integer, "
+                f"got {raw_pid!r}"
+            ) from exc_info
+        pid = int(pid)
+        if pid <= 0:
+            raise ValueError(
+                "slot province_id must be a positive integer, "
+                f"got {raw_pid!r}"
+            )
+        if isinstance(raw_slot, bool):
+            raise ValueError(
+                "slot must be an integer in "
+                f"{int(POSITION_SLOT_MIN)}..{int(POSITION_SLOT_MAX)}, "
+                f"got {raw_slot!r}"
+            )
+        try:
+            slot = operator_module.index(raw_slot)
+        except TypeError as exc_info:
+            raise TypeError(
+                "slot must be an integer in "
+                f"{int(POSITION_SLOT_MIN)}..{int(POSITION_SLOT_MAX)}, "
+                f"got {raw_slot!r}"
+            ) from exc_info
+        slot = int(slot)
+        if not int(POSITION_SLOT_MIN) <= slot <= int(POSITION_SLOT_MAX):
+            raise ValueError(
+                "slot must be an integer in "
+                f"{int(POSITION_SLOT_MIN)}..{int(POSITION_SLOT_MAX)}, "
+                f"got {raw_slot!r}"
+            )
+        seen.add((int(pid), int(slot)))
+    return sorted(seen)
+
+
+def _coerce_accept_port_ids(port_ids):
+    """Validate acceptance port ids into a sorted unique id list."""
+    if port_ids is None:
+        return []
+    if isinstance(port_ids, (str, bytes)):
+        raise TypeError(
+            "port_ids must be an iterable of province ids, "
+            f"got {port_ids!r}"
+        )
+    try:
+        raw_items = list(port_ids)
+    except TypeError as exc_info:
+        raise TypeError(
+            "port_ids must be an iterable of province ids, "
+            f"got {port_ids!r}"
+        ) from exc_info
+    seen = set()
+    for raw in raw_items:
+        if isinstance(raw, bool):
+            raise ValueError(
+                f"port province_id must be a positive integer, got {raw!r}"
+            )
+        try:
+            pid = operator_module.index(raw)
+        except TypeError as exc_info:
+            raise TypeError(
+                f"port province_id must be a positive integer, got {raw!r}"
+            ) from exc_info
+        pid = int(pid)
+        if pid <= 0:
+            raise ValueError(
+                f"port province_id must be a positive integer, got {raw!r}"
+            )
+        seen.add(int(pid))
+    return sorted(seen)
+
+
+def store_placement_proposals(manager, proposal, *, replace_generated=False):
+    """Store land slot proposals without ever marking them reviewed.
+
+    Copies every record from a PlacementProposalResult into the supplied
+    manager with float transforms, meaning, provenance, and review status
+    preserved verbatim, so stored proposals stay generated and unreviewed.
+    Ingestion never calls a mark reviewed method. The proposal object
+    and its records are never mutated, and stored records are fresh copies.
+    Only the explicitly supplied manager is mutated.
+
+    Args:
+        manager: MapPlacementManager-like object providing
+            get_province_slot and set_province_slot.
+        proposal: PlacementProposalResult whose slots are stored in
+            (province_id, slot) order for determinism.
+        replace_generated: When False, the default, any key that already
+            holds a record is skipped and reported. When True, keys that
+            already hold an unreviewed generated record are replaced,
+            while authored or reviewed records are still kept and reported
+            as protected.
+
+    Returns:
+        PlacementStoreReport with sorted stored, replaced, and skipped
+        entries. Skipped entries use code exists_unreviewed_generated for
+        kept unreviewed generated records and protected for kept authored
+        or reviewed records.
+    """
+    _require_store_manager(manager, ("get_province_slot", "set_province_slot"))
+    if not isinstance(proposal, PlacementProposalResult):
+        raise TypeError(
+            "proposal must be a PlacementProposalResult, "
+            f"got {type(proposal).__name__}"
+        )
+    replace = _require_replace_flag(replace_generated)
+    ordered = sorted(
+        list(proposal.slots),
+        key=lambda record: (int(record.province_id), int(record.slot)),
+    )
+    for record in ordered:
+        _validate_unreviewed_generated(record, ProvincePositionSlot, "slot")
+    stored_keys = []
+    replaced_keys = []
+    skipped = []
+    for record in ordered:
+        pid = int(record.province_id)
+        slot = int(record.slot)
+        existing = manager.get_province_slot(pid, slot)
+        if existing is None:
+            manager.set_province_slot(
+                pid,
+                slot,
+                float(record.x),
+                float(record.y),
+                rotation=float(record.rotation),
+                height=float(record.height),
+                meaning=str(record.meaning),
+                provenance=str(record.provenance),
+                review_status=str(record.review_status),
+            )
+            stored_keys.append((pid, slot))
+            continue
+        if replace and _is_replaceable_generated(existing):
+            manager.set_province_slot(
+                pid,
+                slot,
+                float(record.x),
+                float(record.y),
+                rotation=float(record.rotation),
+                height=float(record.height),
+                meaning=str(record.meaning),
+                provenance=str(record.provenance),
+                review_status=str(record.review_status),
+            )
+            replaced_keys.append((pid, slot))
+            continue
+        if _is_replaceable_generated(existing):
+            skipped.append(
+                ProposalIngestDiagnostic(
+                    kind="slot",
+                    province_id=int(pid),
+                    slot=int(slot),
+                    code="exists_unreviewed_generated",
+                    message=(
+                        f"slot {(int(pid), int(slot))!r} already holds an "
+                        "unreviewed generated record, kept; pass "
+                        "replace_generated=True to replace it"
+                    ),
+                )
+            )
+        else:
+            skipped.append(
+                ProposalIngestDiagnostic(
+                    kind="slot",
+                    province_id=int(pid),
+                    slot=int(slot),
+                    code="protected",
+                    message=(
+                        f"slot {(int(pid), int(slot))!r} already holds a "
+                        f"{existing.provenance} {existing.review_status} "
+                        "record, kept and never overwritten by default"
+                    ),
+                )
+            )
+    return PlacementStoreReport(
+        stored_keys=stored_keys, replaced_keys=replaced_keys, skipped=skipped
+    )
+
+
+def store_port_proposals(manager, proposal, *, replace_generated=False):
+    """Store port proposals without ever marking them reviewed.
+
+    Copies every record from a PortProposalResult into the supplied
+    manager with float transforms, the exact mapped sea province,
+    provenance, and review status preserved verbatim, so stored proposals
+    stay generated and unreviewed. Ingestion never calls a mark reviewed
+    method. The proposal object and its records are never mutated, and
+    stored records are fresh copies. Only the explicitly supplied manager
+    is mutated.
+
+    Args:
+        manager: MapPlacementManager-like object providing get_port and
+            set_port.
+        proposal: PortProposalResult whose ports are stored in province
+            id order for determinism.
+        replace_generated: When False, the default, any province that
+            already holds a port is skipped and reported. When True,
+            provinces that already hold an unreviewed generated port are
+            replaced, while authored or reviewed ports are still kept and
+            reported as protected.
+
+    Returns:
+        PortStoreReport with sorted stored, replaced, and skipped
+        entries. Skipped entries use code exists_unreviewed_generated for
+        kept unreviewed generated ports and protected for kept authored
+        or reviewed ports.
+    """
+    _require_store_manager(manager, ("get_port", "set_port"))
+    if not isinstance(proposal, PortProposalResult):
+        raise TypeError(
+            "proposal must be a PortProposalResult, "
+            f"got {type(proposal).__name__}"
+        )
+    replace = _require_replace_flag(replace_generated)
+    ordered = sorted(list(proposal.ports), key=lambda record: int(record.province_id))
+    for record in ordered:
+        _validate_unreviewed_generated(record, PortPlacement, "port")
+    stored_ids = []
+    replaced_ids = []
+    skipped = []
+    for record in ordered:
+        pid = int(record.province_id)
+        raw_sea = record.sea_province
+        sea_arg = None if raw_sea is None else int(raw_sea)
+        existing = manager.get_port(pid)
+        if existing is None:
+            manager.set_port(
+                pid,
+                float(record.x),
+                float(record.y),
+                rotation=float(record.rotation),
+                height=float(record.height),
+                sea_province=sea_arg,
+                provenance=str(record.provenance),
+                review_status=str(record.review_status),
+            )
+            stored_ids.append(pid)
+            continue
+        if replace and _is_replaceable_generated(existing):
+            manager.set_port(
+                pid,
+                float(record.x),
+                float(record.y),
+                rotation=float(record.rotation),
+                height=float(record.height),
+                sea_province=sea_arg,
+                provenance=str(record.provenance),
+                review_status=str(record.review_status),
+            )
+            replaced_ids.append(pid)
+            continue
+        if _is_replaceable_generated(existing):
+            skipped.append(
+                ProposalIngestDiagnostic(
+                    kind="port",
+                    province_id=int(pid),
+                    slot=None,
+                    code="exists_unreviewed_generated",
+                    message=(
+                        f"port province {int(pid)} already holds an "
+                        "unreviewed generated record, kept; pass "
+                        "replace_generated=True to replace it"
+                    ),
+                )
+            )
+        else:
+            skipped.append(
+                ProposalIngestDiagnostic(
+                    kind="port",
+                    province_id=int(pid),
+                    slot=None,
+                    code="protected",
+                    message=(
+                        f"port province {int(pid)} already holds a "
+                        f"{existing.provenance} {existing.review_status} "
+                        "record, kept and never overwritten by default"
+                    ),
+                )
+            )
+    return PortStoreReport(
+        stored_ids=stored_ids, replaced_ids=replaced_ids, skipped=skipped
+    )
+
+
+def accept_stored_placements(
+    manager, slot_keys=(), port_ids=(), *, review_status="reviewed"
+):
+    """Explicitly accept selected stored proposals in one deterministic call.
+
+    This is the only helper in this module that changes review status, and
+    it only touches the explicitly listed keys. Ingestion helpers never
+    accept anything. Callers that prefer single-record calls may use
+    manager.mark_slot_reviewed and manager.mark_port_reviewed directly
+    with identical effect.
+
+    Args:
+        manager: MapPlacementManager-like object providing
+            get_province_slot, mark_slot_reviewed, get_port, and
+            mark_port_reviewed.
+        slot_keys: Iterable of (province_id, slot) pairs to accept.
+            Duplicates are accepted once, order does not matter.
+        port_ids: Iterable of port province ids to accept. Duplicates are
+            accepted once, order does not matter.
+        review_status: Either reviewed or accepted. Unreviewed and unknown
+            values are rejected so acceptance can never silently reset a
+            record.
+
+    Returns:
+        PlacementAcceptanceReport with sorted accepted keys and sorted
+        missing diagnostics for requested keys with no stored record.
+    """
+    _require_store_manager(
+        manager,
+        (
+            "get_province_slot",
+            "mark_slot_reviewed",
+            "get_port",
+            "mark_port_reviewed",
+        ),
+    )
+    if review_status not in ("reviewed", "accepted"):
+        raise ValueError(
+            "review_status must be reviewed or accepted, "
+            f"got {review_status!r}; acceptance never resets to unreviewed"
+        )
+    wanted_slots = _coerce_accept_slot_keys(slot_keys)
+    wanted_ports = _coerce_accept_port_ids(port_ids)
+    accepted_slots = []
+    accepted_ports = []
+    missing = []
+    for pid, slot in wanted_slots:
+        existing = manager.get_province_slot(pid, slot)
+        if existing is None:
+            missing.append(
+                ProposalIngestDiagnostic(
+                    kind="slot",
+                    province_id=int(pid),
+                    slot=int(slot),
+                    code="missing",
+                    message=(
+                        f"slot {(int(pid), int(slot))!r} has no stored "
+                        "record, nothing was accepted"
+                    ),
+                )
+            )
+            continue
+        manager.mark_slot_reviewed(pid, slot, review_status)
+        accepted_slots.append((int(pid), int(slot)))
+    for pid in wanted_ports:
+        existing = manager.get_port(pid)
+        if existing is None:
+            missing.append(
+                ProposalIngestDiagnostic(
+                    kind="port",
+                    province_id=int(pid),
+                    slot=None,
+                    code="missing",
+                    message=(
+                        f"port province {int(pid)} has no stored record, "
+                        "nothing was accepted"
+                    ),
+                )
+            )
+            continue
+        manager.mark_port_reviewed(pid, review_status)
+        accepted_ports.append(int(pid))
+    return PlacementAcceptanceReport(
+        accepted_slot_keys=accepted_slots,
+        accepted_port_ids=accepted_ports,
+        missing=missing,
+    )
