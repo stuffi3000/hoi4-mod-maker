@@ -716,14 +716,14 @@ Update the logistics renderer to color components and highlight the current Belg
 - [x] **M4.2 — adjacency import/edit/round trip:** CSV and Clausewitz-rule parsers preserve supported fields/comments, optional imports preserve absent custom layers, writers round-trip comments, and the adjacency/rule editors expose geometry, wrap, rule requirements, invalid references, and undoable mutations. Committed as `e8a7588`.
 - [x] **M4.3 — original adjacency fixtures:** add focused synthetic strait, impassable, canal-rule, through-sea, map-edge, and broken-reference fixtures with validator coverage; local vanilla parsing remains opt-in. Committed as `b2137cd`.
 - [x] **M4.4 — pure logistics graph analysis:** add deterministic component/edge analysis, connection candidates, port/convoy and region metadata, duplicate/self-loop reporting, validator integration, and remove self-loop railway output fallbacks. Committed as `086b97b`.
-- [ ] **M4.5 — intentional logistics exceptions and renderer:** persist stable graph/supply exceptions, invalidate them on graph changes, color components, and require connected-or-accepted logistics at freeze.
+- [x] **M4.5 — intentional logistics exceptions and renderer:** persist stable graph/supply exceptions with the four approved reason categories, detect stale identities when graph topology changes, color components, highlight disconnected/off-rail findings, and require connected-or-accepted logistics at freeze. Committed as `3d2fa45`.
 
-### M4 checkpoint — after M4.2
+### M4 checkpoint — complete after M4.5
 
-- **Completed:** M4.1 review policy (`3f2a833`), M4.2 adjacency import/edit/round trip (`e8a7588`), M4.3 synthetic adjacency fixtures (`b2137cd`), and M4.4 graph analysis/fallback removal (`086b97b`).
-- **Reviewed:** adjacency/rule mutations use the shared undoable manager-state command; imports distinguish absent files from empty layers and invalidate stale review metadata when a layer is replaced. Muse Spark performed a focused review after explicit transmission approval; its import adapter, stale-review, endpoint-validation, and UI performance findings were fixed before acceptance.
-- **Evidence:** focused graph/validator/fixture/logistics-generation tests passed, the full `tests/export` suite passed, and compilation/diff checks passed. The byte-diff baseline records the intentional valid adjacent proposal replacing the former self-loop fallback.
-- **Next controlled slice:** M4.5 project-level logistics exceptions, graph-change invalidation, and component renderer/highlight support.
+- **Completed:** M4.1 review policy (`3f2a833`), M4.2 adjacency import/edit/round trip (`e8a7588`), M4.3 synthetic adjacency fixtures (`b2137cd`), M4.4 graph analysis/fallback removal (`086b97b`), and M4.5 intentional logistics exceptions/renderer (`3d2fa45`).
+- **Reviewed:** stable component and supply exception keys are persisted through project and service I/O, stale waivers are rejected from coverage after topology changes, shared validation and export planning block unaccepted cases at freeze, and the logistics canvas colors components with red/magenta finding highlights. Muse Spark implemented the pure exception model and performed a read-only integration review after explicit Meta transmission approval; the review findings were fixed before acceptance.
+- **Evidence:** the focused M4.5, M3.3d registry/logistics, and exception tests passed; the full repository pytest suite passed; and compilation/diff checks passed. Legacy projects without an exception file load with an empty exception manager so waivers cannot leak between projects.
+- **Next controlled slice:** M5 positions, building geometry, and weather placement.
 
 ## M5 — positions, building geometry, and weather placement
 
