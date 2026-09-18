@@ -903,6 +903,25 @@ def collect_findings(
         except ImportError:
             # Keep the planner compatible with snapshots created before M4.5.
             pass
+    # M5: a foundation freeze may not silently omit incomplete or unreviewed
+    # manager placements. Draft plans receive warnings so the editor can keep
+    # working; the validator promotes them to blockers for frozen/accepted
+    # lifecycles. Legacy callers without a placement manager remain unchanged.
+    if profile_name == "foundation" and getattr(snapshot, "map_placement_mgr", None) is not None:
+        try:
+            from domain.validators.placement import validate_manager_placement_completeness
+
+            findings.extend(
+                validate_manager_placement_completeness(
+                    province_map,
+                    snapshot.tile_map,
+                    snapshot.map_placement_mgr,
+                    lifecycle=active_lifecycle,
+                )
+            )
+        except ImportError:
+            # Keep the planner compatible with snapshots created before M5.
+            pass
     return findings
 
 

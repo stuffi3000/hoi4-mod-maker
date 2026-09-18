@@ -70,7 +70,13 @@ try:
 except Exception:
     _VALID_3D_TYPES = frozenset()  # type: ignore[assignment]
 
-__all__ = ["CODES", "LAYER", "validate_placement_references"]
+__all__ = [
+    "CODES",
+    "LAYER",
+    "MANAGER_COMPLETENESS_CODES",
+    "validate_manager_placement_completeness",
+    "validate_placement_references",
+]
 
 LAYER = "placement"
 
@@ -81,6 +87,11 @@ CODES = (
     "placement.collision",
     "placement.fallback",
     "placement.weather",
+)
+
+MANAGER_COMPLETENESS_CODES = (
+    "placement.completeness",
+    "placement.review",
 )
 
 _COORD_LIMIT = 8
@@ -1459,4 +1470,189 @@ def validate_placement_references(
 
     ordered = {code: pos for pos, code in enumerate(CODES)}
     findings.sort(key=lambda item: ordered.get(item.code, len(ordered)))
+    return findings
+
+
+def _safe_manager_records(manager: Any, accessor_name: str) -> list[Any]:
+    """Read one manager collection without allowing malformed records to crash validation."""
+    if manager is None:
+        return []
+    try:
+        accessor = getattr(manager, accessor_name, None)
+        if not callable(accessor):
+            return []
+        values = accessor()
+        if values is None:
+            return []
+        return list(values)
+    except (AttributeError, TypeError, ValueError, RuntimeError):
+        return []
+
+
+def _manager_status(record: Any) -> str | None:
+    """Return a normalized review status for a manager-like record."""
+    raw = _field(record, "review_status", None)
+    if not isinstance(raw, str):
+        return None
+    value = raw.strip().lower()
+    return value or None
+
+
+def _manager_int(record: Any, name: str) -> int | None:
+    """Read one positive integer reference from a manager-like record."""
+    parsed = _as_int(_field(record, name, None))
+    return parsed if parsed is not None and parsed > 0 else None
+
+
+def validate_manager_placement_completeness(
+    province_map: Any,
+    tile_map: Any | None,
+    manager: Any | None,
+    *,
+    lifecycle: Any = "draft",
+) -> list[ValidationFinding]:
+    """Validate manager records that a foundation writer would consume.
+
+    This is deliberately narrower than :func:`validate_placement_references`:
+    it checks only whether land provinces have all six explicitly reviewed
+    position slots and whether existing manager records are reviewed. It does
+    not duplicate coordinate, surface, state, region, or port-adjacency
+    validation. A missing manager disables this compatibility check, matching
+    legacy callers that have no authored placement model yet.
+
+    Draft-like lifecycles report warnings so an editor can continue to work;
+    ``frozen`` and ``accepted`` report blockers. The manager and raster inputs
+    are read-only and malformed duck-typed records are represented in the
+    deterministic evidence instead of raising.
+    """
+    if manager is None:
+        return []
+
+    try:
+        lifecycle_text = str(lifecycle if lifecycle is not None else "draft").strip().lower()
+    except Exception:
+        lifecycle_text = "draft"
+    strict = lifecycle_text not in (
+        "draft",
+        "candidate",
+        "draft_preview",
+        "foundation_candidate",
+    )
+    severity = "blocker" if strict else "warning"
+    findings: list[ValidationFinding] = []
+    completeness_details: list[str] = []
+    completeness_ids: set[int] = set()
+    review_details: list[str] = []
+    review_ids: set[int] = set()
+
+    try:
+        province_arr = np.asarray(province_map)
+        tile_arr = np.asarray(tile_map)
+    except Exception:
+        province_arr = None
+        tile_arr = None
+
+    land_ids: set[int] = set()
+    if (
+        province_arr is None
+        or tile_arr is None
+        or province_arr.ndim != 2
+        or tile_arr.ndim != 2
+        or province_arr.shape != tile_arr.shape
+    ):
+        completeness_details.append(
+            "province and tile maps must be matching two-dimensional arrays"
+        )
+    else:
+        try:
+            land_values = province_arr[tile_arr == int(TILE_LAND)].ravel()
+            for raw_pid in land_values.tolist():
+                pid = _as_int(raw_pid)
+                if pid is not None and pid > 0:
+                    land_ids.add(int(pid))
+        except (TypeError, ValueError, IndexError):
+            completeness_details.append("land province set could not be read")
+
+    slot_records = _safe_manager_records(manager, "list_province_slots")
+    slots_by_province: dict[int, dict[int, list[Any]]] = {}
+    for index, record in enumerate(slot_records):
+        pid = _manager_int(record, "province_id")
+        slot = _as_int(_field(record, "slot", None))
+        if pid is None or slot is None or not 0 <= int(slot) < 6:
+            review_details.append(
+                "slot record #%d has an invalid province_id or slot" % index
+            )
+            if pid is not None:
+                review_ids.add(int(pid))
+            continue
+        slots_by_province.setdefault(int(pid), {}).setdefault(int(slot), []).append(record)
+        status = _manager_status(record)
+        if status not in ("reviewed", "accepted"):
+            review_details.append(
+                "slot province %d index %d has review_status %s"
+                % (int(pid), int(slot), repr(status))
+            )
+            review_ids.add(int(pid))
+
+    for pid in sorted(land_ids):
+        by_slot = slots_by_province.get(int(pid), {})
+        missing = [slot for slot in range(6) if slot not in by_slot]
+        duplicate = [slot for slot in range(6) if len(by_slot.get(slot, ())) > 1]
+        if missing:
+            completeness_ids.add(int(pid))
+            completeness_details.append(
+                "land province %d is missing position slots %s"
+                % (int(pid), ",".join(str(slot) for slot in missing))
+            )
+        if duplicate:
+            completeness_ids.add(int(pid))
+            completeness_details.append(
+                "land province %d has duplicate position slots %s"
+                % (int(pid), ",".join(str(slot) for slot in duplicate))
+            )
+
+    for label, accessor, id_field in (
+        ("building", "list_buildings", "province_id"),
+        ("port", "list_ports", "province_id"),
+        ("weather", "list_weather", "region_id"),
+    ):
+        for index, record in enumerate(_safe_manager_records(manager, accessor)):
+            status = _manager_status(record)
+            if status in ("reviewed", "accepted"):
+                continue
+            record_id = _manager_int(record, id_field)
+            if record_id is not None:
+                review_ids.add(int(record_id))
+                reference = "%d" % int(record_id)
+            else:
+                reference = "?"
+            review_details.append(
+                "%s record #%d (%s) has review_status %s"
+                % (label, index, reference, repr(status))
+            )
+
+    if completeness_details:
+        findings.append(
+            ValidationFinding(
+                code="placement.completeness",
+                severity=severity,
+                message="%d land province placement groups are incomplete"
+                % len(completeness_details),
+                layer=LAYER,
+                affected_ids=_capped_ids(completeness_ids),
+                evidence=_evidence(sorted(completeness_details)),
+            )
+        )
+    if review_details:
+        findings.append(
+            ValidationFinding(
+                code="placement.review",
+                severity=severity,
+                message="%d placement records are not reviewed for foundation output"
+                % len(review_details),
+                layer=LAYER,
+                affected_ids=_capped_ids(review_ids),
+                evidence=_evidence(sorted(review_details)),
+            )
+        )
     return findings

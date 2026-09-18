@@ -13,7 +13,10 @@ from domain.validation import (
 from domain.validators.assets import validate_asset_integration
 from domain.validators.geography import validate_geography_references
 from domain.validators.logistics import validate_logistics_references
-from domain.validators.placement import validate_placement_references
+from domain.validators.placement import (
+    validate_manager_placement_completeness,
+    validate_placement_references,
+)
 from domain.validators.raster import validate_raster_definition
 from domain.validators.terrain import validate_terrain_layers
 
@@ -202,9 +205,10 @@ def _foundation_placement_check(
     weather_entries=None,
     lifecycle="draft",
     collision_tolerance=1.0,
+    map_placement_mgr=None,
     **_ignored,
 ):
-    return validate_placement_references(
+    findings = validate_placement_references(
         province_map,
         tile_map,
         placement_entries=placement_entries,
@@ -218,6 +222,15 @@ def _foundation_placement_check(
         wrap_horizontal=wrap_horizontal,
         collision_tolerance=collision_tolerance,
     )
+    findings.extend(
+        validate_manager_placement_completeness(
+            province_map,
+            tile_map,
+            map_placement_mgr,
+            lifecycle=lifecycle,
+        )
+    )
+    return findings
 
 
 def _foundation_asset_check(
@@ -344,6 +357,7 @@ def run_foundation_validation(
     map_dimensions=None,
     context="draft_preview",
     source="foundation",
+    map_placement_mgr=None,
 ):
     registry = create_foundation_validator_registry()
     findings = registry.run(
@@ -375,6 +389,7 @@ def run_foundation_validation(
         position_entries=position_entries,
         building_entries=building_entries,
         weather_entries=weather_entries,
+        map_placement_mgr=map_placement_mgr,
         lifecycle=lifecycle,
         collision_tolerance=collision_tolerance,
         target=target,
@@ -414,5 +429,6 @@ __all__ = [
     "coerce_finding",
     "create_foundation_validator_registry",
     "evaluate_gate",
+    "validate_manager_placement_completeness",
     "run_foundation_validation",
 ]
