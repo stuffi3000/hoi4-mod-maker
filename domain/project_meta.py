@@ -24,7 +24,8 @@ KNOWN_SCHEMA_VERSIONS = frozenset({1})
 
 LIFECYCLE_STATES = ("draft", "candidate", "frozen", "accepted")
 
-ADJACENCY_REVIEW_STATES = ("unreviewed", "none_intended", "reviewed")
+ADJACENCY_REVIEW_STATES = ("unreviewed", "none_intended", "defined")
+LEGACY_ADJACENCY_REVIEW_STATES = {"reviewed": "defined"}
 
 
 def _utc_now_iso() -> str:
@@ -50,6 +51,8 @@ class ProjectMeta:
     height: int = 0
     validation_exceptions: list[dict] = field(default_factory=list)
     adjacency_review: str = "unreviewed"
+    adjacency_review_note: str = ""
+    adjacency_review_hash: str | None = None
     foundation_lock_ref: str | None = None
     foundation_lock_hash: str | None = None
     generator_version: str = ""
@@ -70,6 +73,8 @@ class ProjectMeta:
             "dimensions": {"width": int(self.width), "height": int(self.height)},
             "validation_exceptions": [dict(v) for v in self.validation_exceptions],
             "adjacency_review": self.adjacency_review,
+            "adjacency_review_note": self.adjacency_review_note,
+            "adjacency_review_hash": self.adjacency_review_hash,
             "foundation_lock": {
                 "ref": self.foundation_lock_ref,
                 "hash": self.foundation_lock_hash,
@@ -98,7 +103,14 @@ class ProjectMeta:
         lifecycle = str(data.get("lifecycle", "draft"))
         if lifecycle not in LIFECYCLE_STATES:
             lifecycle = "draft"
-        adjacency_review = str(data.get("adjacency_review", "unreviewed"))
+        raw_adjacency_review = data.get("adjacency_review", "unreviewed")
+        nested_adjacency = raw_adjacency_review if isinstance(raw_adjacency_review, dict) else {}
+        adjacency_review = str(
+            nested_adjacency.get("state", raw_adjacency_review)
+        ).strip().lower()
+        adjacency_review = LEGACY_ADJACENCY_REVIEW_STATES.get(
+            adjacency_review, adjacency_review
+        )
         if adjacency_review not in ADJACENCY_REVIEW_STATES:
             adjacency_review = "unreviewed"
         exceptions = data.get("validation_exceptions", []) or []
@@ -114,6 +126,13 @@ class ProjectMeta:
             height=int(dims.get("height", 0) or 0),
             validation_exceptions=[dict(v) for v in exceptions if isinstance(v, dict)],
             adjacency_review=adjacency_review,
+            adjacency_review_note=str(
+                data.get("adjacency_review_note", nested_adjacency.get("note", "")) or ""
+            ),
+            adjacency_review_hash=(
+                str(data.get("adjacency_review_hash", nested_adjacency.get("hash", ""))).strip()
+                or None
+            ),
             foundation_lock_ref=lock.get("ref"),
             foundation_lock_hash=lock.get("hash"),
             generator_version=str(data.get("generator_version", "") or ""),
@@ -147,6 +166,8 @@ def default_meta(width: int = 0, height: int = 0, profile_id: str = "hoi4-1.19")
         width=int(width or 0),
         height=int(height or 0),
         adjacency_review="unreviewed",
+        adjacency_review_note="",
+        adjacency_review_hash=None,
         tool_version=_tool_version(),
         needs_target_confirmation=False,
         created_at=now,
@@ -172,6 +193,8 @@ def infer_meta_for_legacy_project(
         height=int(height or 0),
         validation_exceptions=[],
         adjacency_review="unreviewed",
+        adjacency_review_note="",
+        adjacency_review_hash=None,
         foundation_lock_ref=None,
         foundation_lock_hash=None,
         generator_version="",

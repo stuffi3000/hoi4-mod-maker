@@ -824,6 +824,33 @@ def collect_findings(snapshot, game_profile, dimensions=None, profile_name: str 
                                                    "River: %s" % issue, layer="rivers"))
         except (ImportError, TypeError, ValueError):
             pass
+    # M4.1: an empty special-adjacency layer is not silently acceptable at
+    # freeze time. Keep direct legacy callers without metadata unchanged.
+    if snapshot.project_meta is not None:
+        try:
+            from domain.adjacency_review import evaluate_adjacency_review
+            review_context = (
+                "freeze" if str(getattr(snapshot.project_meta, "lifecycle", ""))
+                in ("frozen", "accepted") else "foundation_candidate"
+            )
+            decision = evaluate_adjacency_review(
+                snapshot.adjacency_mgr,
+                snapshot.adjacency_rule_mgr,
+                state=getattr(snapshot.project_meta, "adjacency_review", "unreviewed"),
+                note=getattr(snapshot.project_meta, "adjacency_review_note", ""),
+                review_hash=getattr(snapshot.project_meta, "adjacency_review_hash", None),
+                context=review_context,
+            )
+            if decision.finding is not None:
+                findings.append(ValidationNote(
+                    decision.finding.code,
+                    decision.finding.severity,
+                    decision.finding.message,
+                    layer=decision.finding.layer,
+                ))
+        except (ImportError, TypeError, ValueError):
+            # Metadata is an optional compatibility input for direct callers.
+            pass
     return findings
 
 

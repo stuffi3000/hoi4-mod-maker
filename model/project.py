@@ -198,6 +198,26 @@ class Project:
         self.project_meta.lifecycle = state
         self.mark_dirty()
 
+    def set_adjacency_review(
+        self,
+        state: str,
+        note: str = "",
+        review_hash: str | None = None,
+    ) -> None:
+        """Record an explicit adjacency review without changing adjacency data."""
+        from domain.adjacency_review import normalize_review_state
+
+        normalized = normalize_review_state(state)
+        note_text = str(note or "").strip()
+        if normalized == "none_intended" and not note_text:
+            raise ValueError("none_intended adjacency review requires a note")
+        self.project_meta.adjacency_review = normalized
+        self.project_meta.adjacency_review_note = note_text
+        self.project_meta.adjacency_review_hash = (
+            str(review_hash).strip() if review_hash else None
+        )
+        self.mark_dirty()
+
     @staticmethod
     def _sidecar_dir(proj_path: str) -> str:
         """Returns the asset directory path corresponding to .hoi4proj."""
