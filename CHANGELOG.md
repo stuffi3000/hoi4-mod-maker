@@ -74,6 +74,8 @@ touches the destination.**
   responsibilities for the CLI and export UI.
 - Added safer overwrite/backup behavior, UTF-8 CLI output, useful exit codes,
   and readiness indicators in the application.
+- Made the vanilla game path configurable instead of assuming one local
+  installation.
 - Fixed exported-map startup failures, map-incompatible runtime scripts,
   session-load crashes, AI errors, strict province bounds, and total-conversion
   export crashes.
@@ -170,6 +172,8 @@ diagnose when something needs attention.**
 - Added targeted tests, synthetic fixtures, metadata-only regression evidence,
   and clearer dependency/pytest guidance without committing base-game
   binaries.
+- Added metadata-only compatibility evidence for the Belgium map, HOI4 1.19.3
+  headers, and DDS contracts without shipping base-game binaries.
 - Corrected the release build dependency to installable `PyQtDarkTheme2` and
   published the Windows package with a separate SHA-256 checksum file.
 
@@ -196,4 +200,4 @@ diagnose when something needs attention.**
 - World-normal regeneration and post-export strategic-region checks.
 
 [1.4.0]: https://github.com/stuffi3000/hoi4-mod-maker/releases/tag/v1.4.0
-[1.3.4]: https://github.com/stuffi3000/hoi4-mod-maker/releases/tag/v1.3.4
+[1.3.4]: https://github.com/stuffi3000/hoi4-mod-maker/commit/3dda2da6c90e6eec532f35d4a5e919cc135ecd29
