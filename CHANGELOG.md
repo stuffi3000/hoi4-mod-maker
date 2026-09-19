@@ -2,7 +2,7 @@
 
 All notable changes to HOI4 Map Maker are documented here. Version 1.4.0
 covers the complete development range after the 1.3.4 release through the
-map-foundation release candidate on 19 September 2026, including the
+published map-foundation 1.4.0 release on 19 September 2026, including the
 foundation-plan implementation commits and their checkpoints.
 
 ## [1.4.0] - 2026-09-19
@@ -104,7 +104,7 @@ foundation-plan implementation commits and their checkpoints.
   inheritance, dependencies, exceptions, author rules, prohibited changes,
   and migration procedure.
 
-### M9: migration cleanup and release candidate
+### M9: migration cleanup and published release
 
 - Kept `export_full_mod()` and legacy bitmap/CSV helpers as compatibility
   facades while the staged writers become the preferred path.

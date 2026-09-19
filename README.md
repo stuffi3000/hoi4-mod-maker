@@ -111,7 +111,7 @@ python main.py
 
 ### Packaged Release
 
-Download the `v1.4.0` package from [GitHub Releases](https://github.com/stuffi3000/hoi4-mod-maker/releases) when published, extract it, and run `HOI4MapMaker.exe`.
+Download the `v1.4.0` package from [GitHub Releases](https://github.com/stuffi3000/hoi4-mod-maker/releases), extract it, and run `HOI4MapMaker.exe`.
 
 ### Requirements
 

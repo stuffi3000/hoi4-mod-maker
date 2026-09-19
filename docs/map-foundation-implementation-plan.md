@@ -1171,14 +1171,14 @@ Release a new 1.4.0 release on Github with an updated .exe file.
 - [x] **M9.1 - compatibility rollout:** retained `export_full_mod()` and legacy bitmap/CSV helpers as compatibility facades; translated legacy scope dictionaries to `legacy_full` with deprecation warnings; preserved old project archives, `_manifest.txt` sidecars, and manager JSON schemas.
 - [x] **M9.2 - behavior cleanup:** removed hard-coded CSV install discovery, centralized descriptor replacement-path policy, routed the legacy descriptor helper through the shared writer, made staged scaffold `MAX_PROVINCES` profile-aware, and labeled compatibility logistics proposals without reintroducing self-loop railways.
 - [x] **M9.3 - release documentation:** updated README, tutorial, map/building/troubleshooting wiki pages, CLI help, export-dialog guidance, credits, version metadata, changelog, and regenerated English screenshots.
-- [ ] **M9.3 external release:** build and publish the signed/verified 1.4.0 Windows package and GitHub release after the release artifact is reviewed.
+- [x] **M9.3 external release:** published the reviewed, hash-verified 1.4.0 Windows package and GitHub release at https://github.com/stuffi3000/hoi4-mod-maker/releases/tag/v1.4.0. The executable is explicitly unsigned because no Authenticode signing certificate was available in the release environment.
 
-### M9 checkpoint - migration cleanup and release candidate (2026-09-19)
+### M9 checkpoint - migration cleanup and published release (2026-09-19)
 
-- **Completed:** M9.1 compatibility adapters, M9.2 safe cleanup, and the M9.3 documentation/versioning slice are implemented and reviewed. Legacy callers remain usable while new exports use the staged profile/planner contracts.
-- **Evidence:** focused M9 compatibility, planner, manifest/determinism, placement, graphics, validation, and CLI tests pass; English welcome/onboarding/tool-panel screenshots were rendered from the current Qt widgets; compilation and diff checks remain required before commit.
-- **Known release boundary:** no GitHub release or Windows executable was published in this source change. The release still requires a clean PyInstaller build, artifact inspection, and an explicit publication step.
-- **Next controlled slice:** complete Gate E on the Belgium artifact, run the full M10 test/review pass, then build and publish the reviewed 1.4.0 package.
+- **Completed:** M9.1 compatibility adapters, M9.2 safe cleanup, M9.3 documentation/versioning, and the external 1.4.0 release are implemented and reviewed. Legacy callers remain usable while new exports use the staged profile/planner contracts.
+- **Evidence:** focused M9 compatibility, planner, manifest/determinism, placement, graphics, validation, and CLI tests pass; the clean PyInstaller 6.22.3 build starts successfully in an eight-second smoke test; the published zip and executable have SHA-256 checksums in `SHA256SUMS.txt`.
+- **Release note:** the package is hash-verified but not Authenticode-signed; signing can be added in a future release when a certificate is available.
+- **Next controlled slice:** complete Gate E on the Belgium artifact and run the full M10 test/review pass against the published 1.4.0 source and package.
 
 ## M10. Full Testing
 
