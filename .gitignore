@@ -26,3 +26,7 @@ projects/
 .codex/
 tmp/
 /AGENTS.md
+tmp*/
+pytest-cache*/
+.pytest*/
+.freshdot/

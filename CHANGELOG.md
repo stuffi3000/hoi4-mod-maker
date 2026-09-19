@@ -33,16 +33,12 @@ real map data instead of only a visual guide.
   and validation of reference-generated provinces.
 - Added practical refinement paths for splitting, merging, lasso editing, and
   deterministic province rework.
-- Added a validated Belgium map workflow, including a deterministic province
-  rework tool and a reference-mask-driven urban pass.
 
 ### Terrain, rivers, hydrology, and city detail
 
 **Map terrain is now easier to author as a coherent gameplay and visual
 system.**
 
-- Added a validated Belgium v1.1 generator with hydrology, relief, terrain
-  limits, and administrative map data.
 - Added terrain-attribute synchronization from the visual terrain layer,
   including a clear action for resynchronizing existing data.
 - Added river and terrain validation coverage and made map-type-specific
@@ -55,8 +51,6 @@ system.**
 **The editor now connects visual map work to recognizable HOI4 gameplay
 structures.**
 
-- Added authored administrative states and countries for the Belgium map
-  workflow.
 - Added victory-point editing and corrected the map-overlay toggle behavior.
 - Added strategic-region generation and logistics-readiness indicators so
   missing gameplay structure is visible earlier.
@@ -172,7 +166,7 @@ diagnose when something needs attention.**
 - Added targeted tests, synthetic fixtures, metadata-only regression evidence,
   and clearer dependency/pytest guidance without committing base-game
   binaries.
-- Added metadata-only compatibility evidence for the Belgium map, HOI4 1.19.3
+- Added metadata-only compatibility evidence for HOI4 1.19.3
   headers, and DDS contracts without shipping base-game binaries.
 - Corrected the release build dependency to installable `PyQtDarkTheme2` and
   published the Windows package with a separate SHA-256 checksum file.
