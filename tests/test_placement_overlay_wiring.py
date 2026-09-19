@@ -702,3 +702,244 @@ def test_transform_wiring_keeps_edits_inside_controller():
     assert "mark_dirty" not in sync_src
     assert "set_diagnostics" not in sync_src
     assert "set_status" not in sync_src
+
+
+def test_connect_signals_wires_canvas_selection_and_drag():
+    source = inspect.getsource(MainWindow._connect_signals)
+    assert "placement_selection_changed.connect" in source
+    assert "_on_placement_selection_changed" in source
+    assert "placement_position_change_requested.connect" in source
+    assert "_on_placement_position_change_requested" in source
+
+
+def test_canvas_selection_populates_transform_for_all_kinds():
+    live_slot = _slot(1, slot=2, x=11.0, y=12.0, rotation=30.0, height=4.0)
+    live_port = _port(9, sea=3, x=21.0, y=22.0, rotation=5.0, height=6.0)
+    live_building = _building(7, pid=3, x=31.0, y=32.0, rotation=7.0, height=8.0)
+    live_weather = _weather(11, region=4, x=41.0, y=42.0, rotation=9.0, height=10.0)
+    project = _make_project(
+        [live_slot], [live_port], [live_building], [live_weather]
+    )
+    cases = [
+        ("slot", (1, 2), 11.0, 12.0, 30.0, 4.0),
+        ("port", 9, 21.0, 22.0, 5.0, 6.0),
+        ("building", 7, 31.0, 32.0, 7.0, 8.0),
+        ("weather", 11, 41.0, 42.0, 9.0, 10.0),
+    ]
+    for kind, key, exp_x, exp_y, exp_rot, exp_h in cases:
+        page = _FakePage()
+        canvas = _FakeCanvas()
+        fake_self = _make_self(project, page, canvas)
+        MainWindow._on_placement_selection_changed(fake_self, kind, key)
+        assert page.set_transform_calls == [(kind, key, exp_x, exp_y, exp_rot, exp_h)]
+        assert page.clear_transform_calls == 0
+        assert page.transform_selection == (kind, key, exp_x, exp_y, exp_rot, exp_h)
+        assert page.diagnostics_calls == []
+        assert page.status_calls == []
+
+
+def test_canvas_selection_supports_mapping_records():
+    live = {"province_id": 1, "slot": 0, "x": 3.5, "y": 4.5, "rotation": 1.25, "height": 2.5}
+    project = _make_project([live], [], [], [])
+    page = _FakePage()
+    canvas = _FakeCanvas()
+    fake_self = _make_self(project, page, canvas)
+    MainWindow._on_placement_selection_changed(fake_self, "slot", (1, 0))
+    assert page.set_transform_calls == [("slot", (1, 0), 3.5, 4.5, 1.25, 2.5)]
+    assert page.clear_transform_calls == 0
+    assert page.status_calls == []
+
+
+def test_canvas_selection_clears_on_empty_kind_and_none_key():
+    live = _slot(1, slot=0, x=5.0, y=6.0, rotation=1.0, height=2.0)
+    project = _make_project([live], [], [], [])
+    for kind, key in [("", None), ("", (1, 0)), ("slot", None)]:
+        page = _FakePage()
+        canvas = _FakeCanvas()
+        page.transform_selection = ("slot", (1, 0), 9.0, 9.0, 9.0, 9.0)
+        fake_self = _make_self(project, page, canvas)
+        MainWindow._on_placement_selection_changed(fake_self, kind, key)
+        assert page.clear_transform_calls == 1
+        assert page.transform_selection is None
+        assert page.set_transform_calls == []
+        assert page.diagnostics_calls == []
+        assert page.status_calls == []
+
+
+def test_canvas_selection_clears_when_record_missing():
+    project = _make_project([], [], [], [])
+    cases = [
+        ("slot", (1, 0)),
+        ("port", 9),
+        ("building", 7),
+        ("weather", 11),
+    ]
+    for kind, key in cases:
+        page = _FakePage()
+        canvas = _FakeCanvas()
+        page.transform_selection = (kind, key, 1.0, 2.0, 3.0, 4.0)
+        fake_self = _make_self(project, page, canvas)
+        MainWindow._on_placement_selection_changed(fake_self, kind, key)
+        assert page.clear_transform_calls == 1
+        assert page.transform_selection is None
+        assert page.set_transform_calls == []
+        assert page.diagnostics_calls == []
+        assert page.status_calls == []
+
+
+def test_canvas_selection_clears_on_unknown_kind_and_malformed_key():
+    live = _slot(1, slot=0, x=5.0, y=6.0, rotation=1.0, height=2.0)
+    project = _make_project([live], [], [], [])
+    for kind, key in [("city", 1), ("slot", 1), ("slot", (1, 0, 2)), ("slot", "bad")]:
+        page = _FakePage()
+        canvas = _FakeCanvas()
+        page.transform_selection = ("slot", (1, 0), 9.0, 9.0, 9.0, 9.0)
+        fake_self = _make_self(project, page, canvas)
+        MainWindow._on_placement_selection_changed(fake_self, kind, key)
+        assert page.clear_transform_calls == 1
+        assert page.transform_selection is None
+        assert page.set_transform_calls == []
+        assert page.diagnostics_calls == []
+        assert page.status_calls == []
+
+
+def test_canvas_selection_clears_on_unreadable_record():
+    broken = SimpleNamespace(province_id=1, slot=0, x=1.0, y=2.0)
+    project = _make_project([broken], [], [], [])
+    page = _FakePage()
+    canvas = _FakeCanvas()
+    page.transform_selection = ("slot", (1, 0), 9.0, 9.0, 9.0, 9.0)
+    fake_self = _make_self(project, page, canvas)
+    MainWindow._on_placement_selection_changed(fake_self, "slot", (1, 0))
+    assert page.clear_transform_calls == 1
+    assert page.transform_selection is None
+    assert page.set_transform_calls == []
+    assert page.diagnostics_calls == []
+    assert page.status_calls == []
+
+
+def test_canvas_drag_routes_x_y_only_and_refreshes_on_change():
+    page = _FakePage()
+    controller = _FakePlacementController(result=True)
+    project = _make_project([], [], [], [])
+    fake_self, refresh_calls = _make_handler_self(project, page, controller)
+    key = (5, 2)
+    MainWindow._on_placement_position_change_requested(fake_self, "slot", key, 1.5, 2.5)
+    assert controller.calls == [("update", "slot", key, 1.5, 2.5, None, None)]
+    assert controller.calls[0][2] is key
+    assert refresh_calls == [True]
+    assert page.status_calls == []
+    assert page.diagnostics_calls == []
+
+
+def test_canvas_drag_preserves_key_identity_for_all_kinds():
+    cases = [("slot", (1, 0)), ("port", 9), ("building", 7), ("weather", 11)]
+    for kind, key in cases:
+        page = _FakePage()
+        controller = _FakePlacementController(result=True)
+        project = _make_project([], [], [], [])
+        fake_self, refresh_calls = _make_handler_self(project, page, controller)
+        MainWindow._on_placement_position_change_requested(fake_self, kind, key, 7.25, 8.5)
+        assert controller.calls == [("update", kind, key, 7.25, 8.5, None, None)]
+        assert controller.calls[0][2] is key
+        assert refresh_calls == [True]
+        assert page.status_calls == []
+
+
+def test_canvas_drag_noop_skips_refresh():
+    page = _FakePage()
+    controller = _FakePlacementController(result=False)
+    project = _make_project([], [], [], [])
+    fake_self, refresh_calls = _make_handler_self(project, page, controller)
+    key = (5, 2)
+    MainWindow._on_placement_position_change_requested(fake_self, "slot", key, 1.5, 2.5)
+    assert controller.calls == [("update", "slot", key, 1.5, 2.5, None, None)]
+    assert refresh_calls == []
+    assert page.status_calls == []
+    assert page.diagnostics_calls == []
+
+
+def test_canvas_drag_reports_errors_without_refresh():
+    for error in (ValueError("bad kind"), KeyError("missing"), TypeError("bad")):
+        page = _FakePage()
+        controller = _FakePlacementController(error=error)
+        project = _make_project([], [], [], [])
+        fake_self, refresh_calls = _make_handler_self(project, page, controller)
+        MainWindow._on_placement_position_change_requested(
+            fake_self, "slot", (1, 0), 1.0, 2.0
+        )
+        assert refresh_calls == []
+        assert len(page.status_calls) == 1
+        assert "failed" in page.status_calls[0].lower()
+        assert page.diagnostics_calls == []
+
+
+def test_canvas_wiring_keeps_edits_inside_controller():
+    drag_src = inspect.getsource(MainWindow._on_placement_position_change_requested)
+    select_src = inspect.getsource(MainWindow._on_placement_selection_changed)
+    assert "update_transform" in drag_src
+    assert "map_placement_mgr" not in drag_src
+    assert "set_province_slot" not in drag_src
+    assert "set_port" not in drag_src
+    assert "update_building" not in drag_src
+    assert "update_weather" not in drag_src
+    assert "mark_dirty" not in drag_src
+    assert "set_diagnostics" not in drag_src
+    assert "get_province_slot" in select_src
+    assert "get_port" in select_src
+    assert "get_building" in select_src
+    assert "get_weather" in select_src
+    assert "map_placement_mgr" in select_src
+    assert "set_province_slot" not in select_src
+    assert "set_port" not in select_src
+    assert "update_building" not in select_src
+    assert "update_weather" not in select_src
+    assert "mark_dirty" not in select_src
+    assert "set_diagnostics" not in select_src
+    assert "set_status" not in select_src
+
+
+def test_mode_exit_clears_transform_selection(monkeypatch):
+    monkeypatch.setattr(
+        "domain.validators.placement.validate_placement_references",
+        lambda *a, **k: [],
+    )
+    fake_self, calls, canvas = _make_mode_self()
+    page = fake_self._tool_panel._placement_page
+    page.set_transform_selection("slot", (1, 0), 5.0, 6.0, 1.0, 2.0)
+    assert page.transform_selection is not None
+    before = page.clear_transform_calls
+    MainWindow._on_mode_changed(fake_self, "land")
+    assert page.transform_selection is None
+    assert page.clear_transform_calls == before + 1
+    assert ("visible", False) in calls
+
+
+def test_mode_exit_clears_for_all_non_placement_modes(monkeypatch):
+    monkeypatch.setattr(
+        "domain.validators.placement.validate_placement_references",
+        lambda *a, **k: [],
+    )
+    for mode in ["land", "strategic_region", "logistics", "province"]:
+        fake_self, calls, canvas = _make_mode_self()
+        page = fake_self._tool_panel._placement_page
+        page.set_transform_selection("slot", (1, 0), 5.0, 6.0, 1.0, 2.0)
+        before = page.clear_transform_calls
+        MainWindow._on_mode_changed(fake_self, mode)
+        assert page.transform_selection is None
+        assert page.clear_transform_calls == before + 1
+        assert ("visible", False) in calls
+
+
+def test_mode_enter_placement_does_not_clear_via_exit_path(monkeypatch):
+    monkeypatch.setattr(
+        "domain.validators.placement.validate_placement_references",
+        lambda *a, **k: [],
+    )
+    fake_self, calls, canvas = _make_mode_self()
+    page = fake_self._tool_panel._placement_page
+    assert page.selected_transform() is None
+    before = page.clear_transform_calls
+    MainWindow._on_mode_changed(fake_self, "placement")
+    assert page.clear_transform_calls == before
+    assert ("visible", True) in calls

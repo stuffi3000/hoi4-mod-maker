@@ -578,6 +578,10 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
         cv.zoom_changed.connect(
             lambda z: self._status_zoom.setText(tr("status_zoom", z))
         )
+        cv.placement_selection_changed.connect(self._on_placement_selection_changed)
+        cv.placement_position_change_requested.connect(
+            self._on_placement_position_change_requested
+        )
 
     # ═══════════════════════ EventBus Subscription ═══════════════════
 
@@ -673,6 +677,14 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
         if canvas is not None:
             try:
                 canvas.set_placement_overlay_visible(mode == "placement")
+            except Exception:
+                pass
+        if mode != "placement":
+            try:
+                page = getattr(getattr(self, "_tool_panel", None), "_placement_page", None)
+                clearer = getattr(page, "clear_transform_selection", None)
+                if clearer is not None:
+                    clearer()
             except Exception:
                 pass
         self._refresh_feature_statuses()
@@ -1019,6 +1031,130 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
         except (TypeError, ValueError, KeyError) as exc:
             try:
                 page.set_status(f"Placement transform reset failed: {exc}")
+            except Exception:
+                pass
+            return
+        if changed:
+            self._refresh_placement_page()
+
+    def _on_placement_selection_changed(self, kind: str, key: object) -> None:
+        page = getattr(getattr(self, "_tool_panel", None), "_placement_page", None)
+        if page is None:
+            return
+        clearer = getattr(page, "clear_transform_selection", None)
+
+        def _clear_selection() -> None:
+            if clearer is None:
+                return
+            try:
+                clearer()
+            except Exception:
+                pass
+
+        if not kind or key is None:
+            _clear_selection()
+            return
+        project = getattr(self, "_project", None)
+        manager = getattr(project, "map_placement_mgr", None)
+        if manager is None:
+            _clear_selection()
+            return
+        try:
+            record = None
+            normalized_key = key
+            if kind == "slot":
+                if not isinstance(key, (tuple, list)) or len(key) != 2:
+                    _clear_selection()
+                    return
+                getter = getattr(manager, "get_province_slot", None)
+                if getter is None:
+                    _clear_selection()
+                    return
+                province_id = key[0]
+                slot_index = key[1]
+                try:
+                    record = getter(province_id, slot_index)
+                except Exception:
+                    _clear_selection()
+                    return
+                normalized_key = (province_id, slot_index)
+            elif kind == "port":
+                getter = getattr(manager, "get_port", None)
+                if getter is None:
+                    _clear_selection()
+                    return
+                try:
+                    record = getter(key)
+                except Exception:
+                    _clear_selection()
+                    return
+            elif kind == "building":
+                getter = getattr(manager, "get_building", None)
+                if getter is None:
+                    _clear_selection()
+                    return
+                try:
+                    record = getter(key)
+                except Exception:
+                    _clear_selection()
+                    return
+            elif kind == "weather":
+                getter = getattr(manager, "get_weather", None)
+                if getter is None:
+                    _clear_selection()
+                    return
+                try:
+                    record = getter(key)
+                except Exception:
+                    _clear_selection()
+                    return
+            else:
+                _clear_selection()
+                return
+        except Exception:
+            _clear_selection()
+            return
+        if record is None:
+            _clear_selection()
+            return
+        try:
+            from collections.abc import Mapping as _Mapping
+            if isinstance(record, _Mapping):
+                live_x = record["x"]
+                live_y = record["y"]
+                live_rotation = record["rotation"]
+                live_height = record["height"]
+            else:
+                live_x = getattr(record, "x")
+                live_y = getattr(record, "y")
+                live_rotation = getattr(record, "rotation")
+                live_height = getattr(record, "height")
+            live_x = float(live_x)
+            live_y = float(live_y)
+            live_rotation = float(live_rotation)
+            live_height = float(live_height)
+        except Exception:
+            _clear_selection()
+            return
+        setter = getattr(page, "set_transform_selection", None)
+        if setter is None:
+            return
+        try:
+            setter(kind, normalized_key, live_x, live_y, live_rotation, live_height)
+        except Exception:
+            pass
+
+    def _on_placement_position_change_requested(
+        self, kind: str, key: object, x: float, y: float
+    ) -> None:
+        page = self._tool_panel._placement_page
+        try:
+            changed = self._controllers["placement"].update_transform(
+                kind, key, x=x, y=y
+            )
+        except (TypeError, ValueError, KeyError) as exc:
+            try:
+                page.set_status(f"Placement transform update failed: {exc}")
             except Exception:
                 pass
             return
