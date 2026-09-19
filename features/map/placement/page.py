@@ -1,0 +1,427 @@
+"""Placement review page (M5.2/M5.3 UI slice) — standalone QWidget.
+
+Standalone review surface for authored map placement records. The page
+owns no domain state and performs no filesystem, export, or domain
+mutations: it renders duck-typed slot/port records, edits an explicit
+land-to-sea mapping, and forwards user intent through signals so a
+PlacementController can be wired up later.
+"""
+
+import re
+from numbers import Integral
+
+from PyQt5.QtCore import Qt, pyqtSignal
+from PyQt5.QtWidgets import (
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QListWidget,
+    QListWidgetItem,
+    QPlainTextEdit,
+    QComboBox,
+    QScrollArea,
+)
+
+from ui.i18n import tr
+from ui.styles import (
+    make_section as _make_section,
+    _COMBOBOX_STYLE,
+    _DIM_LABEL_STYLE,
+    _LABEL_STYLE,
+    _LIST_STYLE,
+    _PRIMARY_BTN_STYLE,
+    _SECONDARY_BTN_STYLE,
+)
+
+__all__ = ["PlacementPage", "parse_sea_mapping"]
+
+_PAIR_SPLIT_RE = re.compile(r"[,\r\n;]+")
+_INT_RE = re.compile(r"[+-]?\d+")
+_SEP_RE = re.compile(r"(?P<left>[^:=]+)[:=](?P<right>[^:=]+)")
+_MAX_DIAGNOSTIC_LINES = 5
+_MISSING = object()
+
+
+def parse_sea_mapping(text):
+    """Parse an explicit land-province to sea-province mapping.
+
+    Pairs are separated by commas, semicolons, or newlines and use a
+    ``:`` or ``=`` separator, e.g. ``"12:34, 56:78"``. Empty fragments
+    from trailing separators or blank lines are ignored. Anything else
+    must be a well-formed pair: both ids must be positive integers and
+    each land id may appear only once. The page never guesses a sea.
+
+    Raises ValueError on blank input, malformed pairs,
+    non-positive/non-integer ids, duplicate land ids, or non-text input.
+    """
+    if not isinstance(text, str):
+        raise ValueError(
+            "sea mapping must be text, got {}".format(type(text).__name__)
+        )
+    if not text.strip():
+        raise ValueError("sea mapping is blank; enter explicit land:sea pairs")
+    mapping = {}
+    for chunk in _PAIR_SPLIT_RE.split(text):
+        token = chunk.strip()
+        if not token:
+            continue
+        match = _SEP_RE.fullmatch(token)
+        if match is None:
+            raise ValueError("malformed sea mapping pair: {!r}".format(token))
+        land_raw = match.group("left").strip()
+        sea_raw = match.group("right").strip()
+        if _INT_RE.fullmatch(land_raw) is None:
+            raise ValueError("malformed sea mapping pair: {!r}".format(token))
+        if _INT_RE.fullmatch(sea_raw) is None:
+            raise ValueError("malformed sea mapping pair: {!r}".format(token))
+        land = int(land_raw)
+        sea = int(sea_raw)
+        if land <= 0 or sea <= 0:
+            raise ValueError(
+                "province ids must be positive integers: {!r}".format(token)
+            )
+        if land in mapping:
+            raise ValueError(
+                "duplicate land province in sea mapping: {}".format(land)
+            )
+        mapping[land] = sea
+    if not mapping:
+        raise ValueError("sea mapping is blank; enter explicit land:sea pairs")
+    return mapping
+
+
+def _field(record, name, default=None):
+    if isinstance(record, dict):
+        return record.get(name, default)
+    return getattr(record, name, default)
+
+
+def _coerce_province_id(value):
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, Integral):
+        return int(value) if value > 0 else None
+    if isinstance(value, str):
+        token = value.strip()
+        if _INT_RE.fullmatch(token) is not None:
+            try:
+                number = int(token)
+            except ValueError:
+                return None
+            return number if number > 0 else None
+    return None
+
+
+def _coerce_slot_index(value):
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, Integral):
+        return int(value)
+    if isinstance(value, str):
+        token = value.strip()
+        if _INT_RE.fullmatch(token) is not None:
+            try:
+                return int(token)
+            except ValueError:
+                return None
+    return None
+
+
+def _fmt_num(value):
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return str(value)
+    if number.is_integer():
+        return str(int(number))
+    return "{:g}".format(number)
+
+
+def _extra_tags(record):
+    tags = []
+    for name in ("review_status", "provenance"):
+        value = _field(record, name)
+        if value:
+            tags.append(str(value))
+    return tags
+
+
+def _slot_text(province_id, slot, record):
+    parts = ["Slot {}#{}".format(province_id, slot)]
+    meaning = _field(record, "meaning")
+    if meaning:
+        parts.append(str(meaning))
+    x = _field(record, "x")
+    y = _field(record, "y")
+    if x is not None and y is not None:
+        parts.append("@ ({}, {})".format(_fmt_num(x), _fmt_num(y)))
+    tags = _extra_tags(record)
+    if tags:
+        parts.append("[{}]".format("/".join(tags)))
+    return " ".join(parts)
+
+
+def _port_text(province_id, record):
+    sea = _coerce_province_id(_field(record, "sea_province"))
+    parts = ["Port {} -> sea {}".format(province_id, sea if sea is not None else "-")]
+    x = _field(record, "x")
+    y = _field(record, "y")
+    if x is not None and y is not None:
+        parts.append("@ ({}, {})".format(_fmt_num(x), _fmt_num(y)))
+    tags = _extra_tags(record)
+    if tags:
+        parts.append("[{}]".format("/".join(tags)))
+    return " ".join(parts)
+
+
+class PlacementPage(QWidget):
+    """Standalone placement review page; no controller dependency."""
+
+    generate_slots_requested = pyqtSignal()
+    generate_ports_requested = pyqtSignal(object)
+    accept_selected_requested = pyqtSignal(object, object, str)
+    refresh_requested = pyqtSignal()
+
+    parse_sea_mapping = staticmethod(parse_sea_mapping)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._init_ui()
+
+    def _init_ui(self):
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setStyleSheet("QScrollArea { border: none; }")
+
+        page = QWidget()
+        lay = QVBoxLayout(page)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(8)
+
+        tip = QLabel(tr("placement_tip"))
+        tip.setWordWrap(True)
+        tip.setStyleSheet(_DIM_LABEL_STYLE)
+        lay.addWidget(tip)
+
+        generate_box = _make_section(tr("placement_generate_section"))
+        gl = generate_box.layout()
+
+        self._generate_slots_btn = QPushButton(tr("placement_generate_slots_btn"))
+        self._generate_slots_btn.setStyleSheet(_PRIMARY_BTN_STYLE)
+        self._generate_slots_btn.clicked.connect(self._on_generate_slots)
+        gl.addWidget(self._generate_slots_btn)
+
+        mapping_lbl = QLabel(tr("placement_mapping_label"))
+        mapping_lbl.setStyleSheet(_LABEL_STYLE)
+        gl.addWidget(mapping_lbl)
+
+        self._mapping_edit = QPlainTextEdit()
+        self._mapping_edit.setPlaceholderText(tr("placement_mapping_hint"))
+        self._mapping_edit.setMinimumHeight(64)
+        self._mapping_edit.setMaximumHeight(110)
+        self._mapping_edit.setStyleSheet(
+            "QPlainTextEdit { background: #1f2126; border: 1px solid #2c2f36;"
+            " border-radius: 4px; color: #e8eaed; font-size: 13px; }"
+        )
+        gl.addWidget(self._mapping_edit)
+
+        mapping_help = QLabel(tr("placement_mapping_help"))
+        mapping_help.setWordWrap(True)
+        mapping_help.setStyleSheet(_DIM_LABEL_STYLE)
+        gl.addWidget(mapping_help)
+
+        self._generate_ports_btn = QPushButton(tr("placement_generate_ports_btn"))
+        self._generate_ports_btn.setStyleSheet(_PRIMARY_BTN_STYLE)
+        self._generate_ports_btn.clicked.connect(self._on_generate_ports)
+        gl.addWidget(self._generate_ports_btn)
+        lay.addWidget(generate_box)
+
+        records_box = _make_section(tr("placement_records_section"))
+        rl = records_box.layout()
+
+        self._records_summary = QLabel(tr("placement_records_empty"))
+        self._records_summary.setStyleSheet(_DIM_LABEL_STYLE)
+        rl.addWidget(self._records_summary)
+
+        self._records_list = QListWidget()
+        self._records_list.setStyleSheet(_LIST_STYLE)
+        self._records_list.setMinimumHeight(180)
+        rl.addWidget(self._records_list)
+        lay.addWidget(records_box)
+
+        review_box = _make_section(tr("placement_review_section"))
+        vl = review_box.layout()
+
+        status_row = QHBoxLayout()
+        review_lbl = QLabel(tr("placement_review_status_label"))
+        review_lbl.setStyleSheet(_LABEL_STYLE)
+        status_row.addWidget(review_lbl)
+        self._review_combo = QComboBox()
+        self._review_combo.setStyleSheet(_COMBOBOX_STYLE)
+        self._review_combo.addItem(tr("placement_reviewed"), "reviewed")
+        self._review_combo.addItem(tr("placement_accepted"), "accepted")
+        status_row.addWidget(self._review_combo)
+        status_row.addStretch(1)
+        vl.addLayout(status_row)
+
+        self._accept_btn = QPushButton(tr("placement_accept_selected_btn"))
+        self._accept_btn.setStyleSheet(_PRIMARY_BTN_STYLE)
+        self._accept_btn.clicked.connect(self._on_accept_selected)
+        vl.addWidget(self._accept_btn)
+
+        self._refresh_btn = QPushButton(tr("placement_refresh_btn"))
+        self._refresh_btn.setStyleSheet(_SECONDARY_BTN_STYLE)
+        self._refresh_btn.clicked.connect(self._on_refresh)
+        vl.addWidget(self._refresh_btn)
+        lay.addWidget(review_box)
+
+        diag_box = _make_section(tr("placement_diagnostics_section"))
+        dl = diag_box.layout()
+        self._diag_label = QLabel(tr("placement_diagnostics_none"))
+        self._diag_label.setWordWrap(True)
+        self._diag_label.setStyleSheet(_DIM_LABEL_STYLE)
+        dl.addWidget(self._diag_label)
+        lay.addWidget(diag_box)
+
+        self._status_label = QLabel(tr("placement_status_ready"))
+        self._status_label.setStyleSheet("color: #4f8cff; font-size: 11px;")
+        lay.addWidget(self._status_label)
+
+        lay.addStretch(1)
+        scroll.setWidget(page)
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.addWidget(scroll)
+
+    def mapping_text(self):
+        return self._mapping_edit.toPlainText()
+
+    def set_mapping_text(self, text):
+        self._mapping_edit.setPlainText(text or "")
+
+    def review_status(self):
+        return self._review_combo.currentData() or "reviewed"
+
+    def set_records(self, records):
+        self._records_list.clear()
+        slots = []
+        ports = []
+        for record in records or []:
+            province_id = _coerce_province_id(_field(record, "province_id"))
+            if province_id is None:
+                continue
+            slot = _field(record, "slot", _MISSING)
+            sea_province = _field(record, "sea_province", _MISSING)
+            if slot is not _MISSING:
+                slot_index = _coerce_slot_index(slot)
+                if slot_index is None:
+                    continue
+                slots.append((province_id, slot_index, record))
+            elif sea_province is not _MISSING:
+                ports.append((province_id, record))
+            else:
+                # Buildings/weather and other placement record types are not
+                # reviewable by this slot/port surface yet. Do not render
+                # them as ports merely because they share province_id.
+                continue
+        slots.sort(key=lambda entry: (entry[0], entry[1]))
+        ports.sort(key=lambda entry: entry[0])
+        for province_id, slot_index, record in slots:
+            item = QListWidgetItem(_slot_text(province_id, slot_index, record))
+            item.setData(Qt.UserRole, ("slot", (province_id, slot_index)))
+            self._track_checkable(item)
+            self._records_list.addItem(item)
+        for province_id, record in ports:
+            item = QListWidgetItem(_port_text(province_id, record))
+            item.setData(Qt.UserRole, ("port", province_id))
+            self._track_checkable(item)
+            self._records_list.addItem(item)
+        if self._records_list.count() == 0:
+            self._records_summary.setText(tr("placement_records_empty"))
+        else:
+            self._records_summary.setText(
+                tr("placement_records_summary", len(slots), len(ports))
+            )
+
+    def selected_records(self):
+        slot_keys = []
+        port_ids = []
+        for row in range(self._records_list.count()):
+            item = self._records_list.item(row)
+            if item.checkState() != Qt.Checked:
+                continue
+            data = item.data(Qt.UserRole)
+            if not isinstance(data, tuple) or len(data) != 2:
+                continue
+            kind, payload = data
+            if kind == "slot":
+                try:
+                    province_id, slot_index = payload
+                except (TypeError, ValueError):
+                    continue
+                slot_keys.append((int(province_id), int(slot_index)))
+            elif kind == "port":
+                port_ids.append(int(payload))
+        return slot_keys, port_ids
+
+    def set_diagnostics(self, diagnostics):
+        items = list(diagnostics or [])
+        if not items:
+            self._diag_label.setText(tr("placement_diagnostics_none"))
+            return
+        lines = [tr("placement_diagnostics_summary", len(items))]
+        for entry in items[:_MAX_DIAGNOSTIC_LINES]:
+            lines.append(self._diagnostic_line(entry))
+        if len(items) > _MAX_DIAGNOSTIC_LINES:
+            lines.append("...")
+        self._diag_label.setText("\n".join(lines))
+
+    def set_status(self, text):
+        self._status_label.setText(text or "")
+
+    @staticmethod
+    def _track_checkable(item):
+        item.setFlags((item.flags() | Qt.ItemIsUserCheckable) & ~Qt.ItemIsEditable)
+        item.setCheckState(Qt.Unchecked)
+
+    @staticmethod
+    def _diagnostic_line(entry):
+        code = _field(entry, "code", None) or "issue"
+        message = _field(entry, "message", None)
+        province_id = _coerce_province_id(_field(entry, "province_id", None))
+        head = "[{}]".format(code)
+        if province_id is not None:
+            head += " P{}".format(province_id)
+        if message:
+            return "{}: {}".format(head, message)
+        return head
+
+    def _on_generate_slots(self):
+        self.set_status(tr("placement_slots_requested"))
+        self.generate_slots_requested.emit()
+
+    def _on_generate_ports(self):
+        try:
+            mapping = parse_sea_mapping(self._mapping_edit.toPlainText())
+        except ValueError as exc:
+            self.set_status("{} {}".format(tr("placement_error_invalid_mapping"), exc))
+            return
+        self.set_status(tr("placement_ports_requested", len(mapping)))
+        self.generate_ports_requested.emit(mapping)
+
+    def _on_accept_selected(self):
+        slot_keys, port_ids = self.selected_records()
+        status = self.review_status()
+        if not slot_keys and not port_ids:
+            self.set_status(tr("placement_accept_empty"))
+        else:
+            self.set_status(
+                tr("placement_accept_requested", len(slot_keys), len(port_ids), status)
+            )
+        self.accept_selected_requested.emit(slot_keys, port_ids, status)
+
+    def _on_refresh(self):
+        self.refresh_requested.emit()
