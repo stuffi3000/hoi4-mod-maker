@@ -784,11 +784,11 @@ Allow one or more authored/generated weather positions per strategic region, wit
 - [x] **M5.2g — standalone proposal review surface:** added a Qt placement page with explicit land-to-sea mapping input, deterministic checkable slot/port records, visible diagnostics, and selected-only review/acceptance signals. Unknown placement record types are not misclassified as ports. Committed as `0de9d31`.
 - [x] **M5.2h — live editor proposal path:** registered the placement page and controller in the existing logistics navigation, routed explicit generate/accept/refresh signals through `MainWindow`, refreshed records after placement/project changes, and kept the placement canvas on the safe strategic-region render path. Committed as `89a5b35`.
 - [ ] **M5.2 — proposal generation integration:** connect the proposal core to port-aware placement requests and the export/editor acceptance flow; no silent fallback acceptance.
-- [ ] **M5.3 — placement editor and overlay:** add selection/editing and collision/provenance overlays.
+- [x] **M5.3 — placement editor and overlay:** add selection/editing and collision/provenance overlays.
 - [x] **M5.3a — deterministic placement overlay model:** pure, sorted, bounds-aware markers now classify slots, ports, buildings, weather, victory points, and `placement.collision` coordinates while preserving provenance/review roles. Committed as `9ef3a0b`.
 - [x] **M5.3b — read-only canvas overlay:** the map canvas now renders a hidden-by-default, transparent marker layer with distinct symbols/colors, explicit visibility control, map-size rebinding, and no change to existing VP semantics. Committed as `8301b93`.
 - [x] **M5.3c — live overlay diagnostics:** MainWindow now feeds all placement records, VP centroids, and read-only validator findings into the canvas while retaining the slot/port review-page contract; placement mode alone enables the layer. Committed as `507057a`.
-- [ ] **M5.3d — transform editing:** add selection, dragging, rotation, reset, and undoable controller/manager updates before closing M5.3.
+- [x] **M5.3d — transform editing:** add selection, dragging, rotation, reset, and undoable controller/manager updates before closing M5.3. Committed across `3b6b3b4`, `14798d2`, `902a245`, `42d993e`, `d3e5e31`, `5a02a02`, `50e106b`, and `69b4d50`.
 - [x] **M5.4 — foundation building output:** profile-aware position/building writers now omit incomplete or unreviewed foundation records, preserve reviewed transforms and exact port sea references, and retain clearly marked compatibility placeholders only for acceptance/scaffold/legacy profiles. Legacy direct writer signatures remain positional-compatible. Committed as `ba8a207`.
 - [x] **M5.5 — weather positions:** profile-aware weather-position output now preserves reviewed/accepted manager records, remaps manager region IDs to emitted IDs, supports multiple positions and legal sizes, omits foundation centroid fallback, and retains deterministic compatibility fallback; pure containment/coverage/spacing validation is integrated into the registry and planner. Committed as `c3b2f68`.
 
@@ -871,6 +871,13 @@ Allow one or more authored/generated weather positions per strategic region, wit
 - **Evidence:** focused overlay model, canvas, MainWindow wiring, placement UI, and existing canvas regressions passed independently (17 model tests, 18 canvas/related tests, and 51 wiring/UI tests across the worker and parent reruns); compilation and diff checks passed. The implementation is committed as `9ef3a0b`, `8301b93`, and `507057a`.
 - **Worker/review note:** two narrowly scoped Muse Spark workers were used sequentially. The parent independently reviewed both diffs and reran the relevant suites. No controller/manager mutation, credential, or protected `.codex` file was touched.
 - **Next controlled slice:** add a small pure transform-update/undo contract for selected placement records, then wire selection and drag/rotation/reset interactions through `PlacementController`; keep M5.3 open until those edits are undoable and tested.
+
+### M5 checkpoint — placement editor and overlay complete (2026-09-19)
+
+- **Completed:** M5.3 now provides a standalone deterministic overlay model, map-sized transparent placement markers with provenance/review roles, explicit province-border/coastline context, VP/collision diagnostics, marker selection, clamped drag previews, x/y-only drag intent routed through the undoable `PlacementController`, and numeric rotation/height editing plus neutral reset through the page editor.
+- **Evidence:** the combined M5 placement/weather/export/UI regression passed; focused overlay, interaction, controller, and UI suites passed; all touched files compiled and `git diff --check` passed. Implementation commits: `9ef3a0b`, `8301b93`, `507057a`, `3b6b3b4`, `14798d2`, `902a245`, `42d993e`, `d3e5e31`, `5a02a02`, `50e106b`, and `69b4d50`.
+- **Worker/review note:** sequential Muse Spark workers handled narrow pure-model, canvas, service, controller, page, ToolPanel, and MainWindow slices. One canvas-interaction worker was allowed the full 15-minute window, stopped cleanly with no diff, and the parent implemented and reviewed that narrow slice. The parent independently reran the full regression. No credentials or protected `.codex` content were touched.
+- **Next controlled slice:** M5.2 proposal-generation integration remains open; do not mark M5 complete until the proposal acceptance/export flow is closed.
 
 ## M6 — graphics and asset-resolution pipeline
 
