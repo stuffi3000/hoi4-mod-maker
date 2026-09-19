@@ -1188,6 +1188,22 @@ Release a new 1.4.0 release on Github with an updated .exe file.
 3. Review the "final" exported project and address potential shortcomings (do not go overboard with new features).
 4. Potentially release a 1.4.1 hotfix.
 
+### M10 implementation checklist (2026-09-19)
+
+- [x] **Independent code review and artifact checks:** the M10 artifact/acceptance contracts, console-safety checks, Belgium foundation/acceptance exports, static verifier, repeated inventory comparison, compilation, and focused regression suites pass. The existing byte-baseline mismatch remains the documented M6 compatibility exception.
+- [x] **Steam/launcher transport diagnosis:** the harness now launches through Steam with `-applaunch 394360`, waits for a newly observed `hoi4.exe`, records `Paradox Launcher.exe`, and fails fast when the Codex sandbox cannot inspect the interactive desktop process list.
+- [x] **Unattended launch path:** `--skip-launcher` resolves and runs `hoi4.exe` directly and observes the game process by default. An elevated short probe observed a new HOI4 PID (`24928`); the probe was then stopped deliberately after process startup, before in-game checks.
+- [ ] **Real engine acceptance:** the ten M7 checks, fresh logs, at least 30 in-game days, save/reload, and clean map/asset findings still need to be completed in an interactive HOI4 session. Process startup alone does not claim Gate D.
+- [ ] **Final review and release decision:** review the accepted artifact, apply the M8 freeze/handoff workflow, and decide whether a 1.4.1 hotfix is warranted.
+
+### M10 launch-debug checkpoint (2026-09-19)
+
+- **Root cause:** the current Windows Steam entry starts `dowser.exe`, which opens the Paradox launcher. The captured launcher log shows it received `-- -nolauncher -mod ...`, but it remained open without starting `hoi4.exe`; passing `-nolauncher` through that default launcher handoff is therefore not a reliable skip mechanism for this installation.
+- **Implemented fix:** the harness distinguishes Steam-helper completion from game startup, reports launcher-only stalls explicitly, and exposes a direct executable path for unattended runs. The troubleshooting guide documents both the human-click Steam path and the direct `hoi4.exe` path.
+- **Evidence:** the elevated Steam probe reported `Paradox Launcher.exe is open, so the launcher has not started the game`; the corrected direct probe recorded `observed_pids: [24928]`. A normal sandbox run now refuses early with an actionable `tasklist cannot inspect desktop processes` diagnostic instead of producing a misleading timeout.
+- **Current local state:** the Paradox launcher opened by the diagnostic may still be visible and idle. Close it before the next interactive attempt, or use the documented direct path; no HOI4 probe process is intentionally left running.
+- **Next controlled slice:** run the exact acceptance artifact through the direct path or click **Play** once in the Steam/Paradox path, complete the ten checks, and record fresh logs/save evidence before claiming Gate D.
+
 ## 8. Suggested pull-request sequence
 
 Keep changes mergeable and reviewable. The following order avoids a single exporter rewrite:

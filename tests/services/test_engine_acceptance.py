@@ -334,6 +334,34 @@ def test_cli_execute_requires_executable(scratch_dir):
     assert code == 2
 
 
+def test_cli_skip_launcher_observes_hoi4_by_default(monkeypatch, scratch_dir):
+    """The direct skip-launcher path still waits for the game process."""
+    cli = _load_cli_module()
+    artifact = _make_artifact(scratch_dir / "artifact")
+    target = scratch_dir / "game"
+    target.mkdir()
+    executable = target / "hoi4.exe"
+    executable.write_bytes(b"fake executable")
+    captured = {}
+
+    def fake_run_harness(**kwargs):
+        captured["launch"] = kwargs["launch_config"]
+        return {"status": "dry_run", "launch": {}}
+
+    monkeypatch.setattr(cli.harness, "run_harness", fake_run_harness)
+    code = cli.main([
+        "--artifact-dir", str(artifact),
+        "--target", str(target),
+        "--launch-via", "steam",
+        "--skip-launcher",
+        "--execute",
+    ])
+
+    assert code == 0
+    assert captured["launch"].executable == str(executable)
+    assert captured["launch"].wait_for_process == "hoi4.exe"
+
+
 def test_execute_collects_post_launch_log_error(scratch_dir):
     """An opt-in launch appending a fresh error fails the run."""
     artifact = _make_artifact(scratch_dir / "artifact")

@@ -23,6 +23,29 @@ _VALID_STATE_CATEGORIES = frozenset({
 })
 
 
+def _safe_print(*values: object, sep: str = " ", end: str = "\n", file=None) -> None:
+    """Write verifier output without failing on legacy Windows code pages."""
+
+    stream = file if file is not None else sys.stdout
+    text = sep.join(str(value) for value in values) + end
+    try:
+        stream.write(text)
+    except UnicodeError:
+        encoding = getattr(stream, "encoding", None) or "ascii"
+        try:
+            safe_text = text.encode(encoding, errors="backslashreplace").decode(
+                encoding, errors="replace"
+            )
+        except (LookupError, UnicodeError):
+            safe_text = text.encode("ascii", errors="backslashreplace").decode(
+                "ascii"
+            )
+        stream.write(safe_text)
+    flush = getattr(stream, "flush", None)
+    if callable(flush):
+        flush()
+
+
 class ModVerifier:
     """Check HOI4 MOD output file by file and report any issues found"""
 
@@ -58,6 +81,7 @@ class ModVerifier:
 
     def verify_all(self) -> bool:
         """Runs all checks and returns True = Passed"""
+        print = _safe_print
         print(f"Verifying mod: {self.mod_dir}\n")
 
         self._run_all_checks()
@@ -103,7 +127,7 @@ class ModVerifier:
 
     def _log(self, msg: str) -> None:
         if not self._quiet:
-            print(msg)
+            _safe_print(msg)
 
     def _path(self, *parts):
         return os.path.join(self.mod_dir, *parts)
@@ -597,17 +621,24 @@ class ModVerifier:
     def _check_countries(self):
         """Check national documents"""
         self._log("[11/16] Checking countries...")
-        # Compatible with both old and new TAG registration file names: use 02_worldtest_countries.txt for the new version to avoid overwriting vanilla
+        # Compatible with old full/scaffold exports and the isolated M7
+        # acceptance profile.  Acceptance deliberately owns a separate
+        # registry so its temporary tags never collide with vanilla files.
         ct_dir = self._path("common", "country_tags")
         tag_file = None
-        for candidate in ("02_worldtest_countries.txt", "00_countries.txt"):
+        for candidate in (
+            "02_worldtest_countries.txt",
+            "00_countries.txt",
+            "99_acceptance_tags.txt",
+        ):
             p = os.path.join(ct_dir, candidate)
             if os.path.exists(p):
                 tag_file = p
                 break
         if tag_file is None:
             self.errors.append(
-                "Missing common/country_tags/02_worldtest_countries.txt (or legacy 00_countries.txt)"
+                "Missing common/country_tags/02_worldtest_countries.txt, "
+                "00_countries.txt, or 99_acceptance_tags.txt"
             )
             return
 
@@ -795,6 +826,7 @@ class ModVerifier:
 
 
 def main():
+    print = _safe_print
     if len(sys.argv) < 2:
         print("Usage: python -m export.verify_mod <MOD directory path>")
         print("Example: python -m export.verify_mod D:/Documents/Paradox Interactive/Hearts of Iron IV/mod/TestMOD")

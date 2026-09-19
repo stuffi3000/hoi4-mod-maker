@@ -226,11 +226,27 @@ def validate_staged_artifacts(output_dir: str, plan) -> list[str]:
     """
     errors: list[str] = []
     scope = dict(getattr(plan, "scope", {}) or {})
+    profile_name = str(getattr(plan, "profile_name", "") or "")
+
+    # A foundation is a map-owned handoff package, not a playable scenario.
+    # M5 placement writers deliberately emit empty (or omit) buildings and
+    # positions when no reviewed records exist; treating those files as
+    # mandatory non-empty engine products makes a valid draft foundation fail
+    # during staging.  Acceptance/scaffold/legacy exports still require the
+    # compatibility placement files because those profiles are intended to be
+    # playable.
+    foundation_optional_files = frozenset({
+        "map/buildings.txt",
+        "map/positions.txt",
+        "map/weatherpositions.txt",
+    }) if profile_name == "foundation" else frozenset()
 
     def enabled(key: str) -> bool:
         return bool(scope.get(key, True))
 
     def require_file(rel_path: str) -> None:
+        if rel_path in foundation_optional_files:
+            return
         path = os.path.join(output_dir, rel_path.replace("/", os.sep))
         if not os.path.isfile(path) or os.path.getsize(path) == 0:
             errors.append("missing or empty staged file: %s" % rel_path)

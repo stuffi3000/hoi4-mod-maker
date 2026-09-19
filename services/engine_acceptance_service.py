@@ -14,6 +14,7 @@ observed after the snapshot offset are classified.
 """
 from __future__ import annotations
 
+import csv
 import hashlib
 import json
 import os
@@ -548,8 +549,16 @@ def build_launch_config(
     cwd: str | os.PathLike[str] | None = None,
     env: Mapping[str, str] | Sequence[str] | None = None,
     timeout_seconds: float = 0.0,
+    wait_for_process: str = "",
+    startup_timeout_seconds: float = 30.0,
+    launcher_process: str = "",
 ) -> contract.LaunchConfig:
-    """Build a launch configuration from an argument list without shell strings."""
+    """Build a launch configuration from an argument list without shell strings.
+
+    ``wait_for_process`` is useful for Steam and Paradox launcher commands:
+    those commands can return after handing off to the game, so a successful
+    helper-process exit is not evidence that HOI4 actually started.
+    """
     parsed_args = [str(item) for item in (args or ())]
     for item in parsed_args:
         if not isinstance(item, str):
@@ -566,6 +575,12 @@ def build_launch_config(
         raise ValueError("launch timeout must be a number")
     if timeout < 0.0:
         raise ValueError("launch timeout must not be negative")
+    try:
+        startup_timeout = float(startup_timeout_seconds or 0.0)
+    except (TypeError, ValueError):
+        raise ValueError("startup timeout must be a number")
+    if startup_timeout < 0.0:
+        raise ValueError("startup timeout must not be negative")
     location = "" if cwd is None else str(cwd)
     return contract.LaunchConfig(
         executable=str(executable or ""),
@@ -573,6 +588,115 @@ def build_launch_config(
         cwd=location,
         env_names=env_names,
         timeout_seconds=timeout,
+        wait_for_process=str(wait_for_process or ""),
+        startup_timeout_seconds=startup_timeout,
+        launcher_process=str(launcher_process or ""),
+    )
+
+
+def discover_steam_executable(
+    target: str | os.PathLike[str] | None = None,
+) -> str:
+    """Find a local Steam executable without requiring a hard-coded install path."""
+    candidates: list[Path] = []
+    raw_target = str(target or "").strip()
+    if raw_target:
+        target_path = Path(raw_target)
+        for parent in (target_path, *target_path.parents):
+            candidates.append(parent / "steam.exe")
+            if parent.name.lower() == "steamapps":
+                candidates.append(parent.parent / "steam.exe")
+
+    for variable in ("PROGRAMFILES(X86)", "PROGRAMFILES", "LOCALAPPDATA"):
+        root = os.environ.get(variable, "")
+        if root:
+            candidates.append(Path(root) / "Steam" / "steam.exe")
+
+    if os.name == "nt":
+        try:
+            import winreg
+
+            for hive in (winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE):
+                for key_name in (
+                    r"Software\Valve\Steam",
+                    r"Software\WOW6432Node\Valve\Steam",
+                ):
+                    try:
+                        with winreg.OpenKey(hive, key_name) as key:
+                            value, _kind = winreg.QueryValueEx(key, "SteamExe")
+                    except (OSError, FileNotFoundError):
+                        continue
+                    if value:
+                        candidates.append(Path(str(value)))
+        except ImportError:
+            pass
+
+    seen: set[str] = set()
+    for candidate in candidates:
+        normalized = os.path.normcase(os.path.abspath(str(candidate)))
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        try:
+            if candidate.is_file():
+                return str(candidate)
+        except OSError:
+            continue
+    return ""
+
+
+def discover_game_executable(
+    target: str | os.PathLike[str] | None = None,
+    executable_name: str = "hoi4.exe",
+) -> str:
+    """Find a game executable below a selected installation directory."""
+    raw_target = str(target or "").strip()
+    if not raw_target:
+        return ""
+    candidate = Path(raw_target) / str(executable_name or "hoi4.exe")
+    try:
+        return str(candidate) if candidate.is_file() else ""
+    except OSError:
+        return ""
+
+
+def build_steam_launch_config(
+    app_id: str | int = "394360",
+    game_args: Sequence[str] = (),
+    steam_executable: str | os.PathLike[str] = "",
+    target: str | os.PathLike[str] | None = None,
+    cwd: str | os.PathLike[str] | None = None,
+    env: Mapping[str, str] | Sequence[str] | None = None,
+    timeout_seconds: float = 0.0,
+    wait_for_process: str = "hoi4.exe",
+    startup_timeout_seconds: float = 60.0,
+) -> contract.LaunchConfig:
+    """Build a Steam AppID launch that observes the real HOI4 process.
+
+    Steam's ``-applaunch`` helper may exit immediately after forwarding the
+    request to the already-running Steam client.  The returned configuration
+    therefore waits for a new ``hoi4.exe`` process before accepting the launch.
+    """
+    app_text = str(app_id or "").strip()
+    if not app_text:
+        raise ValueError("a Steam app id is required")
+    if not app_text.isdigit():
+        raise ValueError("Steam app id must contain only digits")
+    executable = str(steam_executable or "") or discover_steam_executable(target)
+    if not executable:
+        raise ValueError("could not find steam.exe; pass --steam-executable")
+    location = cwd
+    if location is None:
+        location = str(Path(executable).parent)
+    return build_launch_config(
+        executable=executable,
+        args=("-applaunch", app_text, *(str(item) for item in (game_args or ()))),
+        cwd=location,
+        env=env,
+        timeout_seconds=timeout_seconds,
+        wait_for_process=wait_for_process,
+        startup_timeout_seconds=startup_timeout_seconds,
+        launcher_process="Paradox Launcher.exe",
     )
 
 
@@ -584,6 +708,190 @@ def describe_launch(config: contract.LaunchConfig) -> dict[str, Any]:
     payload["executed"] = False
     payload["note"] = "Dry-run default: the command is recorded and never executed."
     return payload
+
+
+def _process_image_name(value: str) -> str:
+    """Return a Windows process image name from a path or bare image name."""
+    return str(value or "").replace("\\", "/").rsplit("/", 1)[-1]
+
+
+def _list_process_ids(image_name: str) -> set[int]:
+    """List process IDs for an image using Windows' built-in tasklist command."""
+    image = _process_image_name(image_name)
+    if not image or os.name != "nt":
+        return set()
+    try:
+        completed = subprocess.run(
+            ["tasklist", "/FI", "IMAGENAME eq %s" % image, "/FO", "CSV", "/NH"],
+            capture_output=True,
+            text=True,
+            errors="replace",
+            timeout=5.0,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return set()
+    result: set[int] = set()
+    for row in csv.reader((completed.stdout or "").splitlines()):
+        if len(row) < 2 or row[0].strip().lower() != image.lower():
+            continue
+        try:
+            result.add(int(row[1].strip()))
+        except (TypeError, ValueError):
+            continue
+    return result
+
+
+def _process_observation_error() -> str:
+    """Explain why Windows process observation is unavailable, when applicable."""
+    if os.name != "nt":
+        return "process observation requires Windows tasklist support"
+    try:
+        completed = subprocess.run(
+            ["tasklist", "/FO", "CSV", "/NH"],
+            capture_output=True,
+            text=True,
+            errors="replace",
+            timeout=5.0,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        return "could not run tasklist: %s" % str(exc)
+    combined = "%s\n%s" % (completed.stdout or "", completed.stderr or "")
+    lowered = combined.lower()
+    if completed.returncode != 0 or "access denied" in lowered or "zugriff verweigert" in lowered or "fehler:" in lowered:
+        first_line = next((line.strip() for line in combined.splitlines() if line.strip()), "unknown tasklist error")
+        return "tasklist cannot inspect desktop processes: %s" % first_line
+    return ""
+
+
+def _terminate_helper(process: subprocess.Popen[Any]) -> None:
+    """Stop only the helper process that the harness started, when possible."""
+    if process.poll() is not None:
+        return
+    try:
+        process.terminate()
+        process.wait(timeout=5.0)
+    except (OSError, subprocess.SubprocessError):
+        try:
+            process.kill()
+        except OSError:
+            pass
+
+
+def _execute_observed_launch(
+    config: contract.LaunchConfig,
+    env_values: Mapping[str, str] | None,
+) -> dict[str, Any]:
+    """Run a helper/launcher and wait for its newly created game process."""
+    image = _process_image_name(config.wait_for_process)
+    launcher_image = _process_image_name(config.launcher_process)
+    observation_error = _process_observation_error()
+    baseline = _list_process_ids(image)
+    launcher_baseline = _list_process_ids(launcher_image)
+    argv = config.argv()
+    workdir = str(config.cwd) if str(config.cwd) else None
+    if config.env_names:
+        source = dict(env_values or {})
+        if not source:
+            source = dict(os.environ)
+        child_env = {name: str(source[name]) for name in config.env_names if name in source}
+    else:
+        child_env = None
+    outcome: dict[str, Any] = config.to_dict()
+    outcome.update({
+        "mode": "executed",
+        "argv": argv,
+        "executed": True,
+        "observed_process": image,
+        "observed_pids": [],
+        "launcher_process": launcher_image,
+        "launcher_pids": sorted(launcher_baseline),
+        "launcher_detected": bool(launcher_baseline),
+        "process_observation_error": observation_error,
+        "helper_returncode": None,
+        "stdout": "",
+        "stderr": "",
+        "stdout_truncated": False,
+        "stderr_truncated": False,
+    })
+    if observation_error:
+        outcome.update({
+            "status": "launch_failed",
+            "returncode": None,
+            "error": observation_error,
+        })
+        return outcome
+    try:
+        helper = subprocess.Popen(
+            argv,
+            cwd=workdir,
+            env=child_env,
+            shell=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except (OSError, ValueError) as exc:
+        outcome.update({"status": "launch_failed", "returncode": None, "error": str(exc)})
+        return outcome
+
+    started_at = time.monotonic()
+    startup_timeout = float(config.startup_timeout_seconds or 0.0)
+    startup_deadline = started_at + startup_timeout if startup_timeout > 0.0 else None
+    observed: set[int] = set()
+    while True:
+        observed = _list_process_ids(image) - baseline
+        if observed:
+            break
+        launcher_observed = _list_process_ids(launcher_image) - launcher_baseline
+        if launcher_observed:
+            outcome["launcher_detected"] = True
+            outcome["launcher_pids"] = sorted(launcher_observed)
+        helper_returncode = helper.poll()
+        if startup_deadline is not None and time.monotonic() >= startup_deadline:
+            _terminate_helper(helper)
+            outcome.update({
+                "status": "timeout",
+                "returncode": None,
+                "helper_returncode": helper_returncode,
+                "error": "timed out waiting for %s to appear after %s seconds" % (image, str(startup_timeout)),
+            })
+            if outcome["launcher_detected"]:
+                outcome["error"] = (
+                    "timed out waiting for %s; %s is open, so the launcher has not started the game"
+                    % (image, launcher_image or "the game launcher")
+                )
+            return outcome
+        time.sleep(0.25)
+
+    observed_list = sorted(observed)
+    outcome["observed_pids"] = observed_list
+    session_timeout = float(config.timeout_seconds or 0.0)
+    session_deadline = time.monotonic() + session_timeout if session_timeout > 0.0 else None
+    while _list_process_ids(image).intersection(observed):
+        if session_deadline is not None and time.monotonic() >= session_deadline:
+            outcome.update({
+                "status": "timeout",
+                "returncode": None,
+                "helper_returncode": helper.poll(),
+                "error": "timed out waiting for %s to exit after %s seconds" % (image, str(session_timeout)),
+            })
+            return outcome
+        time.sleep(0.5)
+
+    helper_returncode = helper.poll()
+    if helper_returncode is None:
+        try:
+            helper_returncode = helper.wait(timeout=5.0)
+        except subprocess.TimeoutExpired:
+            helper_returncode = None
+    outcome.update({
+        "status": "exited",
+        "returncode": int(helper_returncode) if helper_returncode is not None else 0,
+        "helper_returncode": int(helper_returncode) if helper_returncode is not None else None,
+        "error": "",
+    })
+    return outcome
 
 
 def execute_launch(
@@ -605,6 +913,8 @@ def execute_launch(
     if limit <= 0:
         raise ValueError("capture limit must be positive")
     capture_limit = limit
+    if str(config.wait_for_process or "").strip():
+        return _execute_observed_launch(config, env_values=env_values)
     argv = config.argv()
     workdir = str(config.cwd) if str(config.cwd) else None
     if config.env_names:

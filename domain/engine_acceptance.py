@@ -397,6 +397,9 @@ class LaunchConfig:
     cwd: str = ""
     env_names: tuple[str, ...] = ()
     timeout_seconds: float = 0.0
+    wait_for_process: str = ""
+    startup_timeout_seconds: float = 30.0
+    launcher_process: str = ""
 
     def argv(self) -> list[str]:
         """Return the exact argument vector that would be executed without a shell."""
@@ -412,6 +415,9 @@ class LaunchConfig:
             "executable_name": self.executable_name(),
             "args": [str(item) for item in self.args],
             "timeout_seconds": float(self.timeout_seconds or 0.0),
+            "wait_for_process": str(self.wait_for_process or ""),
+            "startup_timeout_seconds": float(self.startup_timeout_seconds or 0.0),
+            "launcher_process": str(self.launcher_process or ""),
         }
 
     def to_dict(self) -> dict[str, Any]:
@@ -422,6 +428,9 @@ class LaunchConfig:
             "cwd": str(self.cwd or ""),
             "env_names": [str(item) for item in self.env_names],
             "timeout_seconds": float(self.timeout_seconds or 0.0),
+            "wait_for_process": str(self.wait_for_process or ""),
+            "startup_timeout_seconds": float(self.startup_timeout_seconds or 0.0),
+            "launcher_process": str(self.launcher_process or ""),
         }
 
     @classmethod
@@ -448,12 +457,19 @@ class LaunchConfig:
             timeout = float(source.get("timeout_seconds", 0.0) or 0.0)
         except (TypeError, ValueError):
             timeout = 0.0
+        try:
+            startup_timeout = float(source.get("startup_timeout_seconds", 30.0) or 0.0)
+        except (TypeError, ValueError):
+            startup_timeout = 30.0
         return cls(
             executable=str(source.get("executable", "") or ""),
             args=parsed_args,
             cwd=str(source.get("cwd", "") or ""),
             env_names=parsed_names,
             timeout_seconds=timeout,
+            wait_for_process=str(source.get("wait_for_process", "") or ""),
+            startup_timeout_seconds=startup_timeout,
+            launcher_process=str(source.get("launcher_process", "") or ""),
         )
 
 

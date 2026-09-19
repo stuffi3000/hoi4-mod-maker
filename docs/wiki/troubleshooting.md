@@ -115,6 +115,38 @@ M7 CLI tool to inspect or run the checklist, then use
 `tools/foundation_freeze.py record-acceptance` only for a successful exact
 identity record.
 
+### Steam and the Paradox launcher
+
+The current Windows Steam entry for HOI4 starts `dowser.exe`, which opens the
+Paradox launcher before it starts `hoi4.exe`. The assisted harness therefore
+does not treat a successful `steam.exe` helper exit as a game launch: Steam
+mode waits for a new `hoi4.exe` process and records whether `Paradox
+Launcher.exe` is open while waiting.
+
+Use the Steam path when a human will click **Play** in the launcher:
+
+```text
+python tools/run_engine_acceptance.py \
+  --artifact-dir out/acceptance \
+  --target "C:/Program Files (x86)/Steam/steamapps/common/Hearts of Iron IV" \
+  --launch-via steam --execute
+```
+
+For an unattended acceptance run, use the direct game executable. The
+`--skip-launcher` switch resolves `hoi4.exe` below `--target`; it does not
+pretend that passing `-nolauncher` to the current Steam `dowser.exe` command
+selected a different Steam launch entry:
+
+```text
+python tools/run_engine_acceptance.py \
+  --artifact-dir out/acceptance \
+  --target "C:/Program Files (x86)/Steam/steamapps/common/Hearts of Iron IV" \
+  --launch-via steam --skip-launcher --execute
+```
+
+If the launcher is left open, the harness reports that state and the missing
+HOI4 process instead of calling the run a generic timeout or acceptance.
+
 For a foundation change, compare the new manifest before rerunning content:
 
 ```text

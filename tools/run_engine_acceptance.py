@@ -53,8 +53,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--archive-logs-to", type=Path, default=None, help="Copy pre-run log bytes aside for later proof.")
     parser.add_argument("--save-dir", type=Path, default=None, help="Directory watched for expected save files.")
     parser.add_argument("--save-name", dest="save_names", action="append", default=[], help="Expected save file name (repeatable).")
-    parser.add_argument("--game-executable", default="", help="Game or launcher executable recorded or executed.")
+    parser.add_argument("--launch-via", choices=("auto", "direct", "steam"), default="auto", help="Launch directly or submit the game through Steam; auto uses Steam when no direct executable is supplied.")
+    parser.add_argument("--game-executable", default="", help="Game or launcher executable for direct mode.")
+    parser.add_argument("--steam-executable", default="", help="Steam executable; auto-discovered from --target when omitted.")
+    parser.add_argument("--steam-app-id", default="394360", help="Steam AppID (default: HOI4 394360).")
+    parser.add_argument("--skip-launcher", action="store_true", help="Bypass the Steam/Paradox launcher and run hoi4.exe directly; this is the unattended path.")
     parser.add_argument("--game-arg", dest="game_args", action="append", default=[], help="Game argument (repeatable, no shell).")
+    parser.add_argument("--wait-for-process", default="", help="Process image that must appear for a launcher/Steam launch to count as started.")
+    parser.add_argument("--startup-timeout-seconds", type=float, default=60.0, help="How long to wait for the observed game process to appear.")
     parser.add_argument("--cwd", default="", help="Working directory for an executed launch.")
     parser.add_argument("--env", dest="env_vars", action="append", default=[], metavar="NAME=VALUE", help="Environment entry for an executed launch (repeatable).")
     parser.add_argument("--timeout-seconds", type=float, default=0.0, help="Timeout for an executed launch; 0 waits for exit.")
@@ -124,6 +130,12 @@ def print_summary(result: Mapping[str, Any], output_path: str) -> None:
     launch = result.get("launch", {})
     if isinstance(launch, dict):
         print("launch: mode=%s executed=%s argv=%s" % (launch.get("mode", ""), launch.get("executed", False), launch.get("argv", [])))
+        if launch.get("launcher_detected"):
+            print("launcher: detected=%s process=%s pids=%s" % (
+                launch.get("launcher_detected", False),
+                launch.get("launcher_process", ""),
+                launch.get("launcher_pids", []),
+            ))
     logs = result.get("logs", {})
     if isinstance(logs, dict):
         summary = logs.get("summary", {})
@@ -142,9 +154,6 @@ def print_summary(result: Mapping[str, Any], output_path: str) -> None:
 def main(argv: list[str] | None = None) -> int:
     """Run the harness from command-line arguments and return a process exit code."""
     args = build_parser().parse_args(argv)
-    if args.execute and not args.game_executable:
-        print("Error: --execute requires --game-executable.", file=sys.stderr)
-        return EXIT_USAGE
     if args.save_names and not args.save_dir:
         print("Error: --save-name requires --save-dir.", file=sys.stderr)
         return EXIT_USAGE
@@ -156,14 +165,54 @@ def main(argv: list[str] | None = None) -> int:
         return EXIT_USAGE
     try:
         launch_config = None
-        if args.game_executable:
+        launch_via = str(args.launch_via or "auto")
+        if launch_via == "auto":
+            if args.game_executable:
+                launch_via = "direct"
+            elif args.target or args.steam_executable:
+                launch_via = "steam"
+            else:
+                launch_via = "none"
+        if launch_via == "steam":
+            game_args = list(args.game_args)
+            if args.skip_launcher:
+                direct_executable = args.game_executable or harness.discover_game_executable(args.target)
+                if not direct_executable:
+                    raise ValueError("--skip-launcher requires --target containing hoi4.exe or --game-executable")
+                launch_config = harness.build_launch_config(
+                    executable=direct_executable,
+                    args=tuple(game_args),
+                    cwd=args.cwd or args.target or None,
+                    env=env_values,
+                    timeout_seconds=args.timeout_seconds,
+                    wait_for_process=args.wait_for_process or "hoi4.exe",
+                    startup_timeout_seconds=args.startup_timeout_seconds,
+                )
+            else:
+                launch_config = harness.build_steam_launch_config(
+                    app_id=args.steam_app_id,
+                    game_args=tuple(game_args),
+                    steam_executable=args.steam_executable,
+                    target=args.target or None,
+                    cwd=args.cwd or None,
+                    env=env_values,
+                    timeout_seconds=args.timeout_seconds,
+                    wait_for_process=args.wait_for_process or "hoi4.exe",
+                    startup_timeout_seconds=args.startup_timeout_seconds,
+                )
+        elif args.game_executable:
             launch_config = harness.build_launch_config(
                 executable=args.game_executable,
                 args=tuple(args.game_args),
                 cwd=args.cwd or None,
                 env=env_values,
                 timeout_seconds=args.timeout_seconds,
+                wait_for_process=args.wait_for_process,
+                startup_timeout_seconds=args.startup_timeout_seconds,
             )
+        elif args.execute:
+            print("Error: --execute requires --game-executable or --launch-via steam.", file=sys.stderr)
+            return EXIT_USAGE
         log_paths = harness.resolve_log_paths(explicit_logs=[str(item) for item in args.logs], log_dir=args.log_dir)
         result = harness.run_harness(
             artifact_dir=args.artifact_dir,
