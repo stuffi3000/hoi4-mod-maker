@@ -663,19 +663,173 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
             self._refresh_placement_page()
         elif mode == "logistics":
             self._refresh_logistics_counts()
+        canvas = getattr(self, "_canvas", None)
+        if canvas is not None:
+            try:
+                canvas.set_placement_overlay_visible(mode == "placement")
+            except Exception:
+                pass
         self._refresh_feature_statuses()
         # Detect ID holes when entering province mode
         if mode == "province":
             self._check_province_gaps()
 
+    def _build_placement_overlay_vp_points(self) -> list:
+        """Build read-only VP overlay inputs from positive state VPs."""
+        try:
+            project = getattr(self, "_project", None)
+            state_mgr = getattr(project, "state_mgr", None)
+            map_data = getattr(project, "map_data", None)
+            if state_mgr is None or map_data is None:
+                return []
+            states = getattr(state_mgr, "states", None)
+            if states is None:
+                states = getattr(state_mgr, "_states", None)
+            if states is None:
+                return []
+            try:
+                state_values = list(states.values())
+            except Exception:
+                return []
+            centroid_fn = getattr(map_data, "get_province_centroid", None)
+            if centroid_fn is None:
+                return []
+            import math as _math
+            seen = set()
+            points = []
+            for state in state_values:
+                try:
+                    vp_map = getattr(state, "victory_points", None)
+                except Exception:
+                    continue
+                if vp_map is None:
+                    continue
+                try:
+                    items = list(vp_map.items())
+                except Exception:
+                    continue
+                for raw_pid, raw_val in items:
+                    try:
+                        pid = int(raw_pid)
+                    except Exception:
+                        continue
+                    try:
+                        val = float(raw_val)
+                    except Exception:
+                        continue
+                    if pid <= 0 or not (val > 0):
+                        continue
+                    if pid in seen:
+                        continue
+                    try:
+                        centroid = centroid_fn(pid)
+                    except Exception:
+                        continue
+                    if centroid is None:
+                        continue
+                    try:
+                        cx, cy = centroid
+                        fx = float(cx)
+                        fy = float(cy)
+                    except Exception:
+                        continue
+                    try:
+                        if not (_math.isfinite(fx) and _math.isfinite(fy)):
+                            continue
+                    except Exception:
+                        continue
+                    seen.add(pid)
+                    points.append((pid, fx, fy))
+            points.sort(key=lambda item: (item[0], item[1], item[2]))
+            return points
+        except Exception:
+            return []
+
+    def _build_placement_overlay_findings(self, placement_entries, building_entries, weather_entries) -> list:
+        """Build read-only collision diagnostics for the placement overlay."""
+        try:
+            from domain.validators.placement import validate_placement_references
+        except Exception:
+            return []
+        try:
+            project = getattr(self, "_project", None)
+            map_data = getattr(project, "map_data", None)
+            province_map = getattr(map_data, "province_map", None)
+            tile_map = getattr(map_data, "tile_map", None)
+            state_mgr = getattr(project, "state_mgr", None)
+            sr_mgr = getattr(project, "strategic_region_mgr", None)
+            findings = validate_placement_references(
+                province_map,
+                tile_map,
+                placement_entries=placement_entries,
+                building_entries=building_entries,
+                weather_entries=weather_entries,
+                state_mgr=state_mgr,
+                strategic_region_mgr=sr_mgr,
+            )
+            if findings is None:
+                return []
+            return list(findings)
+        except Exception:
+            return []
+
     def _refresh_placement_page(self) -> None:
-        """Refresh the slot/port review list from the live placement manager."""
+        """Refresh the slot/port review list and the read-only canvas overlay."""
         page = getattr(self._tool_panel, "_placement_page", None)
         if page is None:
             return
-        manager = self._project.map_placement_mgr
-        records = list(manager.list_province_slots()) + list(manager.list_ports())
-        page.set_records(records)
+        project = getattr(self, "_project", None)
+        manager = getattr(project, "map_placement_mgr", None)
+        if manager is None:
+            return
+        try:
+            slots = list(manager.list_province_slots())
+        except Exception:
+            slots = []
+        try:
+            ports = list(manager.list_ports())
+        except Exception:
+            ports = []
+        try:
+            buildings = list(manager.list_buildings())
+        except Exception:
+            buildings = []
+        try:
+            weather = list(manager.list_weather())
+        except Exception:
+            weather = []
+        page.set_records(list(slots) + list(ports))
+        try:
+            overlay_records = list(slots) + list(ports) + list(buildings) + list(weather)
+        except Exception:
+            overlay_records = []
+        try:
+            try:
+                vp_points = self._build_placement_overlay_vp_points()
+            except AttributeError:
+                vp_points = MainWindow._build_placement_overlay_vp_points(self)
+        except Exception:
+            vp_points = []
+        try:
+            try:
+                findings = self._build_placement_overlay_findings(
+                    list(slots) + list(ports), list(buildings), list(weather)
+                )
+            except AttributeError:
+                findings = MainWindow._build_placement_overlay_findings(
+                    self, list(slots) + list(ports), list(buildings), list(weather)
+                )
+        except Exception:
+            findings = []
+        canvas = getattr(self, "_canvas", None)
+        if canvas is None:
+            return
+        try:
+            canvas.set_placement_overlay_data(
+                overlay_records, vp_points=vp_points, findings=findings
+            )
+        except Exception:
+            pass
 
     def _on_placement_generate_slots(self) -> None:
         """Generate explicit land-slot proposals through the controller."""
