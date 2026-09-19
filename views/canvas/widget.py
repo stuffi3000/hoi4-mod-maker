@@ -341,6 +341,14 @@ class MapCanvas(InputMixin, OverlayMixin, NameLabelsMixin, RefImageMixin, QGraph
             "terrain": False,
             "province_terrain": False,
         }
+        self._placement_overlay_item = QGraphicsPixmapItem()
+        self._placement_overlay_item.setZValue(8)
+        self._placement_overlay_item.setVisible(False)
+        self._scene.addItem(self._placement_overlay_item)
+        self._placement_overlay_enabled = False
+        self._placement_records = ()
+        self._placement_vp_points = ()
+        self._placement_findings = ()
 
         # Name tag overlay (showing names in state/country mode)
         self._init_name_labels()
@@ -410,6 +418,15 @@ class MapCanvas(InputMixin, OverlayMixin, NameLabelsMixin, RefImageMixin, QGraph
         # The same goes for terrain basemaps — follow heightmap
         if getattr(self, '_terrain_underlay_visible', False):
             self.refresh_terrain_underlay()
+        try:
+            if getattr(self, '_placement_overlay_enabled', False):
+                self._render_placement_overlay()
+            else:
+                _placement_item = getattr(self, '_placement_overlay_item', None)
+                if _placement_item is not None:
+                    _placement_item.setVisible(False)
+        except Exception:
+            pass
 
     @property
     def map_data(self):

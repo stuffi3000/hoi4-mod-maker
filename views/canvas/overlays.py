@@ -1,9 +1,9 @@
 """Overlay Mixin — Province border/VP marker/Transform box/Lasso/Brush cursor
 Split from canvas_widget.py"""
 import numpy as np
-from PyQt5.QtCore import Qt, QRectF
+from PyQt5.QtCore import Qt, QPointF, QRectF
 from PyQt5.QtGui import (
-    QImage, QPixmap, QPainter, QColor, QPen, QPainterPath, QBrush,
+    QImage, QPixmap, QPainter, QColor, QPen, QPainterPath, QBrush, QPolygonF,
 )
 
 # Modes that are allowed to be displayed by the country/state attribution overlay (those in which the base view itself is not colored by country/state).
@@ -14,6 +14,77 @@ CS_OVERLAY_ALLOWED_MODES = frozenset({
     "logistics", "colormap", "default_map", "province_terrain",
     "state", "country",
 })
+
+_PLACEMENT_ROLE_COLORS = {
+    "reviewed": (46, 204, 113),
+    "accepted": (26, 188, 156),
+    "generated": (241, 196, 15),
+    "authored": (52, 152, 219),
+    "unreviewed": (149, 165, 166),
+    "vp": (230, 30, 150),
+    "collision": (255, 70, 0),
+}
+
+
+def _placement_role_color(role):
+    """Map a pure-model role string to a Qt color."""
+    try:
+        key = str(role).strip().lower()
+    except Exception:
+        key = ""
+    rgb = _PLACEMENT_ROLE_COLORS.get(key, _PLACEMENT_ROLE_COLORS["unreviewed"])
+    return QColor(rgb[0], rgb[1], rgb[2], 255)
+
+
+def _draw_placement_marker(painter, kind, x, y, color):
+    """Draw one marker symbol centered at fractional map coordinates."""
+    fx = float(x)
+    fy = float(y)
+    white = QColor(255, 255, 255, 230)
+    if kind == "slot":
+        painter.setPen(QPen(white, 1))
+        painter.setBrush(QBrush(color))
+        painter.drawRect(QRectF(fx - 3.5, fy - 3.5, 7.0, 7.0))
+    elif kind == "port":
+        painter.setPen(QPen(white, 1))
+        painter.setBrush(QBrush(color))
+        painter.drawEllipse(QRectF(fx - 4.5, fy - 4.5, 9.0, 9.0))
+    elif kind == "building":
+        painter.setPen(QPen(white, 1))
+        painter.setBrush(QBrush(color))
+        painter.drawPolygon(QPolygonF([
+            QPointF(fx, fy - 5.0),
+            QPointF(fx - 4.5, fy + 3.5),
+            QPointF(fx + 4.5, fy + 3.5),
+        ]))
+    elif kind == "weather":
+        painter.setPen(QPen(white, 1))
+        painter.setBrush(QBrush(color))
+        painter.drawPolygon(QPolygonF([
+            QPointF(fx, fy - 5.0),
+            QPointF(fx + 5.0, fy),
+            QPointF(fx, fy + 5.0),
+            QPointF(fx - 5.0, fy),
+        ]))
+    elif kind == "vp":
+        painter.setPen(QPen(white, 2))
+        painter.setBrush(QBrush(color))
+        painter.drawEllipse(QRectF(fx - 5.5, fy - 5.5, 11.0, 11.0))
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QBrush(QColor(255, 255, 255, 255)))
+        painter.drawEllipse(QRectF(fx - 1.5, fy - 1.5, 3.0, 3.0))
+    elif kind == "collision":
+        painter.setPen(QPen(white, 5))
+        painter.drawLine(QPointF(fx - 5.0, fy - 5.0), QPointF(fx + 5.0, fy + 5.0))
+        painter.drawLine(QPointF(fx - 5.0, fy + 5.0), QPointF(fx + 5.0, fy - 5.0))
+        painter.setPen(QPen(color, 3))
+        painter.drawLine(QPointF(fx - 5.0, fy - 5.0), QPointF(fx + 5.0, fy + 5.0))
+        painter.drawLine(QPointF(fx - 5.0, fy + 5.0), QPointF(fx + 5.0, fy - 5.0))
+    else:
+        painter.setPen(QPen(white, 1))
+        painter.setBrush(QBrush(color))
+        painter.drawEllipse(QRectF(fx - 3.0, fy - 3.0, 6.0, 6.0))
+
 
 class OverlayMixin:
     """Overlay related methods. Assume self owns:
@@ -505,3 +576,106 @@ class OverlayMixin:
             overlay_item = getattr(self, '_density_overlay_item', None)
             if overlay_item:
                 overlay_item.setVisible(False)
+
+    def set_placement_overlay_data(self, records=(), vp_points=(), findings=()):
+        """Provide placement records, VP points, and validation findings."""
+        self._placement_records = () if records is None else records
+        self._placement_vp_points = () if vp_points is None else vp_points
+        self._placement_findings = () if findings is None else findings
+        self._render_placement_overlay()
+
+    def set_placement_overlay_visible(self, visible):
+        """Toggle the read-only placement overlay."""
+        self._placement_overlay_enabled = bool(visible)
+        if not self._placement_overlay_enabled:
+            item = getattr(self, "_placement_overlay_item", None)
+            if item is not None:
+                try:
+                    item.setPixmap(QPixmap())
+                except Exception:
+                    pass
+                try:
+                    item.setVisible(False)
+                except Exception:
+                    pass
+            return
+        self._render_placement_overlay()
+
+    def _render_placement_overlay(self):
+        """Render pure-model markers into a transparent map-sized pixmap."""
+        item = getattr(self, "_placement_overlay_item", None)
+        if item is None:
+            return
+        if not bool(getattr(self, "_placement_overlay_enabled", False)):
+            try:
+                item.setVisible(False)
+            except Exception:
+                pass
+            return
+        try:
+            width = int(self.map_w)
+            height = int(self.map_h)
+        except Exception:
+            try:
+                item.setVisible(False)
+            except Exception:
+                pass
+            return
+        if width <= 0 or height <= 0:
+            try:
+                item.setVisible(False)
+            except Exception:
+                pass
+            return
+        records = getattr(self, "_placement_records", ())
+        vp_points = getattr(self, "_placement_vp_points", ())
+        findings = getattr(self, "_placement_findings", ())
+        try:
+            from features.map.placement.overlay import build_placement_overlay_model
+        except Exception:
+            try:
+                item.setVisible(False)
+            except Exception:
+                pass
+            return
+        try:
+            model = build_placement_overlay_model(
+                records,
+                vp_points=vp_points,
+                findings=findings,
+                width=width,
+                height=height,
+            )
+        except Exception:
+            try:
+                item.setVisible(False)
+            except Exception:
+                pass
+            return
+        try:
+            image = QImage(width, height, QImage.Format.Format_ARGB32)
+            image.fill(QColor(0, 0, 0, 0))
+            painter = QPainter(image)
+            try:
+                painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+                for marker in getattr(model, "markers", ()):
+                    try:
+                        color = _placement_role_color(getattr(marker, "role", "unreviewed"))
+                        _draw_placement_marker(
+                            painter,
+                            getattr(marker, "kind", ""),
+                            marker.x,
+                            marker.y,
+                            color,
+                        )
+                    except Exception:
+                        continue
+            finally:
+                painter.end()
+            item.setPixmap(QPixmap.fromImage(image))
+            item.setVisible(True)
+        except Exception:
+            try:
+                item.setVisible(False)
+            except Exception:
+                pass
