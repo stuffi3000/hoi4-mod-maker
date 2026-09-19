@@ -78,7 +78,9 @@ def main() -> int:
         print(__doc__)
         return 2
     source = args[0]
-    default_out = "preview_vanilla.png" if source == "vanilla" else "preview.png"
+    default_out = os.path.join(
+        "images", "preview_vanilla.png" if source == "vanilla" else "preview.png"
+    )
     out_path = args[1] if len(args) > 1 else default_out
 
     assets = GameAssets()
