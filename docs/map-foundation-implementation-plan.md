@@ -1107,12 +1107,24 @@ After parity:
 
 Update:
 
-- `README.md` with profile and foundation workflow;
+- `README.md` with profile and foundation workflow, as well as with new English screenshots, updated functionality descriptions, updated links, and overall review;
+- `README.md` to add "AmonStreeling", the original developer, into the credits, along with "Stuffi3000", the current developer of the fork.
 - `docs/TUTORIAL.md` with draft → candidate → frozen → accepted lifecycle;
 - `docs/wiki/map-core.md` with profile/manifest rules;
 - `docs/wiki/buildings-supply.md` with graph and placement review;
 - `docs/wiki/troubleshooting.md` with finding codes and engine harness;
 - command-line help and export-dialog explanations.
+- the release/version number to 1.4.0
+
+Add `CHANGELOG.md` with a comprehensive changelog between version 1.3.4 and 1.4.0, spanning all commits made between these to versions
+
+Release a new 1.4.0 release on Github with an updated .exe file.
+
+## M10. Full Testing
+
+- Test each milestone from a code point of view.
+- Use the M7 testing harness in order to test a full export of the Belgium project.
+- Review the exported project and address potential shortcomings.
 
 ## 8. Suggested pull-request sequence
 
