@@ -540,6 +540,12 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
         tp.placement_accept_selected_requested.connect(
             self._on_placement_accept_selected
         )
+        tp.placement_transform_update_requested.connect(
+            self._on_placement_transform_update
+        )
+        tp.placement_transform_reset_requested.connect(
+            self._on_placement_transform_reset
+        )
         tp.placement_refresh_requested.connect(self._refresh_placement_page)
 
         # Colormap signal → controller
@@ -800,6 +806,13 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
             weather = []
         page.set_records(list(slots) + list(ports))
         try:
+            try:
+                self._sync_placement_transform_selection()
+            except AttributeError:
+                MainWindow._sync_placement_transform_selection(self)
+        except Exception:
+            pass
+        try:
             overlay_records = list(slots) + list(ports) + list(buildings) + list(weather)
         except Exception:
             overlay_records = []
@@ -886,6 +899,131 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
             f"Accepted {report.accepted_count} placement record(s); "
             f"missing {report.missing_count}."
         )
+
+    def _sync_placement_transform_selection(self) -> None:
+        page = getattr(getattr(self, "_tool_panel", None), "_placement_page", None)
+        if page is None:
+            return
+        selected_fn = getattr(page, "selected_transform", None)
+        if selected_fn is None:
+            return
+        try:
+            selection = selected_fn()
+        except Exception:
+            return
+        if selection is None:
+            return
+        try:
+            kind = selection[0]
+            key = selection[1]
+        except Exception:
+            return
+        project = getattr(self, "_project", None)
+        manager = getattr(project, "map_placement_mgr", None)
+        if manager is None:
+            return
+        try:
+            record = None
+            normalized_key = key
+            if kind == "slot":
+                if not isinstance(key, (tuple, list)) or len(key) != 2:
+                    record = None
+                else:
+                    getter = getattr(manager, "get_province_slot", None)
+                    if getter is None:
+                        return
+                    province_id, slot_index = key[0], key[1]
+                    record = getter(province_id, slot_index)
+                    normalized_key = (province_id, slot_index)
+            elif kind == "port":
+                getter = getattr(manager, "get_port", None)
+                if getter is None:
+                    return
+                record = getter(key)
+            elif kind == "building":
+                getter = getattr(manager, "get_building", None)
+                if getter is None:
+                    return
+                record = getter(key)
+            elif kind == "weather":
+                getter = getattr(manager, "get_weather", None)
+                if getter is None:
+                    return
+                record = getter(key)
+            else:
+                record = None
+        except Exception:
+            return
+        if record is None:
+            clearer = getattr(page, "clear_transform_selection", None)
+            if clearer is None:
+                return
+            try:
+                clearer()
+            except Exception:
+                pass
+            return
+        try:
+            from collections.abc import Mapping as _Mapping
+            if isinstance(record, _Mapping):
+                live_x = record["x"]
+                live_y = record["y"]
+                live_rotation = record["rotation"]
+                live_height = record["height"]
+            else:
+                live_x = getattr(record, "x")
+                live_y = getattr(record, "y")
+                live_rotation = getattr(record, "rotation")
+                live_height = getattr(record, "height")
+            live_x = float(live_x)
+            live_y = float(live_y)
+            live_rotation = float(live_rotation)
+            live_height = float(live_height)
+        except Exception:
+            return
+        setter = getattr(page, "set_transform_selection", None)
+        if setter is None:
+            return
+        try:
+            setter(kind, normalized_key, live_x, live_y, live_rotation, live_height)
+        except Exception:
+            pass
+
+    def _on_placement_transform_update(
+        self,
+        kind: str,
+        key: object,
+        x: float,
+        y: float,
+        rotation: float,
+        height: float,
+    ) -> None:
+        page = self._tool_panel._placement_page
+        try:
+            changed = self._controllers["placement"].update_transform(
+                kind, key, x=x, y=y, rotation=rotation, height=height
+            )
+        except (TypeError, ValueError, KeyError) as exc:
+            try:
+                page.set_status(f"Placement transform update failed: {exc}")
+            except Exception:
+                pass
+            return
+        if changed:
+            self._refresh_placement_page()
+
+    def _on_placement_transform_reset(self, kind: str, key: object) -> None:
+        page = self._tool_panel._placement_page
+        try:
+            changed = self._controllers["placement"].reset_transform(kind, key)
+        except (TypeError, ValueError, KeyError) as exc:
+            try:
+                page.set_status(f"Placement transform reset failed: {exc}")
+            except Exception:
+                pass
+            return
+        if changed:
+            self._refresh_placement_page()
 
     def _on_preview_refresh(self) -> None:
         """"Refresh Preview" on the preview page: clears the synthesis cache and resynthesizes immediately in preview mode."""

@@ -2,6 +2,8 @@
 
 from types import SimpleNamespace
 
+import inspect
+
 import numpy as np
 
 from views.main_window import MainWindow
@@ -60,11 +62,20 @@ def _weather(wid, region=4, x=20.0, y=21.0, **extra):
     return SimpleNamespace(**fields)
 
 
+def _record_field(record, name):
+    if isinstance(record, dict):
+        return record.get(name)
+    return getattr(record, name, None)
+
+
 class _FakePage:
     def __init__(self):
         self.records = None
         self.diagnostics_calls = []
         self.status_calls = []
+        self.transform_selection = None
+        self.set_transform_calls = []
+        self.clear_transform_calls = 0
 
     def set_records(self, records):
         self.records = list(records)
@@ -74,6 +85,17 @@ class _FakePage:
 
     def set_status(self, text):
         self.status_calls.append(text)
+
+    def selected_transform(self):
+        return self.transform_selection
+
+    def set_transform_selection(self, kind, key, x, y, rotation, height):
+        self.set_transform_calls.append((kind, key, float(x), float(y), float(rotation), float(height)))
+        self.transform_selection = (kind, key, float(x), float(y), float(rotation), float(height))
+
+    def clear_transform_selection(self):
+        self.clear_transform_calls += 1
+        self.transform_selection = None
 
 
 class _FakeCanvas:
@@ -109,6 +131,30 @@ def _make_project(slot_list, port_list, building_list, weather_list,
 
         def list_weather(self):
             return list(weather_list)
+
+        def get_province_slot(self, province_id, slot):
+            for record in slot_list:
+                if _record_field(record, "province_id") == province_id and _record_field(record, "slot") == slot:
+                    return record
+            return None
+
+        def get_port(self, province_id):
+            for record in port_list:
+                if _record_field(record, "province_id") == province_id:
+                    return record
+            return None
+
+        def get_building(self, record_id):
+            for record in building_list:
+                if _record_field(record, "id") == record_id:
+                    return record
+            return None
+
+        def get_weather(self, record_id):
+            for record in weather_list:
+                if _record_field(record, "id") == record_id:
+                    return record
+            return None
 
     def _centroid(pid):
         return centroids.get(int(pid))
@@ -368,3 +414,291 @@ def test_mode_change_keeps_sr_base_behavior(monkeypatch):
     MainWindow._on_mode_changed(fake_self, "placement")
     assert ("sr_list",) not in calls
     assert ("features",) in calls
+
+
+class _FakePlacementController:
+    def __init__(self, result=True, error=None):
+        self.calls = []
+        self.result = result
+        self.error = error
+
+    def update_transform(self, kind, key, *, x=None, y=None, rotation=None, height=None):
+        self.calls.append(("update", kind, key, x, y, rotation, height))
+        if self.error is not None:
+            raise self.error
+        return self.result
+
+    def reset_transform(self, kind, key):
+        self.calls.append(("reset", kind, key))
+        if self.error is not None:
+            raise self.error
+        return self.result
+
+
+def _make_handler_self(project, page, controller):
+    refresh_calls = []
+    fake_self = SimpleNamespace(
+        _tool_panel=SimpleNamespace(_placement_page=page),
+        _project=project,
+        _canvas=_FakeCanvas(),
+        _controllers={"placement": controller},
+        _refresh_placement_page=lambda: refresh_calls.append(True),
+    )
+    return fake_self, refresh_calls
+
+
+def test_connect_signals_wires_transform_handlers():
+    source = inspect.getsource(MainWindow._connect_signals)
+    assert "placement_transform_update_requested.connect" in source
+    assert "_on_placement_transform_update" in source
+    assert "placement_transform_reset_requested.connect" in source
+    assert "_on_placement_transform_reset" in source
+    assert "placement_generate_slots_requested.connect" in source
+    assert "placement_generate_ports_requested.connect" in source
+    assert "placement_accept_selected_requested.connect" in source
+    assert "placement_refresh_requested.connect" in source
+
+
+def test_update_handler_routes_payload_and_refreshes_on_change():
+    page = _FakePage()
+    controller = _FakePlacementController(result=True)
+    project = _make_project([], [], [], [])
+    fake_self, refresh_calls = _make_handler_self(project, page, controller)
+    key = (5, 2)
+    MainWindow._on_placement_transform_update(
+        fake_self, "slot", key, 1.5, 2.5, 30.25, 3.75
+    )
+    assert controller.calls == [("update", "slot", key, 1.5, 2.5, 30.25, 3.75)]
+    assert controller.calls[0][2] is key
+    assert refresh_calls == [True]
+    assert page.status_calls == []
+    assert page.diagnostics_calls == []
+
+
+def test_update_handler_noop_skips_refresh():
+    page = _FakePage()
+    controller = _FakePlacementController(result=False)
+    project = _make_project([], [], [], [])
+    fake_self, refresh_calls = _make_handler_self(project, page, controller)
+    key = (5, 2)
+    MainWindow._on_placement_transform_update(
+        fake_self, "slot", key, 1.5, 2.5, 30.25, 3.75
+    )
+    assert controller.calls == [("update", "slot", key, 1.5, 2.5, 30.25, 3.75)]
+    assert refresh_calls == []
+    assert page.status_calls == []
+    assert page.diagnostics_calls == []
+
+
+def test_reset_handler_routes_payload_and_refreshes_on_change():
+    page = _FakePage()
+    controller = _FakePlacementController(result=True)
+    project = _make_project([], [], [], [])
+    fake_self, refresh_calls = _make_handler_self(project, page, controller)
+    MainWindow._on_placement_transform_reset(fake_self, "port", 9)
+    assert controller.calls == [("reset", "port", 9)]
+    assert refresh_calls == [True]
+    assert page.status_calls == []
+    assert page.diagnostics_calls == []
+
+
+def test_reset_handler_noop_skips_refresh():
+    page = _FakePage()
+    controller = _FakePlacementController(result=False)
+    project = _make_project([], [], [], [])
+    fake_self, refresh_calls = _make_handler_self(project, page, controller)
+    MainWindow._on_placement_transform_reset(fake_self, "port", 9)
+    assert controller.calls == [("reset", "port", 9)]
+    assert refresh_calls == []
+    assert page.status_calls == []
+    assert page.diagnostics_calls == []
+
+
+def test_update_handler_reports_errors_without_refresh():
+    for error in (ValueError("bad kind"), KeyError("missing"), TypeError("bad")):
+        page = _FakePage()
+        controller = _FakePlacementController(error=error)
+        project = _make_project([], [], [], [])
+        fake_self, refresh_calls = _make_handler_self(project, page, controller)
+        MainWindow._on_placement_transform_update(
+            fake_self, "slot", (1, 0), 1.0, 2.0, 3.0, 4.0
+        )
+        assert refresh_calls == []
+        assert len(page.status_calls) == 1
+        assert "failed" in page.status_calls[0].lower()
+        assert page.diagnostics_calls == []
+
+
+def test_reset_handler_reports_errors_without_refresh():
+    for error in (ValueError("bad kind"), KeyError("missing"), TypeError("bad")):
+        page = _FakePage()
+        controller = _FakePlacementController(error=error)
+        project = _make_project([], [], [], [])
+        fake_self, refresh_calls = _make_handler_self(project, page, controller)
+        MainWindow._on_placement_transform_reset(fake_self, "building", 7)
+        assert refresh_calls == []
+        assert len(page.status_calls) == 1
+        assert "failed" in page.status_calls[0].lower()
+        assert page.diagnostics_calls == []
+
+
+def test_sync_selected_transform_updates_from_live_record(monkeypatch):
+    monkeypatch.setattr(
+        "domain.validators.placement.validate_placement_references",
+        lambda *a, **k: [],
+    )
+    live_slot = _slot(1, slot=2, x=11.0, y=12.0, rotation=30.0, height=4.0)
+    live_port = _port(9, sea=3, x=21.0, y=22.0, rotation=5.0, height=6.0)
+    live_building = _building(7, pid=3, x=31.0, y=32.0, rotation=7.0, height=8.0)
+    live_weather = _weather(11, region=4, x=41.0, y=42.0, rotation=9.0, height=10.0)
+    project = _make_project(
+        [live_slot], [live_port], [live_building], [live_weather]
+    )
+    cases = [
+        ("slot", (1, 2), 11.0, 12.0, 30.0, 4.0),
+        ("port", 9, 21.0, 22.0, 5.0, 6.0),
+        ("building", 7, 31.0, 32.0, 7.0, 8.0),
+        ("weather", 11, 41.0, 42.0, 9.0, 10.0),
+    ]
+    for kind, key, exp_x, exp_y, exp_rot, exp_h in cases:
+        page = _FakePage()
+        canvas = _FakeCanvas()
+        page.transform_selection = (kind, key, 0.0, 0.0, 0.0, 0.0)
+        fake_self = _make_self(project, page, canvas)
+        MainWindow._refresh_placement_page(fake_self)
+        assert page.set_transform_calls == [
+            (kind, key, exp_x, exp_y, exp_rot, exp_h)
+        ]
+        assert page.clear_transform_calls == 0
+        assert page.diagnostics_calls == []
+        assert page.status_calls == []
+
+
+def test_sync_selected_transform_runs_inside_refresh(monkeypatch):
+    monkeypatch.setattr(
+        "domain.validators.placement.validate_placement_references",
+        lambda *a, **k: [],
+    )
+    live = _slot(1, slot=0, x=8.5, y=9.5, rotation=2.5, height=1.5)
+    project = _make_project([live], [], [], [])
+    page = _FakePage()
+    canvas = _FakeCanvas()
+    page.transform_selection = ("slot", (1, 0), 0.0, 0.0, 0.0, 0.0)
+    fake_self = _make_self(project, page, canvas)
+    MainWindow._sync_placement_transform_selection(fake_self)
+    assert page.set_transform_calls == [("slot", (1, 0), 8.5, 9.5, 2.5, 1.5)]
+    assert page.clear_transform_calls == 0
+    assert page.diagnostics_calls == []
+    assert page.status_calls == []
+
+
+def test_sync_clears_when_record_missing(monkeypatch):
+    monkeypatch.setattr(
+        "domain.validators.placement.validate_placement_references",
+        lambda *a, **k: [],
+    )
+    project = _make_project([], [], [], [])
+    cases = [
+        ("slot", (1, 0)),
+        ("port", 9),
+        ("building", 7),
+        ("weather", 11),
+    ]
+    for kind, key in cases:
+        page = _FakePage()
+        canvas = _FakeCanvas()
+        page.transform_selection = (kind, key, 1.0, 2.0, 3.0, 4.0)
+        fake_self = _make_self(project, page, canvas)
+        MainWindow._refresh_placement_page(fake_self)
+        assert page.clear_transform_calls == 1
+        assert page.transform_selection is None
+        assert page.set_transform_calls == []
+        assert page.diagnostics_calls == []
+        assert page.status_calls == []
+
+
+def test_sync_no_selection_leaves_page_untouched(monkeypatch):
+    monkeypatch.setattr(
+        "domain.validators.placement.validate_placement_references",
+        lambda *a, **k: [],
+    )
+    live = _slot(1, slot=0, x=5.0, y=6.0, rotation=1.0, height=2.0)
+    project = _make_project([live], [], [], [])
+    page = _FakePage()
+    canvas = _FakeCanvas()
+    assert page.selected_transform() is None
+    fake_self = _make_self(project, page, canvas)
+    MainWindow._refresh_placement_page(fake_self)
+    assert page.set_transform_calls == []
+    assert page.clear_transform_calls == 0
+    assert page.diagnostics_calls == []
+    assert page.status_calls == []
+
+
+def test_sync_unreadable_record_keeps_selection_without_status(monkeypatch):
+    monkeypatch.setattr(
+        "domain.validators.placement.validate_placement_references",
+        lambda *a, **k: [],
+    )
+    broken = SimpleNamespace(province_id=1, slot=0, x=1.0, y=2.0)
+    project = _make_project([broken], [], [], [])
+    page = _FakePage()
+    canvas = _FakeCanvas()
+    stale = ("slot", (1, 0), 9.0, 9.0, 9.0, 9.0)
+    page.transform_selection = stale
+    fake_self = _make_self(project, page, canvas)
+    MainWindow._refresh_placement_page(fake_self)
+    assert page.set_transform_calls == []
+    assert page.clear_transform_calls == 0
+    assert page.transform_selection == stale
+    assert page.diagnostics_calls == []
+    assert page.status_calls == []
+
+
+def test_sync_unknown_kind_and_malformed_key_clear_safely(monkeypatch):
+    monkeypatch.setattr(
+        "domain.validators.placement.validate_placement_references",
+        lambda *a, **k: [],
+    )
+    live = _slot(1, slot=0, x=5.0, y=6.0, rotation=1.0, height=2.0)
+    project = _make_project([live], [], [], [])
+    for selection in [
+        ("city", 1, 0.0, 0.0, 0.0, 0.0),
+        ("slot", 1, 0.0, 0.0, 0.0, 0.0),
+        ("slot", (1, 0, 2), 0.0, 0.0, 0.0, 0.0),
+    ]:
+        page = _FakePage()
+        canvas = _FakeCanvas()
+        page.transform_selection = selection
+        fake_self = _make_self(project, page, canvas)
+        MainWindow._sync_placement_transform_selection(fake_self)
+        assert page.clear_transform_calls == 1
+        assert page.transform_selection is None
+        assert page.set_transform_calls == []
+        assert page.diagnostics_calls == []
+        assert page.status_calls == []
+
+
+def test_transform_wiring_keeps_edits_inside_controller():
+    update_src = inspect.getsource(MainWindow._on_placement_transform_update)
+    reset_src = inspect.getsource(MainWindow._on_placement_transform_reset)
+    sync_src = inspect.getsource(MainWindow._sync_placement_transform_selection)
+    assert "update_transform" in update_src
+    assert "reset_transform" in reset_src
+    for src in (update_src, reset_src):
+        assert "map_placement_mgr" not in src
+        assert "set_province_slot" not in src
+        assert "set_port" not in src
+        assert "update_building" not in src
+        assert "update_weather" not in src
+        assert "mark_dirty" not in src
+    assert "get_province_slot" in sync_src
+    assert "get_port" in sync_src
+    assert "get_building" in sync_src
+    assert "get_weather" in sync_src
+    assert "set_province_slot" not in sync_src
+    assert "update_building" not in sync_src
+    assert "update_weather" not in sync_src
+    assert "mark_dirty" not in sync_src
+    assert "set_diagnostics" not in sync_src
+    assert "set_status" not in sync_src
