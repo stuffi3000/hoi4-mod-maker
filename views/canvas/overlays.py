@@ -591,6 +591,7 @@ class OverlayMixin:
         if not self._placement_overlay_enabled:
             self._placement_overlay_model = None
             self._clear_placement_selection(emit=False)
+            self._render_placement_context_overlay()
             item = getattr(self, "_placement_overlay_item", None)
             if item is not None:
                 try:
@@ -602,6 +603,7 @@ class OverlayMixin:
                 except Exception:
                     pass
             return
+        self._render_placement_context_overlay()
         self._render_placement_overlay()
 
     def _render_placement_overlay(self):
@@ -612,6 +614,7 @@ class OverlayMixin:
         if not bool(getattr(self, "_placement_overlay_enabled", False)):
             self._placement_overlay_model = None
             self._clear_placement_selection(emit=False)
+            self._render_placement_context_overlay()
             try:
                 item.setVisible(False)
             except Exception:
@@ -667,13 +670,11 @@ class OverlayMixin:
                 for marker in getattr(model, "markers", ()):
                     try:
                         color = _placement_role_color(getattr(marker, "role", "unreviewed"))
-                        marker_x = marker.x
-                        marker_y = marker.y
                         _draw_placement_marker(
                             painter,
                             getattr(marker, "kind", ""),
-                            marker_x,
-                            marker_y,
+                            marker.x,
+                            marker.y,
                             color,
                         )
                     except Exception:
@@ -688,6 +689,56 @@ class OverlayMixin:
                 item.setVisible(False)
             except Exception:
                 pass
+        self._render_placement_context_overlay()
+
+    def _render_placement_context_overlay(self) -> None:
+        """Render province borders and land/sea coastlines for placement mode."""
+        context_item = getattr(self, "_placement_context_item", None)
+        if context_item is None:
+            return
+        if not bool(getattr(self, "_placement_overlay_enabled", False)):
+            context_item.setVisible(False)
+            return
+        try:
+            province_map = np.asarray(self._province_map)
+            tile_map = np.asarray(self._tile_map)
+            if province_map.ndim != 2 or tile_map.ndim != 2:
+                context_item.setVisible(False)
+                return
+            height, width = province_map.shape
+            if tile_map.shape != province_map.shape or height <= 0 or width <= 0:
+                context_item.setVisible(False)
+                return
+
+            province_borders = np.zeros((height, width), dtype=bool)
+            province_borders[:-1, :] |= province_map[:-1, :] != province_map[1:, :]
+            province_borders[:, :-1] |= province_map[:, :-1] != province_map[:, 1:]
+
+            from data.constants import TILE_LAND
+            land = tile_map == TILE_LAND
+            coastlines = np.zeros((height, width), dtype=bool)
+            coastlines[:-1, :] |= land[:-1, :] != land[1:, :]
+            coastlines[:, :-1] |= land[:, :-1] != land[:, 1:]
+
+            rgba = np.zeros((height, width, 4), dtype=np.uint8)
+            # QImage.Format_ARGB32 uses BGRA byte order here; neutral white
+            # borders and a warm cyan coastline remain legible over regions.
+            rgba[province_borders] = (225, 225, 225, 145)
+            rgba[coastlines] = (210, 180, 20, 220)
+            rgba = np.ascontiguousarray(rgba)
+            image = QImage(
+                rgba.data,
+                width,
+                height,
+                width * 4,
+                QImage.Format.Format_ARGB32,
+            )
+            image._ref = rgba
+            context_item.setPixmap(QPixmap.fromImage(image.copy()))
+            context_item.setVisible(True)
+        except Exception:
+            context_item.setVisible(False)
+            return
 
     @staticmethod
     def _placement_key_from_marker(marker):

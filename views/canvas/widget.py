@@ -286,6 +286,13 @@ class MapCanvas(InputMixin, OverlayMixin, NameLabelsMixin, RefImageMixin, QGraph
         self._terrain_ctx_country_mgr = None
         self._terrain_ctx_state_mgr = None
 
+        # Placement context: explicit province-border/coastline guide beneath
+        # the placement markers and VP layer.
+        self._placement_context_item = QGraphicsPixmapItem()
+        self._placement_context_item.setZValue(6.5)
+        self._placement_context_item.setVisible(False)
+        self._scene.addItem(self._placement_context_item)
+
         # Terrain basemap overlay in State / Country mode (use heightmap color map as reference)
         self._terrain_underlay_item = QGraphicsPixmapItem()
         self._terrain_underlay_item.setZValue(5)
@@ -443,6 +450,9 @@ class MapCanvas(InputMixin, OverlayMixin, NameLabelsMixin, RefImageMixin, QGraph
                 _placement_item = getattr(self, '_placement_overlay_item', None)
                 if _placement_item is not None:
                     _placement_item.setVisible(False)
+                _placement_context = getattr(self, '_placement_context_item', None)
+                if _placement_context is not None:
+                    _placement_context.setVisible(False)
                 self._clear_placement_selection(emit=False)
         except Exception:
             pass

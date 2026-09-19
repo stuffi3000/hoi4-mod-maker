@@ -15,13 +15,18 @@ def small_canvas(qapp, qtbot):
     """Real canvas shrunk to a small map size for cheap pixmap assertions."""
     import views.canvas.widget as widget_mod
     import data.constants as constants
-    from data.constants import set_map_size
+    from data.constants import TILE_LAND, TILE_SEA, set_map_size
     old_w, old_h = constants.MAP_WIDTH, constants.MAP_HEIGHT
     set_map_size(widget_mod.MAP_WIDTH, widget_mod.MAP_HEIGHT)
     try:
         canvas = widget_mod.MapCanvas()
         qtbot.addWidget(canvas)
         canvas._display_buffer = np.zeros((32, 48, 4), dtype=np.uint8)
+        canvas._province_map = np.zeros((32, 48), dtype=np.int32)
+        canvas._province_map[:, :24] = 1
+        canvas._province_map[:, 24:] = 2
+        canvas._tile_map = np.full((32, 48), TILE_SEA, dtype=np.uint8)
+        canvas._tile_map[:, :24] = TILE_LAND
         canvas._scene.setSceneRect(0, 0, 48, 32)
         yield canvas
     finally:
@@ -73,6 +78,22 @@ def test_hidden_by_default_and_z_order(small_canvas):
     assert canvas._placement_overlay_item.zValue() > canvas._terrain_context_overlay.zValue()
     assert canvas._placement_overlay_item.zValue() < canvas._lasso_overlay.zValue()
     assert canvas._placement_overlay_item.zValue() < canvas._brush_cursor.zValue()
+    assert not canvas._placement_context_item.isVisible()
+
+
+def test_context_layer_shows_province_borders_and_coastlines(small_canvas):
+    canvas = small_canvas
+    canvas.set_placement_overlay_visible(True)
+
+    assert canvas._placement_context_item.isVisible()
+    pixmap = canvas._placement_context_item.pixmap()
+    assert pixmap.width() == canvas.map_w
+    assert pixmap.height() == canvas.map_h
+    image = pixmap.toImage()
+    assert _alpha_count(image) > 0
+
+    canvas.set_placement_overlay_visible(False)
+    assert not canvas._placement_context_item.isVisible()
 
 
 def test_data_does_not_auto_show_and_disable_clears(small_canvas):
