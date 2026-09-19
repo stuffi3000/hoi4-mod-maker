@@ -782,6 +782,7 @@ Allow one or more authored/generated weather positions per strategic region, wit
 - [x] **M5.2e — headless proposal workflow service:** added deterministic service entry points that compose land/port proposal generation with manager storage, preserve generated/unreviewed status, require explicit land-to-sea mappings, surface generator/store diagnostics, protect existing reviewed/authored records, and accept only explicitly selected records. Committed as `88fa8b9`.
 - [x] **M5.2f — controller proposal boundary:** added a headless `PlacementController` that reads project rasters, invokes the proposal service, requires explicit port sea mappings, makes slot/port proposal and selected acceptance operations undoable, emits `placement_changed` only on real mutations, and leaves generated records unreviewed. Committed as `1343c9e`.
 - [x] **M5.2g — standalone proposal review surface:** added a Qt placement page with explicit land-to-sea mapping input, deterministic checkable slot/port records, visible diagnostics, and selected-only review/acceptance signals. Unknown placement record types are not misclassified as ports. Committed as `0de9d31`.
+- [x] **M5.2h — live editor proposal path:** registered the placement page and controller in the existing logistics navigation, routed explicit generate/accept/refresh signals through `MainWindow`, refreshed records after placement/project changes, and kept the placement canvas on the safe strategic-region render path. Committed as `89a5b35`.
 - [ ] **M5.2 — proposal generation integration:** connect the proposal core to port-aware placement requests and the export/editor acceptance flow; no silent fallback acceptance.
 - [ ] **M5.3 — placement editor and overlay:** add selection/editing and collision/provenance overlays.
 - [x] **M5.4 — foundation building output:** profile-aware position/building writers now omit incomplete or unreviewed foundation records, preserve reviewed transforms and exact port sea references, and retain clearly marked compatibility placeholders only for acceptance/scaffold/legacy profiles. Legacy direct writer signatures remain positional-compatible. Committed as `ba8a207`.
@@ -852,6 +853,13 @@ Allow one or more authored/generated weather positions per strategic region, wit
 - **Evidence:** independent Qt regression passed (40 tests), including strict mapping validation, signal payloads, deterministic record ordering, checked-selection extraction, diagnostics/status rendering, and construction without global map-size state. The implementation is committed as `0de9d31`.
 - **Worker/review note:** Muse Spark produced the authorized widget/test/localization files but did not return a final response before the bounded run was stopped. The parent completed the safe classification fix for non-slot/non-port records, reran the full focused suite, and reviewed the signal contract.
 - **Next controlled slice:** wire `PlacementController` and `PlacementPage` into `ToolPanel`/`MainWindow`, refresh records on `placement_changed`, and keep the parent M5.2/M5.3 boxes open until the page drives a live application path and map overlay/editing exists.
+
+### M5 checkpoint — live placement proposal path (2026-09-19)
+
+- **Completed:** the placement page is now reachable as a logistics sub-mode, the `PlacementController` is registered in the main editor controller set, and generate-slots, explicit generate-ports, selected acceptance, and refresh actions are routed to the live project manager. Project reload/new/import refreshes the page, and placement mode uses the strategic-region canvas base until a dedicated overlay exists.
+- **Evidence:** focused wiring, placement UI, English UI, and logistics tests passed (48 tests); compilation and diff checks passed. The implementation is committed as `89a5b35`.
+- **Worker/review note:** the wiring Muse attempt timed out without authorized changes and left only three temporary helper scripts; the parent removed those artifacts and implemented/reviewed the bounded routing patch. No credentials or protected `.codex` files were touched.
+- **Next controlled slice:** add the first read-only placement map overlay (provenance/review markers and collision diagnostics) without dragging/editing yet; then add undoable transform editing before closing M5.3.
 
 ## M6 — graphics and asset-resolution pipeline
 
