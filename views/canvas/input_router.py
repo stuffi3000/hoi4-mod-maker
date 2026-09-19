@@ -83,6 +83,20 @@ class InputMixin:
             event.accept()
             return
 
+        # Placement overlay interaction is enabled only by placement mode.
+        # The base renderer remains strategic_region, so use the explicit
+        # overlay flag rather than display_mode to identify this editor.
+        if (
+            event.button() == Qt.MouseButton.LeftButton
+            and getattr(self, "_placement_overlay_enabled", False)
+            and self._display_mode == "strategic_region"
+            and not self._space_pressed
+        ):
+            sx, sy = self._scene_pos_float(event)
+            self._begin_placement_drag(sx, sy)
+            event.accept()
+            return
+
         # Framework Tool Distribution (New Specification)
         if (event.button() == Qt.MouseButton.LeftButton
                 and self._framework_tool is not None
@@ -337,6 +351,12 @@ class InputMixin:
         else:
             self._brush_cursor.setVisible(False)
 
+        if getattr(self, "_placement_drag_state", None) is not None:
+            placement_x, placement_y = self._scene_pos_float(event)
+            self._update_placement_drag(placement_x, placement_y)
+            event.accept()
+            return
+
         # Transform tool selection drag
         if self._transform_selecting and self._selection_start:
             x0, y0 = self._selection_start
@@ -491,6 +511,14 @@ class InputMixin:
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:
+        if (
+            event.button() == Qt.MouseButton.LeftButton
+            and getattr(self, "_placement_drag_state", None) is not None
+        ):
+            self._finish_placement_drag()
+            event.accept()
+            return
+
         # Transform tool box selection completed - activate transform box
         if self._transform_selecting and self._selection_start:
             self._transform_selecting = False

@@ -64,6 +64,11 @@ class MapCanvas(InputMixin, OverlayMixin, NameLabelsMixin, RefImageMixin, QGraph
     # After generating provinces, draw land and sea → Request MainWindow to pop up the confirmation box (direct signal, synchronous return)
     land_paint_confirm_requested = pyqtSignal()
 
+    # Placement editor intent signals.  The canvas never mutates placement
+    # records; MainWindow routes these through PlacementController.
+    placement_selection_changed = pyqtSignal(str, object)
+    placement_position_change_requested = pyqtSignal(str, object, float, float)
+
     def __init__(self, parent=None):
         super().__init__(parent)
 
@@ -349,6 +354,19 @@ class MapCanvas(InputMixin, OverlayMixin, NameLabelsMixin, RefImageMixin, QGraph
         self._placement_records = ()
         self._placement_vp_points = ()
         self._placement_findings = ()
+        self._placement_overlay_model = None
+        self._placement_selected = None
+        self._placement_drag_state = None
+        self._placement_preview_position = None
+
+        # Selection feedback for the placement editor.  It sits above the
+        # marker pixmap and below the existing lasso/brush interaction layers.
+        self._placement_selection_item = QGraphicsEllipseItem(-8, -8, 16, 16)
+        self._placement_selection_item.setPen(QPen(QColor(255, 230, 80, 240), 2))
+        self._placement_selection_item.setBrush(QBrush(Qt.NoBrush))
+        self._placement_selection_item.setZValue(9.5)
+        self._placement_selection_item.setVisible(False)
+        self._scene.addItem(self._placement_selection_item)
 
         # Name tag overlay (showing names in state/country mode)
         self._init_name_labels()
@@ -425,6 +443,7 @@ class MapCanvas(InputMixin, OverlayMixin, NameLabelsMixin, RefImageMixin, QGraph
                 _placement_item = getattr(self, '_placement_overlay_item', None)
                 if _placement_item is not None:
                     _placement_item.setVisible(False)
+                self._clear_placement_selection(emit=False)
         except Exception:
             pass
 
@@ -1513,6 +1532,11 @@ class MapCanvas(InputMixin, OverlayMixin, NameLabelsMixin, RefImageMixin, QGraph
     def _scene_pos(self, event: QMouseEvent) -> tuple[int, int]:
         pos = self.mapToScene(event.pos())
         return int(pos.x()), int(pos.y())
+
+    def _scene_pos_float(self, event: QMouseEvent) -> tuple[float, float]:
+        """Return fractional scene coordinates for placement transforms."""
+        pos = self.mapToScene(event.pos())
+        return float(pos.x()), float(pos.y())
 
     def _scene_pos_clamped(self, event: QMouseEvent) -> tuple[int, int]:
         """Returns scene coordinates restricted to map boundaries"""

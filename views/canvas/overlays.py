@@ -582,12 +582,15 @@ class OverlayMixin:
         self._placement_records = () if records is None else records
         self._placement_vp_points = () if vp_points is None else vp_points
         self._placement_findings = () if findings is None else findings
+        self._placement_overlay_model = None
         self._render_placement_overlay()
 
     def set_placement_overlay_visible(self, visible):
         """Toggle the read-only placement overlay."""
         self._placement_overlay_enabled = bool(visible)
         if not self._placement_overlay_enabled:
+            self._placement_overlay_model = None
+            self._clear_placement_selection(emit=False)
             item = getattr(self, "_placement_overlay_item", None)
             if item is not None:
                 try:
@@ -607,6 +610,8 @@ class OverlayMixin:
         if item is None:
             return
         if not bool(getattr(self, "_placement_overlay_enabled", False)):
+            self._placement_overlay_model = None
+            self._clear_placement_selection(emit=False)
             try:
                 item.setVisible(False)
             except Exception:
@@ -652,6 +657,7 @@ class OverlayMixin:
             except Exception:
                 pass
             return
+        self._placement_overlay_model = model
         try:
             image = QImage(width, height, QImage.Format.Format_ARGB32)
             image.fill(QColor(0, 0, 0, 0))
@@ -661,11 +667,13 @@ class OverlayMixin:
                 for marker in getattr(model, "markers", ()):
                     try:
                         color = _placement_role_color(getattr(marker, "role", "unreviewed"))
+                        marker_x = marker.x
+                        marker_y = marker.y
                         _draw_placement_marker(
                             painter,
                             getattr(marker, "kind", ""),
-                            marker.x,
-                            marker.y,
+                            marker_x,
+                            marker_y,
                             color,
                         )
                     except Exception:
@@ -674,8 +682,166 @@ class OverlayMixin:
                 painter.end()
             item.setPixmap(QPixmap.fromImage(image))
             item.setVisible(True)
+            self._update_placement_selection_visual()
         except Exception:
             try:
                 item.setVisible(False)
             except Exception:
                 pass
+
+    @staticmethod
+    def _placement_key_from_marker(marker):
+        """Convert a pure overlay marker key to a controller key."""
+        kind = str(getattr(marker, "kind", ""))
+        key = str(getattr(marker, "key", ""))
+        parts = key.split(":")
+        try:
+            if kind == "slot" and len(parts) == 3 and parts[0] == "slot":
+                if parts[1] == "?":
+                    return None
+                return (int(parts[1]), int(parts[2]))
+            if kind == "port" and len(parts) == 2 and parts[0] == "port":
+                return int(parts[1])
+            if kind == "building" and len(parts) == 2 and parts[0] == "building":
+                return int(parts[1])
+            if kind == "weather" and len(parts) == 2 and parts[0] == "weather":
+                return int(parts[1])
+        except (TypeError, ValueError):
+            return None
+        return None
+
+    @staticmethod
+    def _placement_marker_is_editable(marker) -> bool:
+        return str(getattr(marker, "kind", "")) in {
+            "slot", "port", "building", "weather"
+        }
+
+    def _placement_marker_position(self, marker) -> tuple[float, float]:
+        """Return a marker position, using the live drag preview if selected."""
+        selected = getattr(self, "_placement_selected", None)
+        preview = getattr(self, "_placement_preview_position", None)
+        key = self._placement_key_from_marker(marker)
+        if (
+            selected is not None
+            and preview is not None
+            and key is not None
+            and (str(getattr(marker, "kind", "")), key) == selected
+        ):
+            return (float(preview[0]), float(preview[1]))
+        return (float(marker.x), float(marker.y))
+
+    def placement_marker_at(self, x: float, y: float):
+        """Return ``(kind, key, x, y)`` for the nearest editable marker."""
+        if not bool(getattr(self, "_placement_overlay_enabled", False)):
+            return None
+        model = getattr(self, "_placement_overlay_model", None)
+        if model is None:
+            return None
+        try:
+            sx = float(x)
+            sy = float(y)
+            zoom = max(float(getattr(self, "_zoom", 1.0)), 1e-6)
+        except (TypeError, ValueError, OverflowError):
+            return None
+        radius = max(6.0, 10.0 / zoom)
+        best = None
+        best_distance = radius * radius
+        for marker in getattr(model, "markers", ()):
+            if not self._placement_marker_is_editable(marker):
+                continue
+            key = self._placement_key_from_marker(marker)
+            if key is None:
+                continue
+            marker_x, marker_y = self._placement_marker_position(marker)
+            distance = (sx - marker_x) ** 2 + (sy - marker_y) ** 2
+            if distance <= best_distance:
+                best_distance = distance
+                best = (str(marker.kind), key, marker_x, marker_y)
+        return best
+
+    def _update_placement_selection_visual(self) -> None:
+        item = getattr(self, "_placement_selection_item", None)
+        if item is None:
+            return
+        selected = getattr(self, "_placement_selected", None)
+        model = getattr(self, "_placement_overlay_model", None)
+        if (
+            not bool(getattr(self, "_placement_overlay_enabled", False))
+            or selected is None
+            or model is None
+        ):
+            item.setVisible(False)
+            return
+        for marker in getattr(model, "markers", ()):
+            key = self._placement_key_from_marker(marker)
+            if key is None:
+                continue
+            if (str(marker.kind), key) != selected:
+                continue
+            marker_x, marker_y = self._placement_marker_position(marker)
+            item.setPos(marker_x, marker_y)
+            item.setVisible(True)
+            return
+        item.setVisible(False)
+
+    def _set_placement_selection(self, kind: str, key, *, emit: bool = True) -> None:
+        selected = (str(kind), key)
+        if getattr(self, "_placement_selected", None) == selected:
+            self._update_placement_selection_visual()
+            return
+        self._placement_selected = selected
+        self._placement_preview_position = None
+        self._update_placement_selection_visual()
+        if emit:
+            self.placement_selection_changed.emit(str(kind), key)
+
+    def _clear_placement_selection(self, *, emit: bool = True) -> None:
+        had_selection = getattr(self, "_placement_selected", None) is not None
+        self._placement_selected = None
+        self._placement_drag_state = None
+        self._placement_preview_position = None
+        item = getattr(self, "_placement_selection_item", None)
+        if item is not None:
+            item.setVisible(False)
+        if emit and had_selection:
+            self.placement_selection_changed.emit("", None)
+
+    def _begin_placement_drag(self, x: float, y: float) -> bool:
+        hit = self.placement_marker_at(x, y)
+        if hit is None:
+            self._clear_placement_selection()
+            return True
+        kind, key, marker_x, marker_y = hit
+        self._set_placement_selection(kind, key)
+        self._placement_drag_state = (kind, key, marker_x, marker_y)
+        self._placement_preview_position = (marker_x, marker_y)
+        return True
+
+    def _update_placement_drag(self, x: float, y: float) -> bool:
+        state = getattr(self, "_placement_drag_state", None)
+        if state is None:
+            return False
+        try:
+            preview_x = max(0.0, min(float(self.map_w - 1), float(x)))
+            preview_y = max(0.0, min(float(self.map_h - 1), float(y)))
+        except (TypeError, ValueError, OverflowError):
+            return True
+        self._placement_preview_position = (preview_x, preview_y)
+        self._update_placement_selection_visual()
+        return True
+
+    def _finish_placement_drag(self) -> bool:
+        state = getattr(self, "_placement_drag_state", None)
+        preview = getattr(self, "_placement_preview_position", None)
+        self._placement_drag_state = None
+        self._placement_preview_position = None
+        self._update_placement_selection_visual()
+        if state is None or preview is None:
+            return True
+        kind, key, start_x, start_y = state
+        if abs(float(preview[0]) - float(start_x)) <= 1e-9 and abs(float(preview[1]) - float(start_y)) <= 1e-9:
+            return True
+        self.placement_position_change_requested.emit(
+            str(kind), key, float(preview[0]), float(preview[1])
+        )
+        return True
