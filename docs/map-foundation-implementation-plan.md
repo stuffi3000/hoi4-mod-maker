@@ -1169,8 +1169,9 @@ Release a new 1.4.0 release on Github with an updated .exe file.
 ## M10. Full Testing
 
 - Test each milestone from a code point of view.
-- Use the M7 testing harness in order to test a full export of the Belgium project.
-- Review the exported project and address potential shortcomings.
+- Test the features from each milestone on the Belgium project.
+- Specifically use the M7 testing harness in order to test a full export of the Belgium project.
+- Review the "final" exported project and address potential shortcomings.
 
 ## 8. Suggested pull-request sequence
 
