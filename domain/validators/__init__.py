@@ -78,6 +78,8 @@ def _foundation_terrain_check(
     include_engine_boundary=False,
     mixed_threshold=0.0,
     terrain_indices=None,
+    terrain_registry=None,
+    selected_registry=None,
     **_ignored,
 ):
     return validate_terrain_layers(
@@ -89,6 +91,8 @@ def _foundation_terrain_check(
         tree_map=tree_map,
         profile=profile,
         terrain_indices=terrain_indices,
+        terrain_registry=terrain_registry,
+        selected_registry=selected_registry,
     )
 
 
@@ -367,6 +371,8 @@ def run_foundation_validation(
     context="draft_preview",
     source="foundation",
     map_placement_mgr=None,
+    terrain_registry=None,
+    selected_registry=None,
 ):
     registry = create_foundation_validator_registry()
     findings = registry.run(
@@ -385,6 +391,8 @@ def run_foundation_validation(
         include_engine_boundary=include_engine_boundary,
         mixed_threshold=mixed_threshold,
         terrain_indices=terrain_indices,
+        terrain_registry=terrain_registry,
+        selected_registry=selected_registry,
         state_mgr=state_mgr,
         country_mgr=country_mgr,
         continent_mgr=continent_mgr,

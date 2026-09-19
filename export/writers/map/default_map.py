@@ -17,6 +17,7 @@ def write_default_map(
     output_dir: str,
     settings=None,
     province_count: int | None = None,
+    profile=None,
 ) -> None:
     """Generate map/default.map.
 
@@ -44,8 +45,13 @@ def write_default_map(
     lines.append(f'ambient_object = "{settings.ambient_object}"')
     lines.append(f'seasons = "{settings.seasons}"')
 
-    # Tree palette index
-    tree_indices = " ".join(str(i) for i in settings.tree_palette_indices)
+    # Profile-aware exports must not advertise tree models that the selected
+    # profile does not define. Direct legacy calls keep their configured list.
+    if hasattr(settings, "effective_tree_indices"):
+        tree_values = settings.effective_tree_indices(profile)
+    else:
+        tree_values = list(getattr(settings, "tree_palette_indices", ()) or ())
+    tree_indices = " ".join(str(i) for i in tree_values)
     lines.append(f"tree = {{ {tree_indices} }}")
 
     content = "\n".join(lines) + "\n"

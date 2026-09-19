@@ -48,7 +48,7 @@ def run(ctx):
         _write_seasons_txt(ctx.output_dir)
         from export.writers.map.default_map import write_default_map
         write_default_map(ctx.output_dir, settings=ctx.default_map_settings,
-                          province_count=province_count)
+                          province_count=province_count, profile=ctx.game_profile)
         _write_continent(ctx.output_dir, continent_mgr=ctx.continent_mgr)
         if ctx.adjacency_mgr is not None and ctx.adjacency_mgr.count() > 0:
             from export.writers.map.adjacencies import write_adjacencies_csv

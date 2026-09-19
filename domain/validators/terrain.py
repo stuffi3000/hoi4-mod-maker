@@ -1,4 +1,4 @@
-﻿"""Terrain, river, and mask validation slice (M3.3b).
+"""Terrain, river, and mask validation slice (M3.3b).
 
 Pure, non-mutating validators over in-memory raster layers. The public
 entry point is :func:`validate_terrain_layers`, which returns a
@@ -141,9 +141,89 @@ def _extract_int_set(values: Any) -> set[int]:
     return out
 
 
+def _extract_registry_indices(registry: Any) -> set[int]:
+    if registry is None:
+        return set()
+    try:
+        getter = getattr(registry, "legal_palette_indices", None)
+        if callable(getter):
+            try:
+                return _extract_int_set(set(getter()))
+            except (TypeError, ValueError):
+                pass
+        if getter is not None and not callable(getter):
+            try:
+                return _extract_int_set(set(getter))
+            except (TypeError, ValueError):
+                pass
+    except (TypeError, ValueError, AttributeError):
+        pass
+    try:
+        raw_entries = getattr(registry, "entries", None)
+        if raw_entries is not None:
+            collected: set[int] = set()
+            try:
+                items = list(raw_entries)
+            except TypeError:
+                items = []
+            for entry in items:
+                try:
+                    colors = getattr(entry, "color_indices", None)
+                    if colors is None:
+                        colors = getattr(entry, "palette_indices", None)
+                    if colors is None:
+                        continue
+                    for value in list(colors):
+                        try:
+                            if isinstance(value, bool):
+                                continue
+                            number = int(value)
+                        except (TypeError, ValueError):
+                            continue
+                        if 0 <= number <= 255:
+                            collected.add(number)
+                except (TypeError, ValueError, AttributeError):
+                    continue
+            if collected:
+                return collected
+    except (TypeError, ValueError, AttributeError):
+        pass
+    try:
+        from collections.abc import Mapping as _Mapping2
+        if isinstance(registry, _Mapping2):
+            if "entries" in registry:
+                try:
+                    raw_list = list(registry.get("entries") or ())
+                    collected2: set[int] = set()
+                    for item in raw_list:
+                        if isinstance(item, _Mapping2):
+                            for key in ("color_indices", "palette_indices", "indices"):
+                                if key in item:
+                                    collected2 |= _extract_int_set(item.get(key))
+                        else:
+                            try:
+                                colors2 = getattr(item, "color_indices", None)
+                                if colors2 is not None:
+                                    collected2 |= _extract_int_set(list(colors2))
+                            except (TypeError, ValueError, AttributeError):
+                                continue
+                    if collected2:
+                        return collected2
+                except (TypeError, ValueError, AttributeError):
+                    pass
+    except (TypeError, ValueError, AttributeError):
+        pass
+    return _extract_int_set(registry)
+
+
 def _resolve_legal_terrain_indices(
-    terrain_indices: Any, profile: Any
+    terrain_indices: Any, profile: Any, terrain_registry: Any = None, selected_registry: Any = None
 ) -> tuple[set[int], str]:
+    selected = terrain_registry if terrain_registry is not None else selected_registry
+    if selected is not None:
+        registry_set = _extract_registry_indices(selected)
+        if registry_set:
+            return (set(registry_set), "selected-registry")
     base = _graphical_legal_indices()
     if terrain_indices is not None:
         if isinstance(terrain_indices, Mapping):
@@ -232,9 +312,73 @@ def _profile_expected_shape(
     return None
 
 
+def _profile_tree_shapes(profile: Any, tile_shape: tuple[int, int]) -> set[tuple[int, int]]:
+    try:
+        height, width = int(tile_shape[0]), int(tile_shape[1])
+    except (TypeError, ValueError):
+        return set()
+    shapes: set[tuple[int, int]] = set()
+    try:
+        func = getattr(profile, "expected_bmp_size", None)
+        if callable(func):
+            expected = func("map/trees.bmp", width, height)
+            if expected is not None:
+                shapes.add((int(expected[1]), int(expected[0])))
+    except Exception:
+        pass
+    try:
+        tree_func = getattr(profile, "expected_tree_size", None)
+        if callable(tree_func):
+            sized = tree_func(width, height)
+            if sized is not None:
+                shapes.add((int(sized[1]), int(sized[0])))
+        else:
+            try:
+                from domain.game_profile import resolve_tree_dimensions as _resolve_tree
+                sized2 = _resolve_tree(profile, width, height)
+                if sized2 is not None:
+                    shapes.add((int(sized2[1]), int(sized2[0])))
+            except Exception:
+                pass
+    except Exception:
+        pass
+    try:
+        if isinstance(profile, dict):
+            overrides = profile.get("tree_size_overrides", None)
+            if isinstance(overrides, dict):
+                lookup = "%dx%d" % (width, height)
+                for key, value in overrides.items():
+                    try:
+                        if str(key).strip().lower().replace(" ", "") == lookup.lower():
+                            seq = list(value)
+                            shapes.add((int(seq[1]), int(seq[0])))
+                    except (TypeError, ValueError, AttributeError, IndexError):
+                        continue
+    except (TypeError, ValueError, AttributeError):
+        pass
+    if not shapes:
+        try:
+            shapes.add((height // 4, width // 4))
+        except (TypeError, ValueError):
+            pass
+    return shapes
+
+
 def _acceptable_shapes(
     kind: str, tile_shape: tuple[int, int], profile: Any
 ) -> set[tuple[int, int]]:
+    if kind == "tree" and profile is not None:
+        asset_key = _ASSET_FOR_KIND.get(kind, "")
+        base_expected = _profile_expected_shape(profile, asset_key, tile_shape) if asset_key else None
+        options: set[tuple[int, int]] = {tile_shape}
+        if base_expected is not None:
+            options.add(base_expected)
+        try:
+            for item in _profile_tree_shapes(profile, tile_shape):
+                options.add(item)
+        except Exception:
+            pass
+        return options
     asset_key = _ASSET_FOR_KIND.get(kind, "")
     expected = _profile_expected_shape(profile, asset_key, tile_shape) if asset_key else None
     if expected is None or expected == tile_shape:
@@ -391,6 +535,8 @@ def validate_terrain_layers(
     tree_map: Any | None = None,
     profile: Any | None = None,
     terrain_indices: Any | None = None,
+    terrain_registry: Any | None = None,
+    selected_registry: Any | None = None,
 ) -> list[ValidationFinding]:
     """Validate terrain, river, and mask rasters against the tile map.
 
@@ -624,7 +770,7 @@ def validate_terrain_layers(
             )
 
     if terrain_ok:
-        legal_terrain, legal_source = _resolve_legal_terrain_indices(terrain_indices, profile)
+        legal_terrain, legal_source = _resolve_legal_terrain_indices(terrain_indices, profile, terrain_registry, selected_registry)
         try:
             unique_terrain = np.unique(terrain_arr)
         except Exception:

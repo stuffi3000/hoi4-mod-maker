@@ -55,7 +55,7 @@ def _prepare_legacy_working_copy(ctx) -> None:
         ctx.provincial_terrain = dict(shim.provincial_terrain or {})
 
 
-def run(ctx):
+def run(ctx, *, profile=None, map_width=None, map_height=None):
     from domain.export_contract import StageResult
     from domain.generators.province import generate_province_colors
     from export.bmp_writer import (
@@ -117,7 +117,28 @@ def run(ctx):
                          np.asarray(ctx.river_map) if ctx.river_map is not None else None,
                          shape=tile_map.shape)
         from export.writers.map.trees_bmp import auto_generate_tree_map, write_trees_bmp
-        write_trees_bmp(ctx.output_dir, tree_map=auto_generate_tree_map(terrain_for_export))
+        _tree_profile = profile if profile is not None else getattr(ctx, "game_profile", None)
+        try:
+            _tree_map_w = int(map_width) if map_width is not None else int(width)
+        except (TypeError, ValueError):
+            _tree_map_w = int(width)
+        try:
+            _tree_map_h = int(map_height) if map_height is not None else int(height)
+        except (TypeError, ValueError):
+            _tree_map_h = int(height)
+        _generated_tree = auto_generate_tree_map(
+            terrain_for_export,
+            profile=_tree_profile,
+            map_width=_tree_map_w,
+            map_height=_tree_map_h,
+        )
+        write_trees_bmp(
+            ctx.output_dir,
+            tree_map=_generated_tree,
+            map_width=_tree_map_w,
+            map_height=_tree_map_h,
+            profile=_tree_profile,
+        )
         from export.writers.map.cities_bmp import write_cities_bmp
         write_cities_bmp(ctx.output_dir, terrain_map=terrain_for_export, map_width=int(width),
                          map_height=int(height), game_target=ctx.game_target)

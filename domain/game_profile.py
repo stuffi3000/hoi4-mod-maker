@@ -90,6 +90,7 @@ class GameProfile:
     terrain_indices: dict[str, int] = field(default_factory=dict)
     tree_indices: list[int] = field(default_factory=list)
     tree_palette_entries: int = 256
+    tree_size_overrides: dict[str, list[int]] = field(default_factory=dict)
     replace_paths: list[str] = field(default_factory=list)
     descriptor_policy: str = ""
     notes: str = ""
@@ -154,6 +155,27 @@ class GameProfile:
         width = int(map_w) // int(contract.width_divisor or 1)
         height = int(map_h) // int(contract.height_divisor or 1)
         return (width, height)
+
+    def expected_tree_size(self, map_w: int, map_h: int) -> tuple[int, int]:
+        return resolve_tree_dimensions(self, map_w, map_h)
+
+    def legal_tree_indices(self) -> frozenset[int]:
+        out: set[int] = set()
+        try:
+            for value in list(self.tree_indices or ()):
+                try:
+                    if isinstance(value, bool):
+                        continue
+                    number = int(value)
+                except (TypeError, ValueError):
+                    continue
+                if 0 <= number <= 255:
+                    out.add(number)
+        except (TypeError, ValueError, AttributeError):
+            pass
+        if out:
+            return frozenset(out)
+        return frozenset({0, 2, 3, 5, 6, 11, 28, 29})
 
     def asset_disposition(self, rel_path: str) -> str:
         normalized = str(rel_path).replace("\\", "/")
@@ -251,10 +273,103 @@ class GameProfile:
             "terrain_indices": dict(self.terrain_indices),
             "tree_indices": list(self.tree_indices),
             "tree_palette_entries": self.tree_palette_entries,
+            "tree_size_overrides": {
+                str(key): [int(value[0]), int(value[1])]
+                for key, value in dict(self.tree_size_overrides or {}).items()
+            },
             "replace_paths": list(self.replace_paths),
             "descriptor_policy": self.descriptor_policy,
             "notes": self.notes,
         }
+
+
+TREE_SIZE_OVERRIDE_DEFAULTS: dict[str, list[int]] = {"5632x2048": [1650, 600], "5632x2304": [1650, 675]}
+
+
+def _normalize_tree_override_key(map_w: int, map_h: int) -> str:
+    try:
+        return "%dx%d" % (int(map_w), int(map_h))
+    except (TypeError, ValueError):
+        return ""
+
+
+def _coerce_tree_size_overrides(raw) -> dict[str, list[int]]:
+    out: dict[str, list[int]] = {}
+    if raw is None:
+        return out
+    if not isinstance(raw, dict):
+        return out
+    for key, value in raw.items():
+        try:
+            label = str(key).strip().lower().replace(" ", "")
+            if "x" not in label:
+                continue
+            parts = label.split("x")
+            if len(parts) != 2:
+                continue
+            map_w = int(parts[0])
+            map_h = int(parts[1])
+            norm = "%dx%d" % (map_w, map_h)
+            seq = list(value)
+            if len(seq) != 2:
+                continue
+            out[norm] = [int(seq[0]), int(seq[1])]
+        except (TypeError, ValueError, AttributeError, IndexError):
+            continue
+    return out
+
+
+def resolve_tree_dimensions(profile, map_w: int, map_h: int) -> tuple[int, int]:
+    try:
+        width = int(map_w)
+        height = int(map_h)
+    except (TypeError, ValueError):
+        raise ValueError("map dimensions must be integers")
+    if width <= 0 or height <= 0:
+        raise ValueError("map dimensions must be positive")
+    overrides: dict = {}
+    try:
+        if profile is not None:
+            if hasattr(profile, "tree_size_overrides"):
+                overrides = getattr(profile, "tree_size_overrides") or {}
+            elif isinstance(profile, dict):
+                overrides = (profile.get("tree_size_overrides", {}) or {})
+    except (TypeError, ValueError, AttributeError):
+        overrides = {}
+    try:
+        norm_map: dict[str, list[int]] = {}
+        for key, value in dict(overrides or {}).items():
+            try:
+                label = str(key).strip().lower().replace(" ", "")
+                seq = list(value)
+                norm_map[label] = [int(seq[0]), int(seq[1])]
+            except (TypeError, ValueError, AttributeError, IndexError):
+                continue
+    except (TypeError, ValueError, AttributeError):
+        norm_map = {}
+    lookup = _normalize_tree_override_key(width, height)
+    if lookup and lookup in norm_map:
+        pair = norm_map[lookup]
+        return (int(pair[0]), int(pair[1]))
+    if lookup and lookup in TREE_SIZE_OVERRIDE_DEFAULTS and not norm_map:
+        pair = TREE_SIZE_OVERRIDE_DEFAULTS[lookup]
+        return (int(pair[0]), int(pair[1]))
+    return (width // 4, height // 4)
+
+
+def profile_tree_size_overrides(profile) -> dict[str, list[int]]:
+    try:
+        if profile is None:
+            return dict(TREE_SIZE_OVERRIDE_DEFAULTS)
+        raw = getattr(profile, "tree_size_overrides", None)
+        if raw is None and isinstance(profile, dict):
+            raw = profile.get("tree_size_overrides", None)
+        coerced = _coerce_tree_size_overrides(raw)
+        if coerced:
+            return coerced
+        return dict(TREE_SIZE_OVERRIDE_DEFAULTS)
+    except (TypeError, ValueError, AttributeError):
+        return dict(TREE_SIZE_OVERRIDE_DEFAULTS)
 
 
 def profile_from_dict(data: dict) -> GameProfile:
@@ -323,6 +438,9 @@ def profile_from_dict(data: dict) -> GameProfile:
         terrain_indices={str(k): int(v) for k, v in (data.get("terrain_indices", {}) or {}).items()},
         tree_indices=[int(v) for v in (data.get("tree_indices", []) or [])],
         tree_palette_entries=int(data.get("tree_palette_entries", 256)),
+        tree_size_overrides=_coerce_tree_size_overrides(
+            data.get("tree_size_overrides", {})
+        ),
         replace_paths=[str(v) for v in (data.get("replace_paths", []) or [])],
         descriptor_policy=str(data.get("descriptor_policy", "")),
         notes=str(data.get("notes", "")),

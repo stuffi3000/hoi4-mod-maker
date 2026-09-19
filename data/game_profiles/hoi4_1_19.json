@@ -213,6 +213,10 @@
   },
   "tree_indices": [0, 2, 3, 5, 6, 11, 28, 29],
   "tree_palette_entries": 256,
+  "tree_size_overrides": {
+    "5632x2048": [1650, 600],
+    "5632x2304": [1650, 675]
+  },
   "replace_paths": [
     "map/strategicregions",
     "map/supplyareas",

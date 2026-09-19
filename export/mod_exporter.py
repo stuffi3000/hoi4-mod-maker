@@ -248,6 +248,7 @@ def export_full_mod(
         output_dir,
         settings=default_map_settings,
         province_count=int(province_map.max()),
+        profile=profile,
     )
 
     # Terrain was synchronized before the visual rasters were written above.
