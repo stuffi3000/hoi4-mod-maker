@@ -2297,6 +2297,33 @@ def write_report(output_dir: str, plan, written_files: list, manifest_path: str,
 
 
 def write_lock_file(output_dir: str, plan, lock_name: str = "foundation.lock.json") -> str:
+    # M8 exports already have the complete manifest available at this point.
+    # Prefer the expanded freeze lock for real staged artifacts while keeping
+    # the older plan-only fallback below for direct/legacy callers and tests.
+    manifest_path = os.path.join(output_dir, "foundation_manifest.json")
+    try:
+        with open(manifest_path, "r", encoding="utf-8-sig") as handle:
+            staged_manifest = json.load(handle)
+        identity = staged_manifest.get("identity") if isinstance(staged_manifest, dict) else None
+        if (
+            isinstance(staged_manifest, dict)
+            and staged_manifest.get("profile") == "foundation"
+            and isinstance(identity, dict)
+            and str(identity.get("identity_hash", "") or "").strip()
+        ):
+            from services.foundation_freeze_service import build_expanded_lock
+            expanded = build_expanded_lock(
+                staged_manifest,
+                artifact_dir=output_dir,
+                lifecycle=str(staged_manifest.get("lifecycle", getattr(plan, "lifecycle", "draft")) or "draft"),
+                created_at=str((staged_manifest.get("metadata") or {}).get("created_at", "") or "") or None,
+            )
+            path = os.path.join(output_dir, lock_name)
+            with open(path, "w", encoding="utf-8") as handle:
+                json.dump(expanded, handle, ensure_ascii=False, indent=2, sort_keys=True)
+            return path
+    except (OSError, TypeError, ValueError, KeyError):
+        pass
     snapshot = getattr(plan, "snapshot", None)
     try:
         manifest = build_manifest_dict(plan, [])
@@ -2655,6 +2682,11 @@ def compare_with_lock(manifest: dict | str, lock: dict | str) -> dict:
         except Exception:
             manifest_mgr = {}
         for key in sorted(MANAGER_KEYS):
+            # Expanded M8 locks intentionally omit acceptance-only manager
+            # counts such as country_mgr. Missing keys are therefore not a
+            # mismatch; keys explicitly present in the lock remain strict.
+            if key not in lock_mgr:
+                continue
             try:
                 old = lock_mgr.get(key)
             except Exception:
@@ -2706,3 +2738,15 @@ def compare_with_lock(manifest: dict | str, lock: dict | str) -> dict:
         "manifest_identity": manifest_ident_hash,
         "status": status,
     }
+def build_freeze_lock_dict(manifest: dict, artifact_dir=None, acceptance=None, acceptance_path=None, lifecycle: str = "candidate", created_at=None, tool_version=None) -> dict:
+    from services import foundation_freeze_service as freeze_service
+    return freeze_service.build_expanded_lock(manifest, artifact_dir=artifact_dir, acceptance=acceptance, acceptance_path=acceptance_path, lifecycle=lifecycle, created_at=created_at, tool_version=tool_version)
+def write_freeze_handoff(lock: dict, path, manifest=None) -> str:
+    from services import foundation_freeze_service as freeze_service
+    from pathlib import Path as _Path
+    text = freeze_service.generate_handoff(lock, manifest)
+    destination = _Path(path)
+    if destination.parent and str(destination.parent):
+        destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_text(text, encoding="utf-8")
+    return str(destination)

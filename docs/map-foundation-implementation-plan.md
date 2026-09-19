@@ -1111,6 +1111,20 @@ Alongside the lock, generate `FOUNDATION-HANDOFF.md` containing:
 - prohibited operations after freeze;
 - procedure for requesting a map change and applying an ID migration.
 
+### M8 implementation checklist (2026-09-19)
+
+- [x] **M8.1 - foundation lock contents:** added an expanded, deterministic lock contract with map/profile identity, foundation source hashes, geography/topology counts, placement and asset inventories, accepted validation exceptions, and optional engine-acceptance identity; acceptance-only country/gameplay managers and content paths are excluded.
+- [x] **M8.2 - change classification:** added stable path-level comparison with breaking identity, breaking topology, foundation visual, placement, and non-foundation content classes plus rerun guidance.
+- [x] **M8.3 - freeze/unfreeze workflow:** added candidate, freeze, exact-identity acceptance recording, compare, unfreeze-audit, and handoff operations through a safe CLI and the Qt export-result workflow; unfreeze requires a reason.
+- [x] **M8.4 - handoff package:** added deterministic `FOUNDATION-HANDOFF.md` generation covering dependencies, dimensions and IDs, ownership/inheritance, exceptions, content boundaries, author rules, prohibited operations, and migration procedure.
+
+### M8 checkpoint - foundation freeze and content handoff (2026-09-19)
+
+- **Completed:** M8 lock, comparison, lifecycle, acceptance-record, handoff, CLI, and Qt workflow contracts are implemented. Real foundation exports now emit the expanded lock, while legacy plan-only lock callers remain compatible.
+- **Evidence:** focused M8 and UI tests, M2/M3 manifest and determinism tests, M7 acceptance tests, validation tests, export safety/compact-ID tests, compilation, and diff checks pass. The full `tests/export` run has one pre-existing intentional baseline mismatch: `test_byte_diff.py` still expects the older `map/terrain.bmp` bytes and optional `map/airports.txt`/`map/rocket_sites.txt` inventory; this is the documented M6 baseline exception.
+- **Acceptance status:** the M8 implementation checklist is complete, but no real Belgium foundation has been frozen or engine-accepted in this automated pass. Operational acceptance still requires the exact exported artifact, reviewed exceptions, a successful M7 acceptance record with matching identity, and a recorded freeze.
+- **Next controlled slice:** apply the candidate/freeze/acceptance-record workflow to the exact Belgium artifact, then continue with M9 compatibility cleanup and release-candidate documentation.
+
 This gives traditional mod development a clear contract rather than a folder of unexplained generated files.
 
 ## M9 — migration cleanup and release candidate

@@ -628,6 +628,51 @@ class ExportDialog(QDialog):
         text_edit.setPlainText("\n".join(lines))
         layout.addWidget(text_edit)
 
+        # Foundation-freeze workflow (M8): reachable from foundation exports only.
+        # Non-foundation exports show an informational note instead so they do
+        # not falsely claim freeze support. Safe: widget uses explicit paths
+        # and the backend service only; export semantics are unchanged.
+        try:
+            from views.foundation_workflow import (
+                FoundationWorkflowWidget,
+                is_foundation_profile,
+            )
+
+            _profile_name = ""
+            try:
+                _combo = getattr(self, "_profile_combo", None)
+                if _combo is not None:
+                    _profile_name = str(_combo.currentText())
+            except Exception:
+                _profile_name = ""
+            if not _profile_name:
+                try:
+                    _profile_name = str(
+                        getattr(getattr(self, "_worker", None), "profile_name", "")
+                        or ""
+                    )
+                except Exception:
+                    _profile_name = ""
+            _artifact_dir = ""
+            try:
+                _artifact_dir = str(getattr(self, "_output_dir", "") or "")
+            except Exception:
+                _artifact_dir = ""
+            if is_foundation_profile(_profile_name):
+                _workflow = FoundationWorkflowWidget(
+                    artifact_dir=_artifact_dir, parent=dlg
+                )
+                layout.addWidget(_workflow)
+            else:
+                _freeze_note = QLabel(
+                    "Foundation freeze workflow is available only for "
+                    "foundation-profile exports."
+                )
+                _freeze_note.setWordWrap(True)
+                layout.addWidget(_freeze_note)
+        except Exception:
+            pass
+
         # close button
         btn_close = QPushButton(tr("export_result_close"))
         btn_close.setStyleSheet(
