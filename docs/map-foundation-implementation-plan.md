@@ -1186,6 +1186,7 @@ Release a new 1.4.0 release on Github with an updated .exe file.
 - Test the features from each milestone on the Belgium project.
 - Specifically use the M7 testing harness in order to test a full export of the Belgium project.
 - Review the "final" exported project and address potential shortcomings.
+- Potentially release a 1.4.1 hotfix.
 
 ## 8. Suggested pull-request sequence
 
