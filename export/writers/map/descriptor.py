@@ -1,12 +1,41 @@
-"""descriptor.mod writes."""
+"""descriptor.mod writes (M9.2 single replace-path policy)."""
 import os
 from data.constants import DEFAULT_MOD_VERSION, REPLACE_PATHS
 from services.game_assets import resolve_supported_version
 
 
+LEGACY_REPLACE_PATHS = (
+    "map",
+    "map/strategicregions",
+    "map/supplyareas",
+    "history/countries",
+    "history/states",
+    "history/units",
+    "common/country_tags",
+    "common/countries",
+    "common/national_focus",
+    "common/characters",
+)
+
+
+def resolve_replace_paths(profile=None, replace_paths=None):
+    if replace_paths is not None:
+        return list(replace_paths)
+    game_paths = getattr(profile, "replace_paths", None) if profile is not None else None
+    if game_paths:
+        return list(game_paths)
+    return list(REPLACE_PATHS)
+
+
 def write_descriptor(mod_name, output_dir, supported_version=None, game_target=None,
-                     replace_paths=None, write_outer=True):
-    rp = "\n".join(f'replace_path="{p}"' for p in (list(replace_paths) if replace_paths is not None else list(REPLACE_PATHS)))
+                     replace_paths=None, write_outer=True, profile=None,
+                     legacy_compat=False):
+    if legacy_compat and replace_paths is None and profile is None:
+        replace_paths = LEGACY_REPLACE_PATHS
+    rp = "\n".join(
+        f"replace_path=\"{p}\""
+        for p in resolve_replace_paths(profile=profile, replace_paths=replace_paths)
+    )
     # Automatically follow the local game version (the export will not be marked "outdated" by the launcher after the game is updated)
     if supported_version is not None:
         supported = str(supported_version)
@@ -38,4 +67,3 @@ def write_descriptor(mod_name, output_dir, supported_version=None, game_target=N
             abs_path = os.path.abspath(output_dir).replace("\\", "/")
             f.write(f'path="{abs_path}"\n')
             f.write(rp + "\n")
-

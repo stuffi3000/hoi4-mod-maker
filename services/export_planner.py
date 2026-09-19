@@ -1511,6 +1511,19 @@ def plan_export(tile_map, province_map, terrain_map=None, height_map=None, river
                 game_profile=None, repair_policy: str = "propose", lifecycle=None,
                 scope=None, dimensions=None, mod_name: str = "WorldTest", tag: str = "AAA",
                 acceptance_count: int = 2, vanilla_tags=(), map_placement_mgr=None) -> ExportPlan:
+    if profile_name == "legacy_full" and isinstance(scope, dict) and scope:
+        # M9.1: the old layer-toggle dictionary is retained as an adapter, but
+        # callers should migrate to an explicit profile and staged layers.
+        import warnings
+        from domain.export_contract import translate_legacy_scope
+
+        profile_name, scope = translate_legacy_scope(scope)
+        warnings.warn(
+            "plan_export(scope=...) is deprecated; use an explicit legacy_full "
+            "profile with staged layers instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
     if profile_name not in EXPORT_PROFILES:
         raise PlanRejected("unknown export profile %r; expected one of %s"
                            % (profile_name, ", ".join(EXPORT_PROFILES)))

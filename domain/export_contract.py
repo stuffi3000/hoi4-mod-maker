@@ -42,6 +42,29 @@ PROFILE_STAGES = {
 
 FOUNDATION_FORBIDDEN_SCOPE = ("countries", "localisation", "gfx")
 
+LEGACY_SCOPE_KEYS = (
+    "map",
+    "states",
+    "countries",
+    "strategic_regions",
+    "localisation",
+    "supply",
+    "gfx",
+    "replace_path",
+    "descriptor",
+    "compact_ids",
+)
+
+
+def translate_legacy_scope(scope):
+    """Translate a legacy scope dict to the owning profile (M9.1)."""
+    normalized = dict(scope or {})
+    for key in normalized:
+        if key not in LEGACY_SCOPE_KEYS:
+            raise PlanRejected("unknown export layer: %r" % key)
+    resolve_layers("legacy_full", normalized or None)
+    return ("legacy_full", normalized)
+
 
 class PlanRejected(ValueError):
     pass
@@ -259,10 +282,7 @@ def resolve_layers(profile_name: str, scope: dict | None = None) -> tuple:
                 raise PlanRejected(
                     "scope %r is incompatible with the foundation profile" % key
                 )
-            if key not in layers and key not in (
-                "map", "states", "countries", "strategic_regions", "localisation",
-                "supply", "gfx", "replace_path", "descriptor", "compact_ids",
-            ):
+            if key not in layers and key not in LEGACY_SCOPE_KEYS:
                 raise PlanRejected("unknown export layer: %r" % key)
     return layers
 

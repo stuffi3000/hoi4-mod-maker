@@ -25,7 +25,7 @@ inherit them from vanilla or a dependency.
 | `map/terrain/*.dds` | Terrain/material/colormap art | DDS format, dimensions, compression, and mipmaps are profile-specific |
 | `map/cities.bmp` / `map/cities.txt` | City-style mask and meshes | Palette indices in the bitmap must match `city_group` entries |
 | `map/buildings.txt` | 3D building positions and port sea links | Semicolon records; state ID, not province ID, is the first field |
-| `map/positions.txt` | File named by `default.map` for map positions | It is empty in the installed vanilla 1.19.3.0 map; do not assume it replaces `unitstacks.txt` |
+| `map/positions.txt` | File named by `default.map` for map positions | It is empty in the installed vanilla 1.19.3.0 map; do not assume it replaces `unitstacks.txt`; record the selected profile's decision |
 | `map/unitstacks.txt` | Unit models and victory-point icon positions | Province-based semicolon records; generated content must be version-tested |
 | `map/supply_nodes.txt` / `map/railways.txt` | Starting supply graph | Every province reference must survive export and point to a valid state/map |
 | `map/adjacencies.csv` / `map/adjacency_rules.txt` | Straits, canals, blocked borders | References and the CSV terminator are mandatory when the files are present |
@@ -37,6 +37,30 @@ Older guides may mention `airports.txt`, `rocketsites.txt`, or
 `rocket_sites.txt`. Those map files were deprecated/removed in patch 1.15;
 do not add empty legacy files to a new map profile without a specific
 compatibility reason.
+
+## Profiles, manifests, and locks
+
+The exporter has four explicit profiles:
+
+- `foundation` owns stable map identity, geography, topology, reviewed
+  placements, and map-owned assets. It omits country/scenario content.
+- `acceptance` composes the foundation with disposable, collision-free test
+  countries and the minimum history needed for a clean engine run.
+- `scaffold` retains generated gameplay helpers for prototyping and records
+  them outside the foundation lock.
+- `legacy_full` is a compatibility profile for callers migrating from the
+  pre-staged exporter.
+
+Every staged artifact should contain a `foundation_manifest.json` describing
+source and output hashes, target/profile, findings, repairs, asset resolution,
+and provenance. A foundation lock selects the stable identity/topology fields
+from that manifest. Compare a new manifest with the frozen lock before
+content export; a breaking result requires an explicit migration review.
+
+The lifecycle is `draft -> candidate -> frozen -> accepted`. Candidate and
+freeze operations are available through `tools/foundation_freeze.py`; the
+freeze command also generates `FOUNDATION-HANDOFF.md`. Engine acceptance is
+valid only when its record carries the exact manifest and lock identity.
 
 ## `default.map` is a routing file
 

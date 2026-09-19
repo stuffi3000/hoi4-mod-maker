@@ -271,6 +271,17 @@ class ExportDialog(QDialog):
         profile_layout.addStretch()
         layout.addWidget(profile_group)
 
+        profile_help = QLabel(
+            "Profiles separate map foundation data from disposable gameplay content. "
+            "Use foundation for a candidate or frozen map package; use acceptance "
+            "for engine testing; use scaffold for optional generated scenario data. "
+            "The legacy_full profile keeps the pre-staged export path available "
+            "during migration."
+        )
+        profile_help.setWordWrap(True)
+        profile_help.setStyleSheet("color: #9aa0ab; font-size: 12px; padding: 2px 4px;")
+        layout.addWidget(profile_help)
+
         self._plan_label = QLabel("")
         self._plan_label.setWordWrap(True)
         layout.addWidget(self._plan_label)

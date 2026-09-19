@@ -2,7 +2,7 @@
 
 This page is repository-specific. The other pages in `docs/wiki/` describe what the HOI4 engine expects; this page records what the current tool actually generates, preserves, repairs, or leaves for a later content workflow. It is the reference to update when an exporter writer changes.
 
-**Review date:** 17 September 2026
+**Review date:** 19 September 2026
 **Acceptance profile used by the map audit:** HOI4 1.19.3.0, 5,632x2,048 map, custom-map foundation plus a disposable scenario scaffold.
 
 ## Four questions for every exported file
@@ -25,16 +25,20 @@ The project file and its managers are the editable source of truth:
 
 ```text
 .hoi4proj
-  -> MapData / state / country / region / logistics managers
-  -> export_full_mod(...)
-  -> generated MOD tree
-  -> static verifier
+  -> immutable snapshot + selected GameTarget
+  -> planner + staged profile writers
+  -> foundation/acceptance/scaffold artifact
+  -> manifest + static verifier
   -> isolated HOI4 engine acceptance run
 ```
 
 `export/mod_exporter.py` intentionally exports from working copies for several repair/compaction steps. Tiny provinces can be merged, oversized province bounding boxes can be trimmed, and optional ID compaction can remap manager references on the export copy. These mutations must be reported in the manifest with before/after counts and an ID mapping; content authors must never assume that a silent export repair is harmless.
 
-The export scope can enable or disable map, state, country, localization, descriptor, replacement-path, strategic-region, and supply outputs. A partial export is valid only when its inherited files and dependencies are documented. The static verifier is a structural gate, not an engine acceptance test.
+The modern export API selects `foundation`, `acceptance`, `scaffold`, or
+`legacy_full`. The old scope dictionary remains an adapter and emits a
+deprecation warning for new planner/facade callers. A partial export is valid
+only when its inherited files and dependencies are documented. The static
+verifier is a structural gate, not an engine acceptance test.
 
 ## Current output contract
 
@@ -50,13 +54,13 @@ The export scope can enable or disable map, state, country, localization, descri
 | Supply/railways | Manager data is used when present; otherwise fallback nodes and railways are generated | Fallback data is scaffolding, not a designed logistics network |
 | Legacy supply areas | `_write_supply_areas()` still writes `map/supplyareas/*.txt` when supply export is enabled | The old system is deprecated from 1.11; keep only as a compatibility artifact with an explicit legacy status |
 | Adjacencies | Manager data is written when present; otherwise header plus sentinel is emitted | No special straits/canals are implied by an empty file; author and validate them explicitly |
-| Buildings | `buildings.txt` receives placeholder state entities and coastal `naval_base_spawn` records | Coordinates are deterministic scaffolding; final placement and building legality need review |
-| Positions | `positions.txt` receives six repeated center-of-mass slots per province | It is not final unit/city/port placement; duplicates and surface ownership need QA |
+| Buildings | Foundation uses reviewed manager placements when available; legacy/scaffold paths retain deterministic compatibility helpers | Coordinates are still validated against the final raster; generated records remain provisional until reviewed |
+| Positions | Foundation uses the placement contract; legacy paths may retain centroid compatibility output | It is not final unit/city/port placement until provenance and surface ownership pass review |
 | Unit stacks | `write_empty_unitstacks()` emits an empty `unitstacks.txt` | The current target installation contains substantive unit-stack data; this is a known project gap, not a proof that the file is optional |
 | Airports/rocket sites | The compatibility writer emits empty legacy files | Version-gate or omit them when the selected game no longer reads them |
 | Countries | Manager countries or a fallback country are generated, with flags, history, ideas, bookmark, and localization scaffolding | Generated scenario tags must be unique and isolated from vanilla; detailed content is not yet a full editor contract |
 | Replacement paths | The replacement scrubber creates a full-conversion override tree | Every replacement directory needs an inventory; broad replacement can remove inherited definitions |
-| Defines | `common/defines/01_mod_defines.lua` sets `MAX_PROVINCES` to at least 25,000 plus other safety values | This is an aggressive compatibility override and must be version/profile justified in the manifest |
+| Defines | Staged `scaffold` calculates `MAX_PROVINCES` from the actual province count; `legacy_full` retains its 25,000 floor for compatibility | The selected profile and reason must be recorded in the manifest; new callers should not inherit the legacy floor accidentally |
 
 ## ID and reference contract
 

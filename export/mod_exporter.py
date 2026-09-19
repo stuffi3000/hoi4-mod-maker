@@ -1,7 +1,9 @@
-"""MOD Complete Exporter — Generate a complete and usable HOI4 MOD with one click
+"""MOD Complete Exporter (M9.1 compatibility facade): generate a complete and usable HOI4 MOD with one click
 Reference file structure of KR (Kaiserreich)"""
 import os
 import struct
+import sys
+import warnings
 import numpy as np
 
 from data.constants import (
@@ -16,6 +18,20 @@ from export.bmp_writer import (
     write_provinces_bmp, write_heightmap_bmp,
     write_terrain_bmp, write_rivers_bmp,
 )
+
+
+def _emit_export_note(message):
+    text = str(message)
+    try:
+        print(text, flush=True)
+    except UnicodeEncodeError:
+        encoding = getattr(sys.stdout, "encoding", None) or "utf-8"
+        data = text.encode(encoding, errors="replace")
+        try:
+            sys.stdout.buffer.write(data + b"\n")
+            sys.stdout.flush()
+        except Exception:
+            print(text.encode("utf-8", errors="replace").decode("utf-8"), flush=True)
 
 
 def export_full_mod(
@@ -47,10 +63,26 @@ def export_full_mod(
     supported_version: str | None = None,
     map_placement_mgr=None,
 ) -> None:
-    """Export complete MOD in one click. scope controls the export scope, None=export all.
+    """Export complete MOD in one click (M9.1 compatibility facade).
+
+    The staged profile pipeline (export_with_profile/export_planned_mod with
+    export/stages/ + export/writers/) is authoritative. This facade preserves
+    the historic signature and always behaves as the legacy_full profile.
+    An explicit scope dict is translated via
+    domain.export_contract.translate_legacy_scope and emits a DeprecationWarning;
+    output is unchanged. Prefer the staged pipeline for new code.
 
     assets/dirty_assets: Art asset system. The imported MOD original art files are saved in assets.
     Assets that have not been edited and triggered dirty will be directly written back to the original bytes during export (the original art will be retained)."""
+    if scope is not None:
+        from domain.export_contract import translate_legacy_scope as _translate_scope
+        _profile_name, scope = _translate_scope(dict(scope))
+        warnings.warn(
+            "export_full_mod(scope=...) is deprecated; use the legacy_full profile "
+            "via export_with_profile/export_planned_mod (output unchanged)",
+            DeprecationWarning,
+            stacklevel=2,
+        )
     if assets is None:
         assets = {}
     if dirty_assets is None:
@@ -95,7 +127,7 @@ def export_full_mod(
     # exact-boundary case that the older pre-export validator missed.
     repaired_bbox_ids = _repair_too_large_provinces(province_map, tile_map)
     if repaired_bbox_ids:
-        print(
+        _emit_export_note(
             "  [province bbox] Trimmed boundary pixels from "
             f"{len(repaired_bbox_ids)} province(s): "
             + ", ".join(str(pid) for pid in repaired_bbox_ids)
@@ -319,7 +351,7 @@ def export_full_mod(
                 states[best_sid].append(orphan)
                 if state_mgr.get_state(best_sid):
                     state_mgr.get_state(best_sid).provinces.append(orphan)
-            print(f"  [orphan adoption] Assigned {len(orphans)} orphaned land provinces")
+            _emit_export_note(f"  [orphan adoption] Assigned {len(orphans)} orphaned land provinces")
     else:
         states = None  # Use region to split the state later
 
@@ -339,7 +371,7 @@ def export_full_mod(
             land_ids = [p for p in land_ids if p not in orphan_coastal]
             sea_ids = sorted(set(sea_ids) | orphan_coastal)
             coastal_set -= orphan_coastal
-            print(f"  [coastal] Converted {len(orphan_coastal)} coastal provinces without a state to sea")
+            _emit_export_note(f"  [coastal] Converted {len(orphan_coastal)} coastal provinces without a state to sea")
         land_to_sea = {p: s for p, s in land_to_sea.items() if p in coastal_set}
 
     # definition.csv is deferred to be written after buildings (needs the coordinate verification results of buildings)
@@ -411,7 +443,7 @@ def export_full_mod(
             coastal_set -= failed_coastal
             land_ids = [p for p in land_ids if p not in failed_coastal]
             sea_ids = sorted(set(sea_ids) | failed_coastal)
-            print(f"  [coastal] Converted {len(failed_coastal)} coastal provinces with unreliable coordinates to sea")
+            _emit_export_note(f"  [coastal] Converted {len(failed_coastal)} coastal provinces with unreliable coordinates to sea")
 
         _write_definition_csv(province_count, colors, province_map, tile_map, output_dir,
                               land_ids, sea_ids, lake_ids, continent_mgr=continent_mgr,
@@ -704,8 +736,8 @@ def _batch_resolve_terrain(province_count, province_map, terrain_map,
     return result
 
 
-# Note: default.map is no longer generated - use the original one (EaW verification method)
-# Our BMP/CSV files will automatically overwrite the original corresponding files by file name.
+# default.map is generated by export/writers/map/default_map.py for every profile (M9.2).
+# The staged core_rasters/map_metadata path owns this file; do not restore a second copy.
 
 
 # ────────────────── continent.txt ──────────────────
@@ -802,7 +834,8 @@ tree_autumn2 = { start_date=00.10.25 end_date=00.11.01 }
 """)
 
 
-# NOTE: adjacency_rules/ambient_object/weatherpositions/unitstacks/rocket_sites is no longer generated
+# adjacency_rules/ambient_object/weatherpositions/unitstacks/rocket variants are owned by\
+# export/writers/map/* + export/stages/* (M9.2); see the staged pipeline for profile policy.
 
 
 # ────────────────── State split ──────────────────
@@ -973,8 +1006,8 @@ def _write_localisation(mod_name, tag, states, output_dir, region_count=24):
 
 def _write_descriptor(mod_name, output_dir, game_target=None, supported_version=None,
                       profile=None, write_outer=True):
-    from export.writers.map.descriptor import write_descriptor
-    replace = list(profile.replace_paths) if profile is not None and getattr(profile, "replace_paths", None) else None
+    from export.writers.map.descriptor import resolve_replace_paths, write_descriptor
+    replace = resolve_replace_paths(profile=profile)
     if supported_version is None and profile is not None:
         supported_version = getattr(profile, "supported_version_pattern", None)
     return write_descriptor(mod_name, output_dir, supported_version=supported_version,
@@ -1386,21 +1419,21 @@ def _sync_terrain_with_tile(terrain_map: np.ndarray, tile_map: np.ndarray) -> No
     count_land = int(np.sum(land_bad))
     if count_land > 0:
         terrain_map[land_bad] = plains_idx
-        print(f"  [terrain sync] Changed {count_land:,} land pixels from ocean terrain to plains")
+        _emit_export_note(f"  [terrain sync] Changed {count_land:,} land pixels from ocean terrain to plains")
 
     # There should be no landforms on the ocean
     sea_bad = (tile_map == TILE_SEA) & (terrain_map != ocean_idx)
     count_sea = int(np.sum(sea_bad))
     if count_sea > 0:
         terrain_map[sea_bad] = ocean_idx
-        print(f"  [terrain sync] Changed {count_sea:,} sea pixels to ocean terrain")
+        _emit_export_note(f"  [terrain sync] Changed {count_sea:,} sea pixels to ocean terrain")
 
     # The terrain on the lake should be lakes
     lake_bad = (tile_map == TILE_LAKE) & (terrain_map != lakes_idx)
     count_lake = int(np.sum(lake_bad))
     if count_lake > 0:
         terrain_map[lake_bad] = lakes_idx
-        print(f"  [terrain sync] Changed {count_lake:,} lake pixels to lakes terrain")
+        _emit_export_note(f"  [terrain sync] Changed {count_lake:,} lake pixels to lakes terrain")
 
 
 def _gen_heightmap(tm):

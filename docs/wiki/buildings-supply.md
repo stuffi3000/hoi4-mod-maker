@@ -151,6 +151,30 @@ access, graph connectivity, and visual placement have been reviewed.
 - run a clean target-version start and inspect `error.log`, `setup.log`, and
   later AI/naval behavior.
 
+## Foundation versus scenario content
+
+In the `foundation` profile, `map/buildings.txt`, ports, slots, and weather
+positions are map-owned placement data only. State owners, resources,
+manpower, victory points, factories, and country history are content-team
+inputs and are intentionally omitted. A generated centroid or network pair is
+reported as an unreviewed proposal; it is not evidence that the placement is
+ready for a frozen map.
+
+The `acceptance` profile may add disposable owners and test history so the
+engine can start. The `scaffold` profile may add generated building levels and
+other gameplay helpers, but those records are marked as scaffold provenance
+and excluded from the foundation lock. `legacy_full` retains the old behavior
+only for compatibility during migration.
+
+Before freezing, review the placement and logistics findings together:
+
+1. accept or replace every generated/fallback building and port position;
+2. verify every port's adjacent sea province and every building's state ID;
+3. review railway components and explain intentional disconnected networks;
+4. ensure supply nodes are valid land provinces in the final state graph;
+5. rerun static validation, export the exact artifact, and attach the engine
+   acceptance record before recording the lock.
+
 ## Sources
 
 - [HOI4 Building modding](https://hoi4.paradoxwikis.com/Building_modding)

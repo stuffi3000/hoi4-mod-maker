@@ -1,4 +1,4 @@
-"""CSV/Text file writer — generates definition.csv and other map configuration files"""
+"""CSV/Text file writer (M9.1 compatibility shims): generates definition.csv and other map configuration files"""
 import os
 import numpy as np
 
@@ -235,15 +235,11 @@ def write_empty_files(output_dir: str) -> None:
     # ambient_object.txt — generated separately by ambient_object writer, not covered here
 
     # seasons.txt — copy from the original, or write the minimum available content if not available
-    vanilla_seasons = os.path.join(
-        "G:/SteamLibrary/steamapps/common/Hearts of Iron IV/map/seasons.txt"
-    )
-    if os.path.exists(vanilla_seasons):
-        import shutil
-        shutil.copy2(vanilla_seasons, os.path.join(map_dir, "seasons.txt"))
-    else:
-        with open(os.path.join(map_dir, "seasons.txt"), "w", encoding="utf-8") as f:
-            f.write(_FALLBACK_SEASONS)
+    # M9.2: writers must not perform independent game-install discovery.
+    # Game files are resolved centrally via services.game_assets; this legacy
+    # helper always writes the bundled fallback so output stays deterministic.
+    with open(os.path.join(map_dir, "seasons.txt"), "w", encoding="utf-8") as f:
+        f.write(_FALLBACK_SEASONS)
 
     # weatherpositions.txt — empty file
     with open(os.path.join(map_dir, "weatherpositions.txt"), "w", encoding="utf-8") as f:
@@ -406,25 +402,12 @@ def write_country_files(output_dir: str, tag: str = "AAA") -> None:
 
 
 def write_descriptor_mod(output_dir: str, mod_name: str = DEFAULT_MOD_NAME) -> None:
-    """Generate descriptor.mod"""
-    file_path = os.path.join(output_dir, "descriptor.mod")
-    with open(file_path, "w", encoding="utf-8") as f:
-        f.write(f'version="{DEFAULT_MOD_VERSION}"\n')
-        f.write("tags={\n")
-        f.write('    "Alternative History"\n')
-        f.write('    "Map"\n')
-        f.write('    "Total Conversion"\n')
-        f.write("}\n")
-        f.write(f'name="{mod_name}"\n')
-        from services.game_assets import resolve_supported_version
-        f.write(f'supported_version="{resolve_supported_version()}"\n')
-        f.write('replace_path="map"\n')
-        f.write('replace_path="map/strategicregions"\n')
-        f.write('replace_path="map/supplyareas"\n')
-        f.write('replace_path="history/countries"\n')
-        f.write('replace_path="history/states"\n')
-        f.write('replace_path="history/units"\n')
-        f.write('replace_path="common/country_tags"\n')
-        f.write('replace_path="common/countries"\n')
-        f.write('replace_path="common/national_focus"\n')
-        f.write('replace_path="common/characters"\n')
+    """Generate descriptor.mod through the staged descriptor writer.
+
+    This public helper remains for legacy callers, but descriptor formatting
+    and replacement-path policy have one owner now.
+    """
+    os.makedirs(output_dir, exist_ok=True)
+    from export.writers.map.descriptor import write_descriptor
+
+    write_descriptor(mod_name, output_dir, write_outer=False, legacy_compat=True)

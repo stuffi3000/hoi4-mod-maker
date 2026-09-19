@@ -1,9 +1,26 @@
 """Application version and release history."""
 
-VERSION = "1.3.4"
-VERSION_DATE = "2026-07-11"
+VERSION = "1.4.0"
+VERSION_DATE = "2026-09-19"
 
 CHANGELOG = {
+    "1.4.0": {
+        "date": "2026-09-19",
+        "changes": [
+            "Released the map-foundation pipeline as a versioned, profile-aware export workflow.",
+            "Added immutable export snapshots, transactional staging, typed repair plans, and foundation/acceptance/scaffold profiles.",
+            "Added shared validation findings and reports for geometry, raster, terrain, geography, logistics, placements, assets, and final artifacts.",
+            "Added deterministic manifests, source/output hashes, repair ledgers, and versioned foundation-lock comparison.",
+            "Added adjacency review state, import/export support, adjacency rules, logistics graph analysis, exceptions, and readiness reporting.",
+            "Added authored placement records, deterministic proposals, acceptance workflows, transforms, weather positions, and read-only map overlays.",
+            "Added version-aware terrain, indexed BMP, tree-map, DDS, water, fog-of-war, colormap, and inherited-asset contracts.",
+            "Added isolated acceptance-mod generation, collision-free test tags, assisted engine launch/log analysis, and exact-artifact acceptance records.",
+            "Added foundation candidate/freeze/unfreeze workflows, deterministic change classification, engine-acceptance recording, and FOUNDATION-HANDOFF.md.",
+            "Preserved legacy export/project compatibility through scope adapters, archive/sidecar migration paths, and retained writer shims.",
+            "Removed hard-coded legacy install discovery from the CSV compatibility writer, centralized descriptor replacement-path policy, and made staged province limits profile-aware.",
+            "Updated the English-only release documentation, onboarding screenshots, CLI/export guidance, and foundation handoff material.",
+        ],
+    },
     "1.3.4": {
         "date": "2026-07-11",
         "changes": [

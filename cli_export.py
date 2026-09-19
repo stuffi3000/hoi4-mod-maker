@@ -106,7 +106,17 @@ def configure_console_streams() -> None:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Export an HOI4 MOD from a .hoi4proj project file"
+        description="Export an HOI4 MOD from a .hoi4proj project file",
+        epilog=(
+            "Profiles:\n"
+            "  foundation  map-owned candidate package; no country/scenario content\n"
+            "  acceptance  disposable playable test mod for the engine harness\n"
+            "  scaffold    optional generated gameplay starting point\n"
+            "  legacy_full compatibility profile for the pre-staged exporter\n\n"
+            "Foundation workflow: plan a candidate, review findings and repairs, "
+            "export the staged artifact, run static/engine acceptance, then use "
+            "the foundation-freeze CLI/service to record the lock and handoff."
+        ),
     )
     parser.add_argument("project", help="Path to the .hoi4proj project file")
     parser.add_argument(
@@ -129,7 +139,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--profile",
         choices=("foundation", "acceptance", "scaffold", "legacy_full"),
         default="legacy_full",
-        help="Export profile; GUI and CLI share the same planner (default: legacy_full)",
+        help="Export profile: foundation, acceptance, scaffold, or legacy_full (default: legacy_full)",
     )
     parser.add_argument(
         "--game-dir",
@@ -145,12 +155,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--manifest",
         default=None,
-        help="Copy the generated foundation manifest to PATH",
+        help="Copy the generated foundation manifest to PATH after export",
     )
     parser.add_argument(
         "--compare-lock",
         default=None,
-        help="Compare the planned artifact with a foundation lock file before exporting",
+        help="Compare the planned artifact with a foundation lock before writing output",
     )
     parser.add_argument(
         "--json-report",

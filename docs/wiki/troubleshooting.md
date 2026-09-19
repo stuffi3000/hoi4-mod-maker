@@ -93,6 +93,41 @@ For a generated MOD, record the game executable/profile and run an isolated test
 
 Record the result in the export manifest. “The menu opened” is a useful milestone, not proof of a playable MOD.
 
+## Finding codes and the assisted harness
+
+The planner and artifact verifier use stable finding-code families so the same
+problem can be triaged in the GUI, CLI JSON report, and documentation:
+
+| Finding family | Typical examples | First action |
+| --- | --- | --- |
+| `map.*`, `province.*`, `raster.*` | dimensions, empty IDs, mixed province types | inspect the raster and selected game profile |
+| `state.*`, `region.*`, `adjacency.*` | missing membership, disconnected region, unreviewed strait | review geography/topology and rerun the relevant validator |
+| `logistics.*` | invalid railway endpoint, disconnected supply component | inspect graph components and record an intentional exception only when justified |
+| `placement.*` | generated fallback, out-of-province coordinate, missing port sea link | replace or accept the authored placement in the review UI |
+| `asset.*`, `export.*` | unsupported format, missing output owner, staged artifact mismatch | inspect the manifest's resolution/provenance and target contract |
+| `engine.*`, `acceptance.*` | stale log, tag collision, map-load error | rerun the isolated acceptance harness with fresh logs |
+
+The assisted harness is deliberately conservative. It launches only the
+selected executable, uses a unique run directory, captures fresh logs, and
+binds the result to the artifact manifest identity. A successful process exit
+without the required start/tick/save/reload evidence is not a pass. Use the
+M7 CLI tool to inspect or run the checklist, then use
+`tools/foundation_freeze.py record-acceptance` only for a successful exact
+identity record.
+
+For a foundation change, compare the new manifest before rerunning content:
+
+```text
+python tools/foundation_freeze.py compare \
+  --manifest out/new-foundation/foundation_manifest.json \
+  --lock out/frozen/foundation.lock.json
+```
+
+Breaking identity, topology, foundation-visual, or placement differences
+require a candidate review and a new acceptance run. Non-foundation content
+changes may be handled independently when the comparison reports them as
+non-breaking.
+
 ## Sources
 
 - [HOI4 Troubleshooting](https://hoi4.paradoxwikis.com/Troubleshooting)

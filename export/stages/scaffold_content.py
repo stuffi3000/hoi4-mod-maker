@@ -85,8 +85,26 @@ def run(ctx):
         tags = list(ctx.country_mgr.countries.keys()) \
             if ctx.country_mgr is not None and getattr(ctx.country_mgr, "countries", None) else [ctx.tag]
         _write_bookmark(ctx.mod_name, tags, ctx.output_dir)
-    from export.writers.common.defines import write_defines_lua
-    write_defines_lua(ctx.output_dir, province_count=int(ctx.scratch.get("province_count") or 0))
+    from export.writers.common.defines import (
+        LEGACY_MAX_PROVINCES_FLOOR,
+        write_defines_lua,
+    )
+    # Keep legacy_full byte compatibility while making the newer scaffold
+    # profile calculate the smallest target-specific limit it needs.  The
+    # staged caller must choose the policy explicitly; the writer default is
+    # retained only for direct legacy callers.
+    min_provinces = (
+        LEGACY_MAX_PROVINCES_FLOOR
+        if ctx.profile_name == "legacy_full"
+        else None
+    )
+    write_defines_lua(
+        ctx.output_dir,
+        province_count=int(ctx.scratch.get("province_count") or 0),
+        min_provinces=min_provinces,
+    )
+    if ctx.profile_name == "scaffold":
+        notes.append("MAX_PROVINCES calculated from the staged province count")
     if ctx.enabled("replace_path"):
         from export.writers.replace_path.scrubber import (
             write_ai_strategy_overrides,

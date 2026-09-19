@@ -1,4 +1,4 @@
-"""BMP file writer—generates BMP files strictly in the format required by HOI4"""
+"""BMP file writer (M9.1 compatibility shims): generates BMP files strictly in the format required by HOI4"""
 import struct
 import os
 import numpy as np

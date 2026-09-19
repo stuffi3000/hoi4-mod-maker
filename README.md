@@ -8,12 +8,14 @@ The application interface and generated messages are English-only.
 
 HOI4 Map Maker is an open-source desktop map editor built with Python and PyQt5. It provides 12 editing modes covering the entire map creation workflow: draw continents, generate provinces, assign states and countries, and export 2000+ game files with one click. Launch HOI4 and play immediately.
 
-> **Current Version**: v1.0.1 &nbsp;|&nbsp; **Tech Stack**: Python 3.10 · PyQt5 · NumPy &nbsp;|&nbsp; **Platform**: Windows
+> **Current Version**: v1.4.0 &nbsp;|&nbsp; **Tech Stack**: Python 3.10+ · PyQt5 · NumPy &nbsp;|&nbsp; **Platform**: Windows
 
 ![License](https://img.shields.io/badge/license-GPLv3-blue.svg)
 ![Python](https://img.shields.io/badge/python-3.10%2B-brightgreen.svg)
 
 ### Screenshots
+
+The following screenshots were regenerated from the current English-only UI.
 
 **Welcome Page** — create, open, import, or learn with the built-in guide:
 
@@ -21,22 +23,22 @@ HOI4 Map Maker is an open-source desktop map editor built with Python and PyQt5.
   <img src="docs/screenshots/welcome_page.png" width="600" alt="Welcome Page">
 </p>
 
-**Tool Panel** — 12 editing modes with grouped navigation:
+**Tool Panel** — grouped map, region, logistics, preview, and settings navigation:
 
 <p align="center">
   <img src="docs/screenshots/tool_panel_land.png" width="300" alt="Tool Panel">
 </p>
 
-**Getting Started Guide** — step-by-step workflow walkthrough on first launch:
+**Getting Started Guide** — the six-step map workflow:
 
 <p align="center">
-  <img src="docs/screenshots/guide_step1.png" width="480" alt="Getting Started Guide">
+  <img src="docs/screenshots/guide_step2.png" width="600" alt="Getting Started Guide - Generate Provinces">
 </p>
 
-**Mode Hint Bar** — contextual tips on first use of each editing mode:
+**Export step** — the final onboarding screen explains preflight and playable output:
 
 <p align="center">
-  <img src="docs/screenshots/hint_bar.png" width="380" alt="Mode Hint Bar">
+  <img src="docs/screenshots/guide_step6.png" width="600" alt="Getting Started Guide - Export and Play">
 </p>
 
 ---
@@ -74,15 +76,25 @@ HOI4 Map Maker is an open-source desktop map editor built with Python and PyQt5.
 
 ### One-Click Export
 - Generates 2000+ HOI4 files: `provinces.bmp`, `definition.csv`, `heightmap.bmp`, `terrain.bmp`, `rivers.bmp`, state histories, country definitions, `buildings.txt`, supply networks, and more
-- Pre-export validation with auto-fix for missing data
+- Pre-export validation with typed findings, repair proposals, and a shared GUI/CLI report
+- Foundation, acceptance, scaffold, and `legacy_full` profiles with explicit content boundaries
+- Transactional staging and immutable snapshots keep the live project unchanged during export
+- Deterministic `foundation_manifest.json` output with source/output hashes and asset provenance
 - Smart `replace_path` generation to avoid vanilla conflicts
 - Export and launch — ready to play
+
+### Foundation workflow
+- Freeze province IDs, dimensions, state geography, topology, placements, and map-owned art with a versioned lock
+- Compare later exports and classify breaking identity, topology, visual, placement, and non-foundation changes
+- Run an isolated acceptance mod through start, tick, save, reload, and log checks
+- Generate `FOUNDATION-HANDOFF.md` so content developers know what is stable and what belongs to scenario development
 
 ### Project Management
 - Save / load `.hoi4proj` project files (zip format)
 - Undo / redo with Command pattern (30-step history)
 - English-only interface
 - Import existing MOD maps
+- Backward-compatible loading for legacy archives and `_manifest.txt` asset sidecars
 
 ---
 
@@ -91,7 +103,7 @@ HOI4 Map Maker is an open-source desktop map editor built with Python and PyQt5.
 ### From Source
 
 ```bash
-git clone https://github.com/AmonStreeling/hoi4-mod-maker.git
+git clone https://github.com/stuffi3000/hoi4-mod-maker.git
 cd hoi4-mod-maker
 pip install -r requirements.txt
 python main.py
@@ -99,7 +111,7 @@ python main.py
 
 ### Packaged Release
 
-Download the latest `.zip` from [Releases](https://github.com/AmonStreeling/hoi4-mod-maker/releases), extract, and run `HOI4MapMaker.exe`.
+Download the `v1.4.0` package from [GitHub Releases](https://github.com/stuffi3000/hoi4-mod-maker/releases) when published, extract it, and run `HOI4MapMaker.exe`.
 
 ### Requirements
 
@@ -139,6 +151,21 @@ than hidden with broad test skips.
 The CLI configures UTF-8 output where supported and uses an ASCII-safe fallback
 for Windows streams that cannot encode its status messages.
 
+### Profile and foundation commands
+
+Use the planner-backed CLI for new exports:
+
+```bash
+python cli_export.py projects/Belgium_Map_v1_1.hoi4proj out/foundation --profile foundation
+python cli_export.py projects/Belgium_Map_v1_1.hoi4proj out/acceptance --profile acceptance
+python tools/foundation_freeze.py --help
+```
+
+The foundation flow is candidate -> engine acceptance -> frozen lock ->
+content handoff. See the [tutorial](docs/TUTORIAL.md), [map core contract](docs/wiki/map-core.md),
+and [troubleshooting guide](docs/wiki/troubleshooting.md) for the exact
+manifest, lock, and finding-code rules.
+
 ---
 
 ## Architecture
@@ -167,12 +194,24 @@ hoi4_map_maker/          224 files, 26,000 lines
 
 - [HOI4 wiki reference index](docs/wiki/README.md)
 - [Tool export contract](docs/wiki/tool-export-contract.md)
+- [Tutorial and foundation lifecycle](docs/TUTORIAL.md)
+- [Map core contract](docs/wiki/map-core.md)
+- [Buildings and supply review](docs/wiki/buildings-supply.md)
+- [Troubleshooting and acceptance harness](docs/wiki/troubleshooting.md)
 - [Map foundation readiness audit](docs/map-foundation-readiness-audit.md)
 - [Map foundation performance baseline](docs/map-foundation-performance-baseline.md)
+- [1.4.0 changelog](CHANGELOG.md)
 
 ---
 
 ## Roadmap
+
+### v1.4 — Map foundation and release candidate ✅
+- [x] Version-aware game/profile and project metadata
+- [x] Immutable staged export profiles and shared validation reports
+- [x] Adjacency, logistics, placement, and map-art review workflows
+- [x] Assisted engine acceptance and exact-artifact foundation locks
+- [x] Content handoff documentation and legacy migration adapters
 
 ### v1.0 — Map Editor ✅
 - [x] Land / province / terrain / height / river editing
@@ -189,6 +228,13 @@ hoi4_map_maker/          224 files, 26,000 lines
 - [ ] Order of battle (OOB) editor
 - [ ] Event / decision editor
 - [ ] Ideas / namelist / portraits
+
+---
+
+## Credits
+
+- **AmonStreeling** — original developer and creator of the project
+- **Stuffi3000** — current developer of the fork and map-foundation release
 
 ---
 
