@@ -348,12 +348,17 @@ class ExportDialog(QDialog):
             profile = load_profile_for_target(game_target)
         except Exception:
             profile = None
+        try:
+            _export_profile_name = str(self._profile_combo.currentText())
+        except Exception:
+            _export_profile_name = None
         map_height, map_width = self.canvas.province_map.shape[:2]
         self._items = check_project_readiness(
             self.project,
             self.canvas,
             profile=profile,
             dimensions=(int(map_width), int(map_height)),
+            profile_name=_export_profile_name,
         )
 
         has_missing = False

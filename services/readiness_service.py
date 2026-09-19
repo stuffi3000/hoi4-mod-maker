@@ -30,7 +30,95 @@ class CheckItem:
     code: str = ""      # Stable locale-independent rule code (e.g. readiness.provinces)
 
 
-def check_project_readiness(project, map_source, profile=None, dimensions: tuple[int, int] | None = None) -> list[CheckItem]:
+def _project_lifecycle_name(project) -> str:
+    try:
+        meta = getattr(project, "project_meta", None)
+        if meta is not None:
+            value = getattr(meta, "lifecycle", "draft")
+            if isinstance(value, str):
+                text = value.strip()
+                if text:
+                    return text
+            if value is not None:
+                text = str(value).strip()
+                if text:
+                    return text
+    except Exception:
+        pass
+    return "draft"
+
+
+def _is_foundation_profile_name(profile_name) -> bool:
+    try:
+        if profile_name is None:
+            return False
+        return str(profile_name).strip() == "foundation"
+    except Exception:
+        return False
+
+
+def _build_placement_check_item(project, map_source, profile_name=None):
+    manager = getattr(project, "map_placement_mgr", None)
+    if manager is not None:
+        try:
+            from domain.validators.placement import validate_manager_placement_completeness as _validate
+        except ImportError:
+            return None
+        try:
+            province_map = getattr(map_source, "province_map", None)
+            tile_map = getattr(map_source, "tile_map", None)
+            lifecycle = _project_lifecycle_name(project)
+            findings = _validate(province_map, tile_map, manager, lifecycle=lifecycle)
+        except Exception:
+            return None
+        name = tr("export_check_placements")
+        if not findings:
+            return CheckItem(name, "ok", tr("export_check_placements_ok"), False, 0, code="readiness.placements")
+        severities = set()
+        for _f in findings:
+            try:
+                severities.add(str(getattr(_f, "severity", "") or "").strip().lower())
+            except Exception:
+                continue
+        status = "missing" if (severities & {"blocker", "error"}) else "warning"
+        parts = []
+        for _f in findings:
+            try:
+                _msg = str(getattr(_f, "message", "") or "").strip()
+            except Exception:
+                _msg = ""
+            try:
+                _ev = str(getattr(_f, "evidence", "") or "").strip()
+            except Exception:
+                _ev = ""
+            if _msg and _ev:
+                parts.append(_msg + ": " + _ev)
+            elif _msg:
+                parts.append(_msg)
+            elif _ev:
+                parts.append(_ev)
+        joined = "; ".join(parts) if parts else "placement review required"
+        try:
+            detail = tr("export_check_placements_review").format(issues=joined)
+        except Exception:
+            detail = joined + " - review placements in the Placement editor"
+        return CheckItem(name, status, detail, False, 0, code="readiness.placements")
+    if _is_foundation_profile_name(profile_name):
+        return CheckItem(tr("export_check_placements"), "missing", tr("export_check_no_placements"), False, 0, code="readiness.placements")
+    return None
+
+
+def _append_placement_readiness(items, project, map_source, profile_name=None):
+    try:
+        extra = _build_placement_check_item(project, map_source, profile_name)
+    except Exception:
+        extra = None
+    if extra is not None:
+        items.append(extra)
+    return items
+
+
+def check_project_readiness(project, map_source, profile=None, dimensions: tuple[int, int] | None = None, profile_name: str | None = None) -> list[CheckItem]:
     """Check whether the item can be exported and return the list of checked items.
 
     ``profile``/``dimensions`` optionally validate explicit map sizes against
@@ -56,6 +144,7 @@ def check_project_readiness(project, map_source, profile=None, dimensions: tuple
             _derr = _prof.validate_dimensions(_rw, _rh)
             if _derr:
                 items.append(CheckItem("map_dimensions", "missing", "; ".join(_derr), False, code="readiness.map_dimensions"))
+                _append_placement_readiness(items, project, map_source, profile_name)
                 return items
 
     # 1. Land/Province
@@ -64,6 +153,7 @@ def check_project_readiness(project, map_source, profile=None, dimensions: tuple
             tr("export_check_provinces"), "missing",
             tr("export_check_no_provinces"), False, code="readiness.provinces"))
         # Follow-up inspections are meaningless without provinces
+        _append_placement_readiness(items, project, map_source, profile_name)
         return items
 
     from data.constants import TILE_LAND
@@ -74,6 +164,7 @@ def check_project_readiness(project, map_source, profile=None, dimensions: tuple
         items.append(CheckItem(
             tr("export_check_land"), "missing",
             tr("export_check_no_land"), False, code="readiness.land"))
+        _append_placement_readiness(items, project, map_source, profile_name)
         return items
 
     # Check ID continuity (there may be holes after merging provinces)
@@ -220,10 +311,11 @@ def check_project_readiness(project, map_source, profile=None, dimensions: tuple
                     total=asset_total, clean=clean_count, dirty=dirty_count),
                 False, asset_total, code="readiness.assets"))
 
+    _append_placement_readiness(items, project, map_source, profile_name)
     return items
 
 
-def check_project_readiness_report(project, map_source, profile=None, dimensions: tuple[int, int] | None = None, context="draft_preview", source="readiness") -> ValidationReport:
+def check_project_readiness_report(project, map_source, profile=None, dimensions: tuple[int, int] | None = None, context="draft_preview", source="readiness", profile_name: str | None = None) -> ValidationReport:
     """Build a shared ValidationReport from the live readiness checks.
 
     Calls check_project_readiness exactly once and adapts its CheckItem
@@ -231,5 +323,5 @@ def check_project_readiness_report(project, map_source, profile=None, dimensions
     locale-independent CheckItem codes, so reports stay stable across
     UI languages. The wrapper is Qt-free like the underlying checks.
     """
-    items = check_project_readiness(project, map_source, profile=profile, dimensions=dimensions)
+    items = check_project_readiness(project, map_source, profile=profile, dimensions=dimensions, profile_name=profile_name)
     return report_from_check_items(items, source=source, context=context)

@@ -39,6 +39,7 @@ EXPECTED_READINESS_CODES = frozenset({
     "readiness.heightmap",
     "readiness.assets",
     "readiness.map_dimensions",
+    "readiness.placements",
 })
 
 
@@ -134,15 +135,15 @@ def test_readiness_report_calls_checks_once(monkeypatch):
     original = readiness_service.check_project_readiness
     calls = []
 
-    def _counting(project, map_source, profile=None, dimensions=None):
-        calls.append((profile, dimensions))
-        return original(project, map_source, profile=profile, dimensions=dimensions)
+    def _counting(project, map_source, profile=None, dimensions=None, profile_name=None):
+        calls.append((profile, dimensions, profile_name))
+        return original(project, map_source, profile=profile, dimensions=dimensions, profile_name=profile_name)
 
     monkeypatch.setattr(readiness_service, "check_project_readiness", _counting)
     project, source = _project(), _map_source()
     report = check_project_readiness_report(project, source)
     assert len(calls) == 1
-    assert calls[0] == (None, None)
+    assert calls[0] == (None, None, None)
     assert isinstance(report, ValidationReport)
     assert report.source == "readiness"
     assert report.context == "draft_preview"
@@ -154,7 +155,11 @@ def test_readiness_report_calls_checks_once(monkeypatch):
     profile = profiles.get_default_profile()
     report = check_project_readiness_report(project, source, profile=profile, dimensions=(100, 100))
     assert len(calls) == 2
-    assert calls[1][0] is profile and calls[1][1] == (100, 100)
+    assert calls[1][0] is profile and calls[1][1] == (100, 100) and calls[1][2] is None
+    profile_report = check_project_readiness_report(project, source, profile_name="foundation")
+    assert len(calls) == 3
+    assert calls[2] == (None, None, "foundation")
+    assert profile_report.context == "draft_preview"
     assert report.context == "draft_preview"
 
 
@@ -313,3 +318,45 @@ def test_export_report_compat_and_preserved_through_export_mod(monkeypatch):
         assert all(item.layer == PREFLIGHT_LAYER for item in result.validation_report.findings)
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
+
+def _manager_complete_reviewed_m32():
+    from domain.managers.map_placement import MapPlacementManager
+    mgr = MapPlacementManager()
+    for slot in range(6):
+        mgr.set_province_slot(2, slot, float(slot) + 0.5, 1.5, provenance="authored", review_status="reviewed")
+    return mgr
+
+
+def _manager_incomplete_m32():
+    from domain.managers.map_placement import MapPlacementManager
+    mgr = MapPlacementManager()
+    for slot in range(5):
+        status = "unreviewed" if slot == 0 else "reviewed"
+        mgr.set_province_slot(2, slot, float(slot) + 0.5, 0.5, provenance="generated", review_status=status)
+    return mgr
+
+
+def test_readiness_placements_appended_last_with_stable_code():
+    proj = _project()
+    proj.project_meta = SimpleNamespace(lifecycle="draft")
+    proj.map_placement_mgr = _manager_incomplete_m32()
+    items = check_project_readiness(proj, _map_source())
+    assert items[-1].code == "readiness.placements"
+    assert sum(1 for i in items if i.code == "readiness.placements") == 1
+    assert all(i.code in EXPECTED_READINESS_CODES for i in items)
+    assert items[-1].status == "warning"
+    assert items[-1].can_auto is False
+
+
+def test_readiness_placements_report_forwards_profile_and_preserves_order():
+    proj = _project()
+    proj.project_meta = SimpleNamespace(lifecycle="frozen")
+    proj.map_placement_mgr = _manager_incomplete_m32()
+    report = check_project_readiness_report(proj, _map_source(), profile_name="foundation")
+    assert report.findings[-1].code == "readiness.placements"
+    assert report.findings[-1].severity == "error"
+    expected = check_project_readiness(proj, _map_source(), profile_name="foundation")
+    assert [f.code for f in report.findings] == [i.code for i in expected]
+    assert [f.message for f in report.findings] == [i.detail for i in expected]
+    legacy = check_project_readiness_report(_project(), _map_source())
+    assert all(f.code != "readiness.placements" for f in legacy.findings)

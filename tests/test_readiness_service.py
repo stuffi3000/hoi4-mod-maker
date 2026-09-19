@@ -113,3 +113,104 @@ def test_accepts_mapdata_as_source():
         assert _by_status(items).get("missing", 0) == 0
     finally:
         set_map_size(*old)
+
+def _manager_complete_reviewed():
+    from domain.managers.map_placement import MapPlacementManager
+    mgr = MapPlacementManager()
+    for slot in range(6):
+        mgr.set_province_slot(2, slot, float(slot) + 0.5, 1.5, provenance="authored", review_status="reviewed")
+    return mgr
+
+
+def _manager_incomplete_unreviewed():
+    from domain.managers.map_placement import MapPlacementManager
+    mgr = MapPlacementManager()
+    for slot in range(5):
+        status = "unreviewed" if slot == 0 else "reviewed"
+        mgr.set_province_slot(2, slot, float(slot) + 0.5, 0.5, provenance="generated", review_status=status)
+    return mgr
+
+
+def _project_with_lifecycle(lifecycle):
+    proj = _project()
+    proj.project_meta = SimpleNamespace(lifecycle=lifecycle)
+    return proj
+
+
+def test_draft_manager_reports_warning_without_auto():
+    proj = _project_with_lifecycle("draft")
+    proj.map_placement_mgr = _manager_incomplete_unreviewed()
+    items = check_project_readiness(proj, _map_source())
+    assert len(items) >= 1
+    last = items[-1]
+    assert last.code == "readiness.placements"
+    assert last.status == "warning"
+    assert last.can_auto is False
+    assert "Placement" in last.detail
+    assert sum(1 for i in items if i.code == "readiness.placements") == 1
+
+
+def test_frozen_and_accepted_manager_reports_missing():
+    for lifecycle in ["frozen", "accepted"]:
+        proj = _project_with_lifecycle(lifecycle)
+        proj.map_placement_mgr = _manager_incomplete_unreviewed()
+        items = check_project_readiness(proj, _map_source())
+        last = items[-1]
+        assert last.code == "readiness.placements"
+        assert last.status == "missing"
+        assert last.can_auto is False
+        assert "Placement" in last.detail
+
+
+def test_reviewed_complete_manager_reports_ok():
+    for lifecycle in ["draft", "frozen"]:
+        proj = _project_with_lifecycle(lifecycle)
+        proj.map_placement_mgr = _manager_complete_reviewed()
+        items = check_project_readiness(proj, _map_source())
+        last = items[-1]
+        assert last.code == "readiness.placements"
+        assert last.status == "ok"
+        assert last.can_auto is False
+
+
+def test_foundation_without_manager_reports_missing():
+    proj = _project()
+    assert not hasattr(proj, "map_placement_mgr")
+    items = check_project_readiness(proj, _map_source(), profile_name="foundation")
+    assert items[-1].code == "readiness.placements"
+    assert items[-1].status == "missing"
+    assert items[-1].can_auto is False
+    assert "Placement" in items[-1].detail
+
+
+def test_no_manager_legacy_and_non_foundation_has_no_placements():
+    for pname in [None, "legacy_full", "scaffold", "acceptance"]:
+        proj = _project()
+        if pname is None:
+            items = check_project_readiness(proj, _map_source())
+        else:
+            items = check_project_readiness(proj, _map_source(), profile_name=pname)
+        assert all(i.code != "readiness.placements" for i in items)
+        assert {i.code for i in items} == {"readiness.provinces", "readiness.states", "readiness.countries", "readiness.strategic_regions", "readiness.continents", "readiness.terrain", "readiness.heightmap"}
+
+
+def test_placement_check_does_not_mutate_manager():
+    proj = _project_with_lifecycle("frozen")
+    mgr = _manager_incomplete_unreviewed()
+    proj.map_placement_mgr = mgr
+    before = mgr.to_dict()
+    first = check_project_readiness(proj, _map_source())
+    second = check_project_readiness(proj, _map_source())
+    assert mgr.to_dict() == before
+    assert [i.detail for i in first] == [i.detail for i in second]
+
+
+def test_readiness_report_forwards_profile_and_codes():
+    from services.readiness_service import check_project_readiness_report
+    proj = _project_with_lifecycle("draft")
+    proj.map_placement_mgr = _manager_incomplete_unreviewed()
+    report = check_project_readiness_report(proj, _map_source(), profile_name="foundation")
+    assert "readiness.placements" in [f.code for f in report.findings]
+    assert report.findings[-1].code == "readiness.placements"
+    legacy = check_project_readiness_report(_project(), _map_source())
+    assert all(f.code != "readiness.placements" for f in legacy.findings)
