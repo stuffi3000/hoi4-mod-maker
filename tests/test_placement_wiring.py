@@ -50,6 +50,31 @@ def test_tool_panel_registers_placement_page_and_forwards_signals(qtbot):
     ]
 
 
+def test_tool_panel_forwards_placement_transform_signals(qtbot):
+    panel = ToolPanel()
+    qtbot.addWidget(panel)
+
+    updates = []
+    resets = []
+    panel.placement_transform_update_requested.connect(
+        lambda kind, key, x, y, rotation, height: updates.append(
+            (kind, key, x, y, rotation, height)
+        )
+    )
+    panel.placement_transform_reset_requested.connect(
+        lambda kind, key: resets.append((kind, key))
+    )
+
+    page = panel._placement_page
+    transform_key = (5, 2)
+    page.transform_update_requested.emit("slot", transform_key, 1.5, 2.5, 30.25, 3.75)
+    page.transform_reset_requested.emit("port", 9)
+
+    assert updates == [("slot", transform_key, 1.5, 2.5, 30.25, 3.75)]
+    assert updates[0][1] is transform_key
+    assert resets == [("port", 9)]
+
+
 def test_tool_panel_switches_to_placement_mode(qtbot):
     panel = ToolPanel()
     qtbot.addWidget(panel)
