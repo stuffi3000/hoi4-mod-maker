@@ -86,6 +86,11 @@ class AssetResolution:
     provenance: str = ""
     reason: str = ""
     size: int = 0
+    source: str = ""
+    sha256: str = ""
+    output_owner: str = ""
+    profile_rule: str = ""
+    dirty_reason: str = ""
 
     def to_dict(self) -> dict:
         return {
@@ -94,7 +99,32 @@ class AssetResolution:
             "provenance": self.provenance,
             "reason": self.reason,
             "size": int(self.size),
+            "source": self.source,
+            "sha256": self.sha256,
+            "output_owner": self.output_owner,
+            "profile_rule": self.profile_rule,
+            "dirty_reason": self.dirty_reason,
         }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "AssetResolution":
+        get = data.get if isinstance(data, dict) else (lambda k, d="": d)
+        try:
+            _size = int(get("size", 0) or 0)
+        except (TypeError, ValueError):
+            _size = 0
+        return cls(
+            rel_path=str(get("rel_path", get("path", get("file", "")))),
+            disposition=str(get("disposition", get("status", get("state", "")))),
+            provenance=str(get("provenance", get("source", ""))),
+            reason=str(get("reason", "")),
+            size=_size,
+            source=str(get("source", get("provenance", ""))),
+            sha256=str(get("sha256", get("source_sha256", get("hash", "")))),
+            output_owner=str(get("output_owner", get("owner", get("stage", "")))),
+            profile_rule=str(get("profile_rule", get("rule", ""))),
+            dirty_reason=str(get("dirty_reason", "")),
+        )
 
 
 @dataclass(frozen=True)

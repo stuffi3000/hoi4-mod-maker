@@ -42,6 +42,7 @@ class StageContext:
     written: list = field(default_factory=list)
     provenance: list = field(default_factory=list)
     placeholders: list = field(default_factory=list)
+    asset_resolutions: list = field(default_factory=list)
 
     def enabled(self, key: str) -> bool:
         return bool(self.scope.get(key, True))
@@ -93,6 +94,7 @@ def build_context_from_plan(plan, output_dir: str) -> StageContext:
         assets=dict(snapshot.assets or {}),
         dirty_assets=set(snapshot.dirty_assets or ()),
         acceptance_tags=tuple(plan.acceptance_tags or ()),
+        asset_resolutions=list(getattr(plan, "asset_resolutions", None) or []),
         scratch={
             "province_type_overrides": dict(snapshot.province_type_overrides or {}),
             "foundation_legacy_compat": foundation_legacy_compat,

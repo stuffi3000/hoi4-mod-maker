@@ -238,15 +238,44 @@ def write_buildings(states, province_map, tile_map, output_dir, sea_ids=None, la
     with open(os.path.join(d, "buildings.txt"), "wb") as f:
         f.write("\n".join(lines).encode("utf-8"))
     return failed_coastal
-def write_empty_unitstacks(output_dir):
-    """Write safe map entity files and the cosmetic city configuration."""
+def write_empty_unitstacks(output_dir, assets=None, dirty_assets=None, game_profile=None, profile_name=None):
+    """Write safe map entity files and the cosmetic city configuration.
+
+    M6.7 preserve-or-omit policy with legacy compatibility:
+
+    - legacy direct callers that pass only ``output_dir`` (``assets is None``)
+      keep the historical behaviour (empty unitstacks/airports/rocket files
+      plus vanilla ``cities.txt``) so existing tests keep passing;
+    - the profile-aware pipeline passes an explicit ``assets`` mapping (even
+      an empty dict) and receives preserve-or-omit behaviour: clean imported
+      ``map/airports.txt`` / rocket variants are written back byte-for-byte,
+      absent optionals are omitted (no empty legacy files by default), and
+      ``map/cities.txt`` is preserved or generated from vanilla groups.
+    """
     d = os.path.join(output_dir, "map")
     os.makedirs(d, exist_ok=True)
-    for name in (
-        "unitstacks.txt",
-        "airports.txt",
-        "rocket_sites.txt",
-    ):
-        open(os.path.join(d, name), "w").close()
-    from export.writers.map.cities_bmp import write_cities_txt
-    write_cities_txt(output_dir)
+    if assets is None:
+        for name in (
+            "unitstacks.txt",
+            "airports.txt",
+            "rocket_sites.txt",
+        ):
+            open(os.path.join(d, name), "w").close()
+        from export.writers.map.cities_bmp import write_cities_txt
+        write_cities_txt(output_dir)
+        return {"mode": "legacy-compat", "actions": []}
+    try:
+        open(os.path.join(d, "unitstacks.txt"), "w").close()
+    except OSError:
+        pass
+    try:
+        from export.writers.map.structural_text import (
+            write_cities_txt_preserve_or_generate as _write_cities,
+            write_structural_text_assets as _write_structural,
+        )
+        actions = list(_write_structural(output_dir, assets, dirty_assets, game_profile, profile_name))
+        city_action = _write_cities(output_dir, assets, dirty_assets, game_profile, profile_name)
+        actions.append(("map/cities.txt", city_action))
+        return {"mode": "preserve-or-omit", "actions": actions}
+    except OSError:
+        return {"mode": "preserve-or-omit", "actions": []}

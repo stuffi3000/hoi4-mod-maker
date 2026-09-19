@@ -545,7 +545,120 @@ def target_supported_version(target: "GameTarget | None" = None) -> str:
     return detect_supported_version() or DEFAULT_SUPPORTED_VERSION
 
 
-# ─────────── Process-level default instance (preview renderer and preview page shared cache) ───────────
+# ───────────
+# M6.2 trusted indexed-palette resolution.
+INDEXED_PALETTE_FILES = {
+    "map/terrain.bmp": 255,
+    "map/cities.bmp": 255,
+}
+def _is_explicit_palette_request(game_target=None, install_dir=None):
+    return install_dir is not None or game_target is not None
+def palette_candidate_paths(game_target=None, install_dir=None, filename="map/terrain.bmp"):
+    norm = str(filename).replace(chr(92), "/").strip() or "map/terrain.bmp"
+    parts = norm.split("/")
+    candidates = []
+    explicit_dir = None
+    if install_dir is not None:
+        try:
+            explicit_dir = str(install_dir)
+        except (AttributeError, TypeError, ValueError):
+            explicit_dir = None
+    target_dir = None
+    try:
+        if game_target is not None:
+            target_dir = getattr(game_target, "install_dir", None)
+    except (AttributeError, TypeError, ValueError):
+        target_dir = None
+    if explicit_dir:
+        candidates.append(os.path.join(str(explicit_dir), *parts))
+    if target_dir and str(target_dir) != str(explicit_dir or ""):
+        candidates.append(os.path.join(str(target_dir), *parts))
+    if _is_explicit_palette_request(game_target, install_dir):
+        return candidates
+    try:
+        found = find_hoi4_install()
+    except (OSError, AttributeError, TypeError, ValueError):
+        found = None
+    if found:
+        candidates.append(os.path.join(str(found), *parts))
+    try:
+        from data.constants import DEFAULT_HOI4_PATH as _default_path
+        candidates.append(os.path.join(str(_default_path), *parts))
+    except (ImportError, AttributeError, TypeError, ValueError):
+        pass
+    seen = set()
+    out = []
+    for item in candidates:
+        try:
+            key = os.path.normcase(os.path.abspath(item))
+        except (OSError, AttributeError, TypeError, ValueError):
+            key = str(item)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(item)
+    return out
+def read_palette_bytes(game_target=None, install_dir=None, filename="map/terrain.bmp", palette_entries=255):
+    try:
+        want = int(palette_entries)
+    except (TypeError, ValueError):
+        want = 255
+    for candidate in palette_candidate_paths(game_target, install_dir, filename):
+        try:
+            if not candidate or not os.path.isfile(candidate):
+                continue
+            import struct as _struct
+            with open(candidate, "rb") as handle:
+                header = handle.read(54)
+                if len(header) != 54:
+                    continue
+                try:
+                    bpp = _struct.unpack_from("<H", header, 28)[0]
+                except (TypeError, ValueError):
+                    continue
+                if bpp != 8:
+                    continue
+                handle.seek(54)
+                palette = handle.read(int(want) * 4)
+                if len(palette) == int(want) * 4:
+                    return palette, candidate
+        except OSError:
+            continue
+    return None, None
+def resolve_indexed_palette(game_target=None, install_dir=None, filename="map/terrain.bmp", palette_entries=255):
+    palette, source_path = read_palette_bytes(game_target, install_dir, filename, palette_entries)
+    explicit = _is_explicit_palette_request(game_target, install_dir)
+    if palette is not None and source_path:
+        if explicit:
+            return palette, str(source_path), "resolved from selected game target"
+        return palette, str(source_path), "resolved from legacy game-install fallback"
+    if explicit:
+        return None, "", "required palette %s cannot be resolved from the selected game target" % filename
+    return None, "", "palette %s not found in legacy fallback locations" % filename
+def palette_status_for_target(game_target=None, install_dir=None, filenames=None):
+    if filenames is None:
+        filenames = tuple(INDEXED_PALETTE_FILES)
+    status = {}
+    for name in list(filenames):
+        entries = INDEXED_PALETTE_FILES.get(str(name), 255)
+        palette, source_path = read_palette_bytes(game_target, install_dir, str(name), entries)
+        status[str(name)] = {"available": palette is not None, "source": str(source_path) if source_path else "", "explicit": bool(_is_explicit_palette_request(game_target, install_dir))}
+    return status
+def missing_required_palettes(game_target=None, install_dir=None, required=None, lifecycle="draft", profile_name=None):
+    wanted = list(required) if required is not None else ["map/terrain.bmp", "map/cities.bmp"]
+    active = str(lifecycle or "draft")
+    missing = []
+    for name in wanted:
+        entries = INDEXED_PALETTE_FILES.get(str(name), 255)
+        palette, _source = read_palette_bytes(game_target, install_dir, str(name), entries)
+        if palette is None:
+            if active in ("frozen", "accepted"):
+                missing.append("%s: required palette cannot be resolved from the selected game target" % str(name))
+            else:
+                missing.append("%s: palette not resolved; deterministic fallback palette will be used" % str(name))
+    return missing
+# END M6.2 helpers
+# Process-level default instance (preview renderer and preview page shared cache) ───────────
 
 _default_assets: GameAssets | None = None
 

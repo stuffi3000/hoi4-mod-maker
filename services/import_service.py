@@ -435,6 +435,15 @@ def import_mod_map(mod_dir: str) -> dict[str, Any]:
 
     # 9a. Scan art assets (colormap / world_normal and other files that HOI4 can read but the tool does not generate)
     assets = _collect_art_assets(mod_dir)
+    try:
+        _structural_text = _collect_structural_text_assets(mod_dir)
+        for _k, _v in list(_structural_text.items()):
+            if _k not in assets:
+                assets[_k] = _v
+        if _structural_text:
+            warnings.append(f"Preserved {len(_structural_text)} optional structural text files byte-for-byte (colors/airports/rocket/cities)")
+    except (OSError, AttributeError, TypeError, ValueError):
+        pass
     if assets:
         warnings.append(f"Preserved {len(assets)} original art assets (they will not be overwritten during export)")
 
@@ -707,6 +716,53 @@ def _parse_adjacency_rules(path: str) -> list[dict]:
 
 # ── Art asset scan ───────────────────────────────────────────
 # "Structured file" = file that the tool will regenerate from the data (original bytes are not retained)
+# M6.7 optional structural text files (preserved byte-for-byte when profile allows them).
+# map/colors.txt, map/airports.txt, map/rocketsites.txt, map/rocket_sites.txt and map/cities.txt
+# are excluded from _STRUCTURAL regeneration: they have no procedural writer by default.
+# Both rocket spellings are accepted; each present file is preserved under its own rel path.
+STRUCTURAL_TEXT_FILES = (
+    "map/colors.txt",
+    "map/airports.txt",
+    "map/rocketsites.txt",
+    "map/rocket_sites.txt",
+    "map/cities.txt",
+)
+
+
+def _collect_structural_text_assets(mod_dir: str) -> dict:
+    out: dict = {}
+    try:
+        map_dir = os.path.join(mod_dir, "map")
+        if not os.path.isdir(map_dir):
+            return out
+        try:
+            entries = os.listdir(map_dir)
+        except OSError:
+            return out
+        lower_index = {}
+        for _name in entries:
+            try:
+                lower_index[str(_name).lower()] = _name
+            except (AttributeError, TypeError, ValueError):
+                continue
+        for rel in STRUCTURAL_TEXT_FILES:
+            try:
+                leaf = rel.split("/")[-1]
+                actual = lower_index.get(leaf.lower())
+                if not actual:
+                    continue
+                full = os.path.join(map_dir, actual)
+                if not os.path.isfile(full):
+                    continue
+                with open(full, "rb") as handle:
+                    out[rel] = handle.read()
+            except OSError:
+                continue
+    except (OSError, AttributeError, TypeError, ValueError):
+        pass
+    return out
+
+
 # Other files = art assets (retain original bytes, unless user editing triggers dirty)
 
 # These map/ file tools will be regenerated from MapData / managers → do not include assets
@@ -730,6 +786,7 @@ _STRUCTURAL_MAP_FILES = {
     "unitstacks.txt",
     "airports.txt",
     "rocket_sites.txt",
+    "rocketsites.txt",
     "weatherpositions.txt",
     "seasons.txt",
     "cities.txt",
@@ -761,7 +818,7 @@ def _collect_art_assets(mod_dir: str) -> dict[str, bytes]:
         full = os.path.join(map_dir, fn)
         if not os.path.isfile(full):
             continue
-        if fn in _STRUCTURAL_MAP_FILES:
+        if fn in _STRUCTURAL_MAP_FILES or str(fn).lower() in {s.lower() for s in _STRUCTURAL_MAP_FILES}:
             continue
         # Collect unstructured files (world_normal.bmp, etc.)
         _add_file(full, f"map/{fn}")

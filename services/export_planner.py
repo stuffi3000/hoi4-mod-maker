@@ -748,6 +748,7 @@ def collect_findings(
     dimensions=None,
     profile_name: str = "legacy_full",
     lifecycle: str | None = None,
+    game_target=None,
 ) -> list:
     findings: list = []
     province_map = np.asarray(snapshot.province_map)
@@ -946,6 +947,50 @@ def collect_findings(
                 "Foundation profile requires a MapPlacementManager; refusing centroid fallback for placements",
                 layer="placement",
             ))
+    try:
+        from services.game_assets import missing_required_palettes as _missing_palettes
+        _target = game_target
+        if _target is None:
+            try:
+                _target = resolve_game_target_for_plan(None, None, getattr(snapshot, "project_meta", None))
+            except (AttributeError, TypeError, ValueError):
+                _target = None
+        _install = None
+        try:
+            if _target is not None:
+                _install = getattr(_target, "install_dir", None)
+        except (AttributeError, TypeError, ValueError):
+            _install = None
+        _palette_msgs = _missing_palettes(_target, None, ["map/terrain.bmp", "map/cities.bmp"], active_lifecycle, profile_name)
+        for _msg in _palette_msgs:
+            _sev = "blocker" if active_lifecycle in ("frozen", "accepted") else "warning"
+            findings.append(ValidationNote("export.palette.missing", _sev, _msg, layer="map"))
+    except (ImportError, AttributeError, TypeError, ValueError, OSError):
+        pass
+    try:
+        _assets = getattr(snapshot, "assets", None) or {}
+        _dirty = set(getattr(snapshot, "dirty_assets", None) or ())
+        try:
+            from services.export_manifest import STRUCTURAL_OPTIONAL_PATHS as _struct_paths
+        except (ImportError, AttributeError):
+            _struct_paths = ("map/colors.txt", "map/airports.txt", "map/rocketsites.txt", "map/rocket_sites.txt", "map/cities.txt")
+        for _spath in list(_struct_paths):
+            if _spath in _assets and _spath not in _dirty:
+                try:
+                    from services.export_manifest import DEPRECATED_PATHS_FALLBACK as _dep_fallback
+                    _deprecated = list(getattr(game_profile, "deprecated_files", None) or _dep_fallback)
+                except (AttributeError, TypeError, ValueError):
+                    _deprecated = []
+                if _spath in _deprecated or _spath == "map/colors.txt":
+                    findings.append(ValidationNote("export.structural.dropped", "warning", "Structural file %s has imported bytes but is deprecated and will be dropped before export" % _spath, layer="map"))
+            elif _spath in _assets and _spath in _dirty:
+                if _spath == "map/cities.txt":
+                    findings.append(ValidationNote("export.structural.regenerated", "warning", "Structural file %s is dirty and will be regenerated from vanilla city groups" % _spath, layer="map"))
+                else:
+                    _severity = "blocker" if active_lifecycle in ("frozen", "accepted") else "warning"
+                    findings.append(ValidationNote("export.structural.unsupported", _severity, "Structural file %s is dirty and has no regenerating writer" % _spath, layer="map"))
+    except (AttributeError, TypeError, ValueError):
+        pass
     return findings
 
 
@@ -960,51 +1005,177 @@ def split_repairs_by_policy(repairs: list, repair_policy: str, lifecycle: str):
     return proposed, [r for r in repairs if r.safety == "safe"]
 
 
-def build_asset_resolutions(snapshot, profile_name: str, game_profile=None) -> list:
+def build_asset_resolutions(snapshot, profile_name: str, game_profile=None, scope=None, lifecycle=None) -> list:
     from services.export_manifest import (
         CONTENT_ONLY_PATHS,
         DEPRECATED_PATHS_FALLBACK,
         PRESERVED_CAPABLE_PATHS,
+        STRUCTURAL_OPTIONAL_PATHS,
         WRITER_GENERATED_FILES,
+        owner_stage_for_path,
     )
+    import hashlib as _hashlib
+    def _sha(data):
+        try:
+            if isinstance(data, (bytes, bytearray, memoryview)):
+                raw = bytes(data)
+                if raw:
+                    return _hashlib.sha256(raw).hexdigest()
+        except (TypeError, ValueError):
+            pass
+        return ""
+    def _size(data):
+        try:
+            return len(data or b"")
+        except (TypeError, ValueError):
+            return 0
     resolutions: list = []
+    seen: set = set()
     assets = snapshot.assets or {}
+    if not isinstance(assets, dict):
+        assets = {}
     dirty = set(snapshot.dirty_assets or ())
-    deprecated = list(getattr(game_profile, "deprecated_files", None) or DEPRECATED_PATHS_FALLBACK)
+    try:
+        required = list(getattr(game_profile, "required_files", None) or [])
+    except (AttributeError, TypeError, ValueError):
+        required = []
+    try:
+        optional = list(getattr(game_profile, "optional_files", None) or [])
+    except (AttributeError, TypeError, ValueError):
+        optional = []
+    try:
+        deprecated = list(getattr(game_profile, "deprecated_files", None) or DEPRECATED_PATHS_FALLBACK)
+    except (AttributeError, TypeError, ValueError):
+        deprecated = list(DEPRECATED_PATHS_FALLBACK)
+    required_set = set(required)
+    optional_set = set(optional)
+    deprecated_set = set(deprecated)
+    try:
+        replace_paths = list(getattr(game_profile, "replace_paths", None) or [])
+    except (AttributeError, TypeError, ValueError):
+        replace_paths = []
+    scope_map = dict(scope or {}) if isinstance(scope, dict) else {}
+    map_disabled = scope_map.get("map", True) is False
+    descriptor_disabled = scope_map.get("descriptor", True) is False
+    def _rule_for(path):
+        if path in deprecated_set:
+            return "deprecated"
+        if path in required_set:
+            return "required"
+        if path in optional_set:
+            return "optional"
+        if path in set(replace_paths):
+            return "inherited"
+        return "writer-generated"
+    def _owner_for(path):
+        try:
+            return owner_stage_for_path(path)
+        except (AttributeError, TypeError, ValueError):
+            return "assets"
     for rel_path in WRITER_GENERATED_FILES:
+        if rel_path in seen:
+            continue
+        seen.add(rel_path)
+        owner = _owner_for(rel_path)
+        rule = _rule_for(rel_path)
+        if (rel_path.startswith("map/") and map_disabled) or (rel_path == "descriptor.mod" and descriptor_disabled):
+            resolutions.append(AssetResolution(rel_path, "omitted", provenance="profile-policy", reason="excluded by export scope", size=0, source="profile-policy", sha256="", output_owner=owner, profile_rule=rule, dirty_reason=""))
+            continue
         if rel_path in PRESERVED_CAPABLE_PATHS and rel_path in assets and rel_path not in dirty:
-            resolutions.append(AssetResolution(rel_path, "preserved", provenance="project-assets",
-                                               reason="clean imported bytes are written back",
-                                               size=len(assets[rel_path] or b"")))
+            raw = assets.get(rel_path)
+            resolutions.append(AssetResolution(rel_path, "preserved", provenance="project-assets", reason="clean imported bytes are written back", size=_size(raw), source="project-assets", sha256=_sha(raw), output_owner=owner, profile_rule=rule, dirty_reason=""))
+        elif rel_path in assets and rel_path in dirty:
+            resolutions.append(AssetResolution(rel_path, "generated", provenance="writer-generated", reason="dirty asset is regenerated", size=0, source="writer-generated", sha256="", output_owner=owner, profile_rule=rule, dirty_reason="dirty asset is regenerated"))
         else:
-            resolutions.append(AssetResolution(rel_path, "generated", provenance="writer-generated",
-                                               reason="export writers generate this file"))
+            resolutions.append(AssetResolution(rel_path, "generated", provenance="writer-generated", reason="export writers generate this file", size=0, source="writer-generated", sha256="", output_owner=owner, profile_rule=rule, dirty_reason=""))
     for rel_path in CONTENT_ONLY_PATHS:
+        if rel_path in seen:
+            continue
+        seen.add(rel_path)
+        owner = _owner_for(rel_path)
+        rule = _rule_for(rel_path)
         if profile_name == "foundation":
-            resolutions.append(AssetResolution(rel_path, "omitted", provenance="profile-policy",
-                                               reason="excluded by the foundation profile"))
+            resolutions.append(AssetResolution(rel_path, "omitted", provenance="profile-policy", reason="excluded by the foundation profile", size=0, source="profile-policy", sha256="", output_owner=owner, profile_rule=rule, dirty_reason=""))
         elif rel_path in assets and rel_path not in dirty:
-            resolutions.append(AssetResolution(rel_path, "preserved", provenance="project-assets",
-                                               reason="clean imported bytes are written back",
-                                               size=len(assets[rel_path] or b"")))
+            raw = assets.get(rel_path)
+            resolutions.append(AssetResolution(rel_path, "preserved", provenance="project-assets", reason="clean imported bytes are written back", size=_size(raw), source="project-assets", sha256=_sha(raw), output_owner=owner, profile_rule=rule, dirty_reason=""))
+        elif rel_path in assets and rel_path in dirty:
+            resolutions.append(AssetResolution(rel_path, "generated", provenance="writer-generated", reason="dirty asset is regenerated", size=0, source="writer-generated", sha256="", output_owner=owner, profile_rule=rule, dirty_reason="dirty asset is regenerated"))
         else:
-            resolutions.append(AssetResolution(rel_path, "generated", provenance="writer-generated",
-                                               reason="content writers generate this file"))
-    replace_paths = list(getattr(game_profile, "replace_paths", None) or [])
+            resolutions.append(AssetResolution(rel_path, "generated", provenance="writer-generated", reason="content writers generate this file", size=0, source="writer-generated", sha256="", output_owner=owner, profile_rule=rule, dirty_reason=""))
     for rel_path in replace_paths:
-        resolutions.append(AssetResolution(rel_path, "inherited", provenance="game-install",
-                                           reason="used from the game installation at runtime"))
-    for rel_path in deprecated:
-        resolutions.append(AssetResolution(rel_path, "omitted", provenance="profile-policy",
-                                           reason="deprecated file is not emitted"))
-    for rel_path in sorted(set(assets) - {r.rel_path for r in resolutions}):
-        if rel_path in dirty:
-            resolutions.append(AssetResolution(rel_path, "generated", provenance="writer-generated",
-                                               reason="dirty asset is regenerated"))
+        if rel_path in seen:
+            continue
+        seen.add(rel_path)
+        owner = _owner_for(rel_path)
+        resolutions.append(AssetResolution(rel_path, "inherited", provenance="game-install", reason="used from the game installation at runtime", size=0, source="game-install", sha256="", output_owner=owner, profile_rule="inherited", dirty_reason=""))
+    for rel_path in STRUCTURAL_OPTIONAL_PATHS:
+        if rel_path in seen:
+            continue
+        seen.add(rel_path)
+        owner = _owner_for(rel_path)
+        rule = _rule_for(rel_path)
+        if rel_path in deprecated_set:
+            if rel_path in assets and rel_path not in dirty:
+                raw = assets.get(rel_path)
+                resolutions.append(AssetResolution(rel_path, "omitted", provenance="profile-policy", reason="deprecated file is not emitted; imported bytes will be dropped", size=_size(raw), source="profile-policy", sha256=_sha(raw), output_owner=owner, profile_rule=rule, dirty_reason=""))
+            elif rel_path in assets and rel_path in dirty:
+                resolutions.append(AssetResolution(rel_path, "unsupported", provenance="profile-policy", reason="deprecated dirty file cannot be regenerated", size=0, source="profile-policy", sha256="", output_owner=owner, profile_rule=rule, dirty_reason="dirty asset cannot be regenerated"))
+            else:
+                resolutions.append(AssetResolution(rel_path, "omitted", provenance="profile-policy", reason="deprecated file is not emitted", size=0, source="profile-policy", sha256="", output_owner=owner, profile_rule=rule, dirty_reason=""))
+            continue
+        if rel_path == "map/cities.txt":
+            if rel_path in assets and rel_path not in dirty:
+                raw = assets.get(rel_path)
+                resolutions.append(AssetResolution(rel_path, "preserved", provenance="project-assets", reason="clean imported bytes are written back", size=_size(raw), source="project-assets", sha256=_sha(raw), output_owner=owner, profile_rule=rule if rule != "writer-generated" else "optional", dirty_reason=""))
+            elif rel_path in assets and rel_path in dirty:
+                resolutions.append(AssetResolution(rel_path, "generated", provenance="writer-generated", reason="dirty asset is regenerated from vanilla city groups", size=0, source="writer-generated", sha256="", output_owner=owner, profile_rule=rule if rule != "writer-generated" else "optional", dirty_reason="dirty asset is regenerated"))
+            else:
+                resolutions.append(AssetResolution(rel_path, "generated", provenance="writer-generated", reason="vanilla city groups are generated", size=0, source="writer-generated", sha256="", output_owner=owner, profile_rule=rule if rule != "writer-generated" else "optional", dirty_reason=""))
+            continue
+        if rel_path in assets and rel_path not in dirty:
+            raw = assets.get(rel_path)
+            if map_disabled and rel_path.startswith("map/"):
+                resolutions.append(AssetResolution(rel_path, "omitted", provenance="profile-policy", reason="excluded by export scope; imported bytes will be dropped", size=_size(raw), source="profile-policy", sha256=_sha(raw), output_owner=owner, profile_rule=rule, dirty_reason=""))
+            else:
+                resolutions.append(AssetResolution(rel_path, "preserved", provenance="project-assets", reason="clean imported bytes are written back", size=_size(raw), source="project-assets", sha256=_sha(raw), output_owner=owner, profile_rule=rule if rule != "writer-generated" else "optional", dirty_reason=""))
+        elif rel_path in assets and rel_path in dirty:
+            resolutions.append(AssetResolution(rel_path, "unsupported", provenance="profile-policy", reason="dirty structural file cannot be regenerated; no writer owns it", size=0, source="profile-policy", sha256="", output_owner=owner, profile_rule=rule if rule != "writer-generated" else "optional", dirty_reason="dirty asset cannot be regenerated"))
         else:
-            resolutions.append(AssetResolution(rel_path, "preserved", provenance="project-assets",
-                                               reason="clean imported bytes are preserved",
-                                               size=len(assets[rel_path] or b"")))
+            sibling_present = False
+            if rel_path in ("map/rocketsites.txt", "map/rocket_sites.txt"):
+                other = "map/rocket_sites.txt" if rel_path == "map/rocketsites.txt" else "map/rocketsites.txt"
+                if other in assets and other not in dirty:
+                    sibling_present = True
+            if sibling_present:
+                resolutions.append(AssetResolution(rel_path, "omitted", provenance="profile-policy", reason="naming variant not present in import; sibling variant is preserved", size=0, source="profile-policy", sha256="", output_owner=owner, profile_rule=rule if rule != "writer-generated" else "optional", dirty_reason=""))
+            else:
+                resolutions.append(AssetResolution(rel_path, "omitted", provenance="profile-policy", reason="optional file is absent and empty legacy files are not emitted", size=0, source="profile-policy", sha256="", output_owner=owner, profile_rule=rule if rule != "writer-generated" else "optional", dirty_reason=""))
+    for rel_path in deprecated:
+        if rel_path in seen:
+            continue
+        seen.add(rel_path)
+        owner = _owner_for(rel_path)
+        if rel_path in assets and rel_path not in dirty:
+            raw = assets.get(rel_path)
+            resolutions.append(AssetResolution(rel_path, "omitted", provenance="profile-policy", reason="deprecated file is not emitted; imported bytes will be dropped", size=_size(raw), source="profile-policy", sha256=_sha(raw), output_owner=owner, profile_rule="deprecated", dirty_reason=""))
+        elif rel_path in assets and rel_path in dirty:
+            resolutions.append(AssetResolution(rel_path, "unsupported", provenance="profile-policy", reason="deprecated dirty file cannot be regenerated", size=0, source="profile-policy", sha256="", output_owner=owner, profile_rule="deprecated", dirty_reason="dirty asset cannot be regenerated"))
+        else:
+            resolutions.append(AssetResolution(rel_path, "omitted", provenance="profile-policy", reason="deprecated file is not emitted", size=0, source="profile-policy", sha256="", output_owner=owner, profile_rule="deprecated", dirty_reason=""))
+    for rel_path in sorted(set(assets) - seen):
+        owner = _owner_for(rel_path)
+        rule = _rule_for(rel_path)
+        if rel_path in dirty:
+            if rel_path == "map/cities.txt" or rel_path in PRESERVED_CAPABLE_PATHS:
+                resolutions.append(AssetResolution(rel_path, "generated", provenance="writer-generated", reason="dirty asset is regenerated", size=0, source="writer-generated", sha256="", output_owner=owner, profile_rule=rule, dirty_reason="dirty asset is regenerated"))
+            elif rel_path in STRUCTURAL_OPTIONAL_PATHS:
+                resolutions.append(AssetResolution(rel_path, "unsupported", provenance="profile-policy", reason="dirty asset has no regenerating writer", size=0, source="profile-policy", sha256="", output_owner=owner, profile_rule=rule, dirty_reason="dirty asset cannot be regenerated"))
+            else:
+                resolutions.append(AssetResolution(rel_path, "generated", provenance="writer-generated", reason="dirty asset is regenerated", size=0, source="writer-generated", sha256="", output_owner=owner, profile_rule=rule, dirty_reason="dirty asset is regenerated"))
+        else:
+            raw = assets.get(rel_path)
+            resolutions.append(AssetResolution(rel_path, "preserved", provenance="project-assets", reason="clean imported bytes are preserved", size=_size(raw), source="project-assets", sha256=_sha(raw), output_owner=owner, profile_rule=rule, dirty_reason=""))
     return resolutions
 
 
@@ -1256,6 +1427,7 @@ def plan_export(tile_map, province_map, terrain_map=None, height_map=None, river
         dimensions,
         profile_name,
         lifecycle=active_lifecycle,
+        game_target=target,
     )
     repairs: list = []
     repairs.extend(analyze_terrain_tile_sync(snapshot))
@@ -1292,7 +1464,7 @@ def plan_export(tile_map, province_map, terrain_map=None, height_map=None, river
         if country_mgr is not None:
             occupied.extend(list(getattr(country_mgr, "countries", {}) or {}))
         acceptance_tags = select_acceptance_tags(occupied, count=int(acceptance_count or 0))
-    resolutions = build_asset_resolutions(snapshot, profile_name, profile)
+    resolutions = build_asset_resolutions(snapshot, profile_name, profile, scope, active_lifecycle)
     applied = apply_repair_actions(snapshot, to_apply)
     snapshot.fingerprint = compute_fingerprint(
         snapshot.tile_map, snapshot.province_map, snapshot.terrain_map,

@@ -155,8 +155,31 @@ city_group = {
 '''
 
 
-def write_cities_txt(output_dir: str) -> None:
-    """Write city meshes and mask settings to ``map/cities.txt``."""
+def write_cities_txt(output_dir: str, assets=None, dirty_assets=None, game_profile=None, profile_name=None) -> str:
+    """Write city meshes and mask settings to ``map/cities.txt``.
+
+    M6.7 preserve-or-generate with legacy compatibility: trailing optional
+    arguments keep direct callers valid. When clean imported bytes for
+    ``map/cities.txt`` are supplied they are written back exactly;
+    otherwise the vanilla city groups are generated. Returns
+    ``"preserved"`` or ``"generated"``.
+    """
+    try:
+        if assets is not None and "map/cities.txt" in assets:
+            try:
+                _dirty = set(dirty_assets or ()) if dirty_assets is not None else set()
+            except (TypeError, ValueError, AttributeError):
+                _dirty = set()
+            if "map/cities.txt" not in _dirty:
+                raw = assets.get("map/cities.txt")
+                if isinstance(raw, (bytes, bytearray, memoryview)):
+                    map_dir = os.path.join(output_dir, "map")
+                    os.makedirs(map_dir, exist_ok=True)
+                    with open(os.path.join(map_dir, "cities.txt"), "wb") as handle:
+                        handle.write(bytes(raw))
+                    return "preserved"
+    except OSError:
+        pass
     map_dir = os.path.join(output_dir, "map")
     os.makedirs(map_dir, exist_ok=True)
     with open(
@@ -166,6 +189,7 @@ def write_cities_txt(output_dir: str) -> None:
         newline="\n",
     ) as f:
         f.write(_VANILLA_CITIES_TEXT)
+    return "generated"
 
 
 def write_cities_bmp(
@@ -206,56 +230,23 @@ def write_cities_bmp(
 
 
 def _vanilla_palette(game_target=None, install_dir: str | None = None) -> bytes | None:
-    """Return the installed game's 255-entry cities palette when available."""
-    candidates: list[str] = []
-    _explicit_source = install_dir is not None or game_target is not None
-    _explicit = install_dir
-    if _explicit is None and game_target is not None:
-        _explicit = getattr(game_target, "install_dir", None)
-    if _explicit:
-        candidates.append(os.path.join(str(_explicit), "map", "cities.bmp"))
-    if not _explicit_source:
-        try:
-            # The editor stores the selected installation in the user config,
-            # so it is preferable to the historical hard-coded default path.
-            from services.game_assets import find_hoi4_install
+    """Return the installed game 255-entry cities palette when available.
 
-            install = find_hoi4_install()
-            if install:
-                candidates.append(os.path.join(install, "map", "cities.bmp"))
-        except Exception:
-            # Export must remain usable without optional game-asset discovery.
-            pass
-
-        try:
-            from data.constants import DEFAULT_HOI4_PATH
-
-            candidates.append(os.path.join(DEFAULT_HOI4_PATH, "map", "cities.bmp"))
-        except Exception:
-            pass
-
-    seen: set[str] = set()
-    for candidate in candidates:
-        candidate = os.path.normcase(os.path.abspath(candidate))
-        if candidate in seen or not os.path.isfile(candidate):
-            continue
-        seen.add(candidate)
-        try:
-            with open(candidate, "rb") as f:
-                header = f.read(54)
-                if len(header) != 54:
-                    continue
-                offset = struct.unpack_from("<I", header, 10)[0]
-                bpp = struct.unpack_from("<H", header, 28)[0]
-                if bpp != 8 or offset < 54:
-                    continue
-                f.seek(54)
-                palette = f.read(_BMP_PALETTE_ENTRIES * 4)
-                if len(palette) == _BMP_PALETTE_ENTRIES * 4:
-                    return palette
-        except OSError:
-            continue
-    return None
+    M6.2 trusted resolution: when ``game_target`` or ``install_dir`` is
+    provided only that explicit install is consulted. Legacy direct callers
+    without either keep a documented compatibility fallback (user config,
+    then DEFAULT_HOI4_PATH) inside ``services.game_assets``. Freeze and
+    acceptance exports must pass an explicit target; a missing palette is a
+    planner blocker, not a silent substitution here.
+    """
+    try:
+        from services.game_assets import read_palette_bytes as _read_palette
+        palette, _source = _read_palette(
+            game_target, install_dir, "map/cities.bmp", _BMP_PALETTE_ENTRIES
+        )
+        return palette
+    except (ImportError, OSError, AttributeError, TypeError, ValueError):
+        return None
 
 
 def _fallback_palette() -> bytes:

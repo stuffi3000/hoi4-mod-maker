@@ -417,7 +417,10 @@ def export_full_mod(
                               terrain_map=terrain_map,
                               provincial_terrain=provincial_terrain,
                               coastal_set=coastal_set)
-        _write_empty_unitstacks(output_dir)
+        try:
+            _write_empty_unitstacks(output_dir, assets, dirty_assets, profile, None)
+        except TypeError:
+            _write_empty_unitstacks(output_dir)
         _write_positions(province_map, tile_map, output_dir,
                          pid_count=pid_count_g, sum_x=sum_x_g, sum_y=sum_y_g,
                          placement_manager=map_placement_mgr,
@@ -878,9 +881,12 @@ def _write_buildings(states, province_map, tile_map, output_dir, sea_ids=None,
                            placement_manager=placement_manager, map_placement_mgr=map_placement_mgr, profile_name=profile_name)
 
 
-def _write_empty_unitstacks(output_dir):
+def _write_empty_unitstacks(output_dir, assets=None, dirty_assets=None, game_profile=None, profile_name=None):
     from export.writers.map.buildings import write_empty_unitstacks
-    return write_empty_unitstacks(output_dir)
+    try:
+        return write_empty_unitstacks(output_dir, assets, dirty_assets, game_profile, profile_name)
+    except TypeError:
+        return write_empty_unitstacks(output_dir)
 
 
 def _write_supply_areas(states, output_dir):

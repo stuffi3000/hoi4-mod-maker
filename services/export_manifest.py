@@ -69,6 +69,68 @@ CONTENT_ONLY_PATHS = (
 
 DEPRECATED_PATHS_FALLBACK = ("map/colors.txt",)
 
+# M6.7 optional structural text files. These are never generated empty by
+# default: clean imported bytes are preserved exactly when the profile allows
+# them, otherwise an explicit omitted/unsupported resolution is recorded.
+STRUCTURAL_OPTIONAL_PATHS = (
+    "map/colors.txt",
+    "map/airports.txt",
+    "map/rocketsites.txt",
+    "map/rocket_sites.txt",
+    "map/cities.txt",
+)
+
+# Version/profile naming variants for rocket sites. Both spellings are
+# accepted on import; the planner records each path explicitly.
+ROCKET_SITE_VARIANTS = (
+    "map/rocketsites.txt",
+    "map/rocket_sites.txt",
+)
+
+
+def owner_stage_for_path(rel_path: str) -> str:
+    norm = str(rel_path or "").replace("\\", "/").strip()
+    core = {
+        "map/provinces.bmp": "core_rasters",
+        "map/heightmap.bmp": "core_rasters",
+        "map/terrain.bmp": "core_rasters",
+        "map/rivers.bmp": "core_rasters",
+        "map/trees.bmp": "core_rasters",
+        "map/cities.bmp": "core_rasters",
+        "map/world_normal.bmp": "core_rasters",
+        "map/terrain/colormap_rgb_cityemissivemask_a.dds": "core_rasters",
+        "map/terrain/colormap_water_0.dds": "core_rasters",
+        "map/terrain/colormap_water_1.dds": "core_rasters",
+        "map/terrain/colormap_water_2.dds": "core_rasters",
+        "map/terrain/fow_rgb_waterspec_a.dds": "core_rasters",
+        "map/definition.csv": "map_metadata",
+        "map/continent.txt": "map_metadata",
+        "map/adjacencies.csv": "map_metadata",
+        "map/adjacency_rules.txt": "map_metadata",
+        "map/default.map": "map_metadata",
+        "map/seasons.txt": "map_metadata",
+        "map/ambient_object.txt": "map_metadata",
+        "map/weatherpositions.txt": "regions",
+        "map/buildings.txt": "placements",
+        "map/positions.txt": "placements",
+        "map/unitstacks.txt": "placements",
+        "map/airports.txt": "placements",
+        "map/rocket_sites.txt": "placements",
+        "map/rocketsites.txt": "placements",
+        "map/cities.txt": "placements",
+        "map/colors.txt": "placements",
+        "map/supply_nodes.txt": "logistics",
+        "map/railways.txt": "logistics",
+        "descriptor.mod": "descriptor",
+    }
+    if norm in core:
+        return core[norm]
+    for prefix, stage in (("history/states/", "state_geography"), ("history/countries", "acceptance_content"), ("common/", "acceptance_content"), ("localisation", "acceptance_content"), ("gfx/flags", "acceptance_content"), ("map/strategicregions/", "regions"), ("map/supplyareas/", "logistics")):
+        if norm == prefix or norm.startswith(prefix):
+            return stage
+    return "assets"
+
+
 MANIFEST_SCHEMA = "foundation-manifest/3.4"
 MANIFEST_VERSION = "3.4"
 MANIFEST_GENERATOR = "hoi4-mod-maker/export_manifest"

@@ -162,7 +162,7 @@ def write_terrain_bmp(
     install_dir: str | None = None,
 ) -> None:
     """Writes 8-bit indexed color terrain.bmp.
-    Copy the file header + palette directly from the original version to ensure that the format is completely consistent (255 colors, offset=1074)."""
+    Copy the file header + palette directly from the selected game install when provided (M6.2 trusted resolution). Legacy direct callers without a target keep a documented compatibility fallback; freeze/acceptance exports require an explicit target and report a missing palette as a blocker instead of silently substituting bytes (255 colors, offset=1074)."""
     # Use actual array shape, not global MAP_WIDTH/HEIGHT
     H, W = terrain_map.shape
 
@@ -181,22 +181,17 @@ def write_terrain_bmp(
     pixel_offset = 14 + 40 + palette_size
     file_size = pixel_offset + pixel_data_size
 
-    # Try reading the palette from the original
-    _explicit_source = install_dir is not None or game_target is not None
-    _install = install_dir
-    if _install is None and game_target is not None:
-        _install = getattr(game_target, "install_dir", None)
-    if _install is None and not _explicit_source:
-        from data.constants import DEFAULT_HOI4_PATH as _fallback_path
-        _install = _fallback_path
-    vanilla_terrain = os.path.join(_install, "map", "terrain.bmp") if _install else ""
+    # M6.2: use the selected GameTarget/install_dir when provided. Legacy
+    # direct callers without either keep a documented compatibility fallback
+    # (user config, then DEFAULT_HOI4_PATH) inside the helper.
     vanilla_palette = None
-    if os.path.exists(vanilla_terrain):
-        with open(vanilla_terrain, "rb") as vf:
-            vf.read(10)
-            v_offset = struct.unpack("<I", vf.read(4))[0]
-            vf.seek(14 + 40)  # Skip the file header and information header and read the palette directly
-            vanilla_palette = vf.read(n_colors * 4)
+    try:
+        from services.game_assets import read_palette_bytes as _read_palette_bytes
+        vanilla_palette, _palette_source = _read_palette_bytes(
+            game_target, install_dir, "map/terrain.bmp", n_colors
+        )
+    except (ImportError, OSError, AttributeError, TypeError, ValueError):
+        vanilla_palette = None
 
     with open(file_path, "wb") as f:
         # Generate the correct file header yourself (exact file size match)
@@ -369,13 +364,7 @@ def write_cities_bmp(output_dir: str, map_width: int | None = None, map_height: 
     _W = int(map_width) if map_width is not None else int(_GW)
     _H = int(map_height) if map_height is not None else int(_GH)
     MAP_WIDTH, MAP_HEIGHT = _W, _H
-    _explicit_source = install_dir is not None or game_target is not None
-    _install = install_dir
-    if _install is None and game_target is not None:
-        _install = getattr(game_target, "install_dir", None)
-    if _install is None and not _explicit_source:
-        from data.constants import DEFAULT_HOI4_PATH as _fallback_city_path
-        _install = _fallback_city_path
+    # M6.2: trusted palette resolution; legacy fallback lives in the helper.
     map_dir = os.path.join(output_dir, "map")
     os.makedirs(map_dir, exist_ok=True)
     file_path = os.path.join(map_dir, "cities.bmp")
@@ -389,13 +378,15 @@ def write_cities_bmp(output_dir: str, map_width: int | None = None, map_height: 
     pixel_offset = 14 + 40 + palette_size
     file_size = pixel_offset + pixel_data_size
 
-    # Read 255 color palette from vanilla
-    vanilla_cities = os.path.join(_install, "map", "cities.bmp") if _install else ""
+    # M6.2: resolve via selected target when provided.
     vanilla_palette = None
-    if vanilla_cities and os.path.exists(vanilla_cities):
-        with open(vanilla_cities, "rb") as vf:
-            vf.seek(14 + 40)
-            vanilla_palette = vf.read(n_colors * 4)
+    try:
+        from services.game_assets import read_palette_bytes as _read_palette_bytes2
+        vanilla_palette, _cities_source = _read_palette_bytes2(
+            game_target, install_dir, "map/cities.bmp", n_colors
+        )
+    except (ImportError, OSError, AttributeError, TypeError, ValueError):
+        vanilla_palette = None
 
     with open(file_path, "wb") as f:
         f.write(b"BM")

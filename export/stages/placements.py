@@ -8,8 +8,10 @@ OWNED_FILES = (
     "map/positions.txt",
     "map/unitstacks.txt",
     "map/airports.txt",
+    "map/rocketsites.txt",
     "map/rocket_sites.txt",
     "map/cities.txt",
+    "map/colors.txt",
 )
 PROFILES = ("foundation", "acceptance", "scaffold", "legacy_full")
 REQUIRES = ("states", "coastal_set")
@@ -47,7 +49,25 @@ def run(ctx):
             ctx.scratch["land_ids"] = land_ids
             ctx.scratch["sea_ids"] = sea_ids
             notes.append("converted %d unreliable coastal provinces to sea" % len(failed_coastal))
-        _write_empty_unitstacks(ctx.output_dir)
+        try:
+            _unitstack_result = _write_empty_unitstacks(
+                ctx.output_dir,
+                getattr(ctx, "assets", None),
+                getattr(ctx, "dirty_assets", None),
+                getattr(ctx, "game_profile", None),
+                getattr(ctx, "profile_name", None),
+            )
+        except TypeError:
+            _unitstack_result = _write_empty_unitstacks(ctx.output_dir)
+        try:
+            _struct_actions = []
+            if isinstance(_unitstack_result, dict):
+                _struct_actions = list(_unitstack_result.get("actions") or [])
+            for _rel, _act in _struct_actions:
+                if _act == "preserved":
+                    notes.append("%s: preserved clean imported bytes" % _rel)
+        except (AttributeError, TypeError, ValueError):
+            pass
         _write_positions(np.asarray(ctx.province_map), np.asarray(ctx.tile_map), ctx.output_dir,
                          pid_count=ctx.scratch.get("pid_count"), sum_x=ctx.scratch.get("sum_x"),
                          sum_y=ctx.scratch.get("sum_y"), placement_manager=mgr, profile_name=writer_profile)
