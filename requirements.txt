@@ -3,7 +3,7 @@ numpy>=1.24
 Pillow>=10.0
 scipy>=1.11
 opencv-python>=4.8
-pyqtdarktheme>=2.1
+pyqtdarktheme2>=2.1
 
 # dev / test
 pytest>=8.0

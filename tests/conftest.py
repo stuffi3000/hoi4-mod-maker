@@ -23,9 +23,9 @@ _REQUIRED_TEST_MODULES = {
     "PIL": "Pillow",
     "scipy": "scipy",
     "cv2": "opencv-python",
-    # The distribution is named PyQtDarkTheme, while its import package is
+    # The distribution is named PyQtDarkTheme2, while its import package is
     # qdarktheme.
-    "qdarktheme": "pyqtdarktheme",
+    "qdarktheme": "pyqtdarktheme2",
     "pytestqt": "pytest-qt",
 }
 

@@ -117,7 +117,7 @@ Download the `v1.4.0` package from [GitHub Releases](https://github.com/stuffi30
 
 - Python 3.10+ (source only)
 - Windows 10/11
-- Dependencies: PyQt5, NumPy, Pillow, SciPy, OpenCV, pytest, pytest-qt, and pyqtdarktheme
+- Dependencies: PyQt5, NumPy, Pillow, SciPy, OpenCV, pytest, pytest-qt, and PyQtDarkTheme2
 
 ### Development tests
 
