@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 from PyQt5.QtCore import Qt
-from PyQt5.QtWidgets import QComboBox, QListWidget, QPlainTextEdit, QPushButton
+from PyQt5.QtWidgets import QComboBox, QDoubleSpinBox, QListWidget, QPlainTextEdit, QPushButton
 
 from features.map.placement import PlacementPage, parse_sea_mapping
 from features.map.placement import page as placement_page_module
@@ -264,3 +264,159 @@ def test_set_status(qtbot):
     assert page._status_label.text() == "hello"
     page.set_status("")
     assert page._status_label.text() == ""
+
+
+def test_transform_editor_constructs_disabled(qtbot):
+    page = PlacementPage()
+    qtbot.addWidget(page)
+    assert page.selected_transform() is None
+    assert page._transform_label.text() == tr("placement_transform_none")
+    spins = (
+        page._transform_x_spin,
+        page._transform_y_spin,
+        page._transform_rotation_spin,
+        page._transform_height_spin,
+    )
+    for spin in spins:
+        assert isinstance(spin, QDoubleSpinBox)
+        assert spin.decimals() >= 6
+        assert spin.minimum() < spin.maximum()
+        assert spin.minimum() > float("-inf")
+        assert spin.maximum() < float("inf")
+        assert not spin.isEnabled()
+    assert not page._transform_apply_btn.isEnabled()
+    assert not page._transform_reset_btn.isEnabled()
+    assert page._transform_apply_btn.text() == tr("placement_transform_apply_btn")
+    assert page._transform_reset_btn.text() == tr("placement_transform_reset_btn")
+    texts = {button.text() for button in page.findChildren(QPushButton)}
+    assert tr("placement_transform_apply_btn") in texts
+    assert tr("placement_transform_reset_btn") in texts
+
+
+def test_set_transform_selection_enables_and_preserves_fractional(qtbot):
+    page = PlacementPage()
+    qtbot.addWidget(page)
+    page.set_transform_selection("slot", (2, 1), 1.123456, 2.654321, 45.125789, 10.250001)
+    assert page._transform_x_spin.isEnabled()
+    assert page._transform_y_spin.isEnabled()
+    assert page._transform_rotation_spin.isEnabled()
+    assert page._transform_height_spin.isEnabled()
+    assert page._transform_apply_btn.isEnabled()
+    assert page._transform_reset_btn.isEnabled()
+    assert page._transform_x_spin.value() == pytest.approx(1.123456)
+    assert page._transform_y_spin.value() == pytest.approx(2.654321)
+    assert page._transform_rotation_spin.value() == pytest.approx(45.125789)
+    assert page._transform_height_spin.value() == pytest.approx(10.250001)
+    selected = page.selected_transform()
+    assert selected is not None
+    selected_kind, selected_key, selected_x, selected_y, selected_rotation, selected_height = selected
+    assert selected_kind == "slot"
+    assert selected_key == (2, 1)
+    assert selected_x == pytest.approx(1.123456)
+    assert selected_y == pytest.approx(2.654321)
+    assert selected_rotation == pytest.approx(45.125789)
+    assert selected_height == pytest.approx(10.250001)
+    assert page._transform_label.text() == tr("placement_transform_selected", "slot", (2, 1))
+
+
+def test_selected_transform_reflects_edited_spin_values(qtbot):
+    page = PlacementPage()
+    qtbot.addWidget(page)
+    page.set_transform_selection("port", 9, 3.0, 4.0, 10.0, 5.0)
+    page._transform_x_spin.setValue(7.123456)
+    page._transform_height_spin.setValue(8.5)
+    selected = page.selected_transform()
+    assert selected[0] == "port"
+    assert selected[1] == 9
+    assert selected[2] == pytest.approx(7.123456)
+    assert selected[5] == pytest.approx(8.5)
+
+
+def test_transform_apply_emits_and_updates_status(qtbot):
+    page = PlacementPage()
+    qtbot.addWidget(page)
+    page.set_transform_selection("slot", (5, 2), 1.5, 2.5, 30.25, 3.75)
+    page._transform_x_spin.setValue(9.123456)
+    captured = []
+    page.transform_update_requested.connect(
+        lambda kind, key, pos_x, pos_y, rotation, height: captured.append(
+            (kind, key, pos_x, pos_y, rotation, height)
+        )
+    )
+    with qtbot.waitSignal(page.transform_update_requested) as blocker:
+        _click(page, "placement_transform_apply_btn")
+    assert len(captured) == 1
+    emitted_kind, emitted_key, emitted_x, emitted_y, emitted_rotation, emitted_height = captured[0]
+    assert emitted_kind == "slot"
+    assert emitted_key == (5, 2)
+    assert emitted_x == pytest.approx(9.123456)
+    assert emitted_y == pytest.approx(2.5)
+    assert emitted_rotation == pytest.approx(30.25)
+    assert emitted_height == pytest.approx(3.75)
+    assert blocker.args[0] == "slot"
+    assert page._status_label.text() == tr("placement_transform_applied", "slot", (5, 2))
+
+
+def test_transform_reset_emits_and_updates_status(qtbot):
+    page = PlacementPage()
+    qtbot.addWidget(page)
+    page.set_transform_selection("port", 9, 3.25, 4.5, 12.5, 6.5)
+    captured = []
+    page.transform_reset_requested.connect(
+        lambda kind, key: captured.append((kind, key))
+    )
+    with qtbot.waitSignal(page.transform_reset_requested) as blocker:
+        _click(page, "placement_transform_reset_btn")
+    assert captured == [("port", 9)]
+    assert list(blocker.args) == ["port", 9]
+    assert page._status_label.text() == tr(
+        "placement_transform_reset_requested", "port", 9
+    )
+
+
+def test_clear_transform_selection_disables_editor(qtbot):
+    page = PlacementPage()
+    qtbot.addWidget(page)
+    page.set_transform_selection("slot", (2, 1), 1.0, 2.0, 3.0, 4.0)
+    assert page.selected_transform() is not None
+    page.clear_transform_selection()
+    assert page.selected_transform() is None
+    assert page._transform_label.text() == tr("placement_transform_none")
+    assert not page._transform_x_spin.isEnabled()
+    assert not page._transform_y_spin.isEnabled()
+    assert not page._transform_rotation_spin.isEnabled()
+    assert not page._transform_height_spin.isEnabled()
+    assert not page._transform_apply_btn.isEnabled()
+    assert not page._transform_reset_btn.isEnabled()
+
+
+def test_transform_no_selection_emits_nothing_and_shows_status(qtbot):
+    page = PlacementPage()
+    qtbot.addWidget(page)
+    assert page.selected_transform() is None
+    applied = []
+    reset = []
+    page.transform_update_requested.connect(
+        lambda *args: applied.append(args)
+    )
+    page.transform_reset_requested.connect(
+        lambda *args: reset.append(args)
+    )
+    page._transform_apply_btn.click()
+    page._transform_reset_btn.click()
+    assert applied == []
+    assert reset == []
+    page._on_transform_apply()
+    assert applied == []
+    assert page._status_label.text() == tr("placement_transform_empty")
+    page._on_transform_reset()
+    assert reset == []
+    assert page._status_label.text() == tr("placement_transform_empty")
+    page.set_transform_selection("slot", (2, 1), 1.0, 2.0, 0.0, 0.0)
+    page.clear_transform_selection()
+    page._on_transform_apply()
+    assert applied == []
+    assert page._status_label.text() == tr("placement_transform_empty")
+    page._on_transform_reset()
+    assert reset == []
+    assert page._status_label.text() == tr("placement_transform_empty")

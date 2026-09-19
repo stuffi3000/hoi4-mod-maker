@@ -26,4 +26,12 @@ STRINGS: dict[str, str] = {
     "placement_slots_requested": "Slot generation requested.",
     "placement_status_ready": "Ready.",
     "placement_tip": "Review generated province slots and port placements before accepting them. Generate slots, enter an explicit land-to-sea mapping, generate ports, then accept the checked records.",
+    "placement_transform_applied": "Transform update requested for {0} {1}.",
+    "placement_transform_apply_btn": "Apply Transform",
+    "placement_transform_empty": "No placement selected for transform editing.",
+    "placement_transform_none": "No placement selected.",
+    "placement_transform_reset_btn": "Reset Transform",
+    "placement_transform_reset_requested": "Transform reset requested for {0} {1}.",
+    "placement_transform_section": "Transform Editor",
+    "placement_transform_selected": "Selected {0} {1}",
 }

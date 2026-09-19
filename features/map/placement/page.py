@@ -21,6 +21,8 @@ from PyQt5.QtWidgets import (
     QListWidgetItem,
     QPlainTextEdit,
     QComboBox,
+    QDoubleSpinBox,
+    QFormLayout,
     QScrollArea,
 )
 
@@ -42,6 +44,9 @@ _INT_RE = re.compile(r"[+-]?\d+")
 _SEP_RE = re.compile(r"(?P<left>[^:=]+)[:=](?P<right>[^:=]+)")
 _MAX_DIAGNOSTIC_LINES = 5
 _MISSING = object()
+_TRANSFORM_DECIMALS = 6
+_TRANSFORM_MINIMUM = -1000000.0
+_TRANSFORM_MAXIMUM = 1000000.0
 
 
 def parse_sea_mapping(text):
@@ -183,6 +188,8 @@ class PlacementPage(QWidget):
     generate_ports_requested = pyqtSignal(object)
     accept_selected_requested = pyqtSignal(object, object, str)
     refresh_requested = pyqtSignal()
+    transform_update_requested = pyqtSignal(str, object, float, float, float, float)
+    transform_reset_requested = pyqtSignal(str, object)
 
     parse_sea_mapping = staticmethod(parse_sea_mapping)
 
@@ -276,6 +283,50 @@ class PlacementPage(QWidget):
         self._refresh_btn.clicked.connect(self._on_refresh)
         vl.addWidget(self._refresh_btn)
         lay.addWidget(review_box)
+
+        transform_box = _make_section(tr("placement_transform_section"))
+        transform_layout = transform_box.layout()
+        self._transform_label = QLabel(tr("placement_transform_none"))
+        self._transform_label.setWordWrap(True)
+        self._transform_label.setStyleSheet(_DIM_LABEL_STYLE)
+        transform_layout.addWidget(self._transform_label)
+        transform_form = QFormLayout()
+        self._transform_x_spin = QDoubleSpinBox()
+        self._transform_x_spin.setDecimals(_TRANSFORM_DECIMALS)
+        self._transform_x_spin.setRange(_TRANSFORM_MINIMUM, _TRANSFORM_MAXIMUM)
+        self._transform_x_spin.setSingleStep(0.1)
+        transform_form.addRow("X", self._transform_x_spin)
+        self._transform_y_spin = QDoubleSpinBox()
+        self._transform_y_spin.setDecimals(_TRANSFORM_DECIMALS)
+        self._transform_y_spin.setRange(_TRANSFORM_MINIMUM, _TRANSFORM_MAXIMUM)
+        self._transform_y_spin.setSingleStep(0.1)
+        transform_form.addRow("Y", self._transform_y_spin)
+        self._transform_rotation_spin = QDoubleSpinBox()
+        self._transform_rotation_spin.setDecimals(_TRANSFORM_DECIMALS)
+        self._transform_rotation_spin.setRange(_TRANSFORM_MINIMUM, _TRANSFORM_MAXIMUM)
+        self._transform_rotation_spin.setSingleStep(0.1)
+        transform_form.addRow("Rotation", self._transform_rotation_spin)
+        self._transform_height_spin = QDoubleSpinBox()
+        self._transform_height_spin.setDecimals(_TRANSFORM_DECIMALS)
+        self._transform_height_spin.setRange(_TRANSFORM_MINIMUM, _TRANSFORM_MAXIMUM)
+        self._transform_height_spin.setSingleStep(0.1)
+        transform_form.addRow("Height", self._transform_height_spin)
+        transform_layout.addLayout(transform_form)
+        transform_buttons = QHBoxLayout()
+        self._transform_apply_btn = QPushButton(tr("placement_transform_apply_btn"))
+        self._transform_apply_btn.setStyleSheet(_PRIMARY_BTN_STYLE)
+        self._transform_apply_btn.clicked.connect(self._on_transform_apply)
+        transform_buttons.addWidget(self._transform_apply_btn)
+        self._transform_reset_btn = QPushButton(tr("placement_transform_reset_btn"))
+        self._transform_reset_btn.setStyleSheet(_SECONDARY_BTN_STYLE)
+        self._transform_reset_btn.clicked.connect(self._on_transform_reset)
+        transform_buttons.addWidget(self._transform_reset_btn)
+        transform_layout.addLayout(transform_buttons)
+        lay.addWidget(transform_box)
+        self._transform_kind = None
+        self._transform_key = None
+        self._transform_has_selection = False
+        self._set_transform_enabled(False)
 
         diag_box = _make_section(tr("placement_diagnostics_section"))
         dl = diag_box.layout()
@@ -379,6 +430,48 @@ class PlacementPage(QWidget):
             lines.append("...")
         self._diag_label.setText("\n".join(lines))
 
+    def set_transform_selection(self, kind, key, x, y, rotation, height):
+        self._transform_kind = kind
+        self._transform_key = key
+        self._transform_has_selection = True
+        self._transform_x_spin.setValue(float(x))
+        self._transform_y_spin.setValue(float(y))
+        self._transform_rotation_spin.setValue(float(rotation))
+        self._transform_height_spin.setValue(float(height))
+        self._transform_label.setText(tr("placement_transform_selected", kind, key))
+        self._set_transform_enabled(True)
+
+    def clear_transform_selection(self):
+        self._transform_kind = None
+        self._transform_key = None
+        self._transform_has_selection = False
+        self._transform_x_spin.setValue(0.0)
+        self._transform_y_spin.setValue(0.0)
+        self._transform_rotation_spin.setValue(0.0)
+        self._transform_height_spin.setValue(0.0)
+        self._transform_label.setText(tr("placement_transform_none"))
+        self._set_transform_enabled(False)
+
+    def selected_transform(self):
+        if not self._transform_has_selection:
+            return None
+        return (
+            self._transform_kind,
+            self._transform_key,
+            float(self._transform_x_spin.value()),
+            float(self._transform_y_spin.value()),
+            float(self._transform_rotation_spin.value()),
+            float(self._transform_height_spin.value()),
+        )
+
+    def _set_transform_enabled(self, enabled):
+        self._transform_x_spin.setEnabled(enabled)
+        self._transform_y_spin.setEnabled(enabled)
+        self._transform_rotation_spin.setEnabled(enabled)
+        self._transform_height_spin.setEnabled(enabled)
+        self._transform_apply_btn.setEnabled(enabled)
+        self._transform_reset_btn.setEnabled(enabled)
+
     def set_status(self, text):
         self._status_label.setText(text or "")
 
@@ -425,3 +518,27 @@ class PlacementPage(QWidget):
 
     def _on_refresh(self):
         self.refresh_requested.emit()
+
+    def _on_transform_apply(self):
+        selection = self.selected_transform()
+        if selection is None:
+            self.set_status(tr("placement_transform_empty"))
+            return
+        selected_kind = selection[0]
+        selected_key = selection[1]
+        selected_x = float(selection[2])
+        selected_y = float(selection[3])
+        selected_rotation = float(selection[4])
+        selected_height = float(selection[5])
+        self.set_status(tr("placement_transform_applied", selected_kind, selected_key))
+        self.transform_update_requested.emit(selected_kind, selected_key, selected_x, selected_y, selected_rotation, selected_height)
+
+    def _on_transform_reset(self):
+        selection = self.selected_transform()
+        if selection is None:
+            self.set_status(tr("placement_transform_empty"))
+            return
+        selected_kind = selection[0]
+        selected_key = selection[1]
+        self.set_status(tr("placement_transform_reset_requested", selected_kind, selected_key))
+        self.transform_reset_requested.emit(selected_kind, selected_key)
