@@ -14,6 +14,8 @@ from dataclasses import dataclass, field, fields, is_dataclass
 
 import numpy as np
 
+from domain import dds_format as dds_format
+from domain import map_art_matrix as map_art_matrix
 from domain.export_contract import (
     EXPORT_LIFECYCLES,
     EXPORT_PROFILES,
@@ -1005,6 +1007,102 @@ def split_repairs_by_policy(repairs: list, repair_policy: str, lifecycle: str):
     return proposed, [r for r in repairs if r.safety == "safe"]
 
 
+def _snapshot_dds_dimensions(snapshot):
+    try:
+        return (int(snapshot.width), int(snapshot.height))
+    except (AttributeError, TypeError, ValueError):
+        return (None, None)
+
+
+def _dds_resolution_for_path(rel_path, game_profile, snapshot, assets, dirty, owner, rule):
+    """DDS-aware resolution, or None when no profile contract applies.
+
+    Falls back to the legacy generated/preserved handling for profiles
+    without a DDS contract so custom test profiles keep their behavior.
+    Blocked contracts name the missing encoder capability and the remedy.
+    """
+    try:
+        if game_profile is None or not dds_format.has_contract(game_profile, rel_path):
+            return None
+    except (AttributeError, TypeError, ValueError):
+        return None
+    map_w, map_h = _snapshot_dds_dimensions(snapshot)
+    try:
+        strategy = dds_format.strategy_for_asset(rel_path, game_profile, map_w, map_h)
+    except (AttributeError, TypeError, ValueError):
+        return None
+    raw = None
+    try:
+        candidate = assets.get(rel_path) if isinstance(assets, dict) else None
+        if isinstance(candidate, (bytes, bytearray, memoryview)) and len(candidate) > 0:
+            raw = bytes(candidate)
+    except (TypeError, ValueError):
+        raw = None
+    try:
+        dirty_flag = rel_path in (dirty or ())
+    except (TypeError, ValueError):
+        dirty_flag = False
+    try:
+        decision = dds_format.decide_dds_output(strategy, imported_bytes=raw, dirty=dirty_flag)
+    except (AttributeError, TypeError, ValueError):
+        return None
+    if decision.action == "preserve":
+        digest = ""
+        try:
+            digest = hashlib.sha256(raw).hexdigest()
+        except (TypeError, ValueError):
+            digest = ""
+        return AssetResolution(rel_path, "preserved", provenance="project-assets", reason=decision.reason, size=len(raw or b""), source="project-assets", sha256=digest, output_owner=owner, profile_rule=rule, dirty_reason="")
+    if decision.action == "blocked":
+        reason = decision.reason
+        if decision.remedy:
+            reason = reason + " Remedy: " + decision.remedy
+        return AssetResolution(rel_path, "blocked", provenance="dds-capability", reason=reason, size=0, source="dds-capability", sha256="", output_owner=owner, profile_rule=rule, dirty_reason=("dirty asset cannot be regenerated" if dirty_flag else "no compatible import and no encoder for the profile format"))
+    return AssetResolution(rel_path, "generated", provenance="writer-generated", reason=decision.reason, size=0, source="writer-generated", sha256="", output_owner=owner, profile_rule=rule, dirty_reason="")
+
+
+def findings_for_asset_blockers(resolutions, game_profile=None, lifecycle="draft"):
+    """Explicit findings for blocked or required-unsupported resolutions.
+
+    Blocked assets (DDS capability gaps, dirty map art without a writer)
+    and required assets stuck at unsupported become blockers at
+    frozen/accepted scope and warnings otherwise, so drafts keep working
+    while freezes demand a remedy or an accepted exception.
+    """
+    frozen = str(lifecycle or "draft") in ("frozen", "accepted")
+    severity = "blocker" if frozen else "warning"
+    try:
+        required = set(getattr(game_profile, "required_files", None) or [])
+    except (AttributeError, TypeError, ValueError):
+        required = set()
+    notes = []
+    covered = set()
+    for entry in list(resolutions or []):
+        try:
+            if isinstance(entry, dict):
+                rel_path = str(entry.get("rel_path", ""))
+                disp = str(entry.get("disposition", ""))
+                reason = str(entry.get("reason", ""))
+            else:
+                rel_path = str(getattr(entry, "rel_path", ""))
+                disp = str(getattr(entry, "disposition", ""))
+                reason = str(getattr(entry, "reason", ""))
+        except (AttributeError, TypeError, ValueError):
+            continue
+        if rel_path:
+            covered.add(rel_path)
+        if not rel_path or not disp:
+            continue
+        if disp == "blocked":
+            notes.append(ValidationNote("export.asset.blocked", severity, "%s is blocked: %s" % (rel_path, reason or "generation cannot satisfy the profile contract"), layer="assets"))
+        elif disp == "unsupported" and rel_path in required:
+            notes.append(ValidationNote("export.asset.blocked", severity, "%s is required but unsupported: %s" % (rel_path, reason or "no writer can produce it"), layer="assets"))
+    for missing in sorted(required):
+        if missing not in covered:
+            notes.append(ValidationNote("export.asset.blocked", severity, "%s is required by the profile but has no asset resolution" % missing, layer="assets"))
+    return notes
+
+
 def build_asset_resolutions(snapshot, profile_name: str, game_profile=None, scope=None, lifecycle=None) -> list:
     from services.export_manifest import (
         CONTENT_ONLY_PATHS,
@@ -1081,6 +1179,11 @@ def build_asset_resolutions(snapshot, profile_name: str, game_profile=None, scop
         if (rel_path.startswith("map/") and map_disabled) or (rel_path == "descriptor.mod" and descriptor_disabled):
             resolutions.append(AssetResolution(rel_path, "omitted", provenance="profile-policy", reason="excluded by export scope", size=0, source="profile-policy", sha256="", output_owner=owner, profile_rule=rule, dirty_reason=""))
             continue
+        if map_art_matrix.is_generated_dds_art(rel_path):
+            dds_resolution = _dds_resolution_for_path(rel_path, game_profile, snapshot, assets, dirty, owner, rule)
+            if dds_resolution is not None:
+                resolutions.append(dds_resolution)
+                continue
         if rel_path in PRESERVED_CAPABLE_PATHS and rel_path in assets and rel_path not in dirty:
             raw = assets.get(rel_path)
             resolutions.append(AssetResolution(rel_path, "preserved", provenance="project-assets", reason="clean imported bytes are written back", size=_size(raw), source="project-assets", sha256=_sha(raw), output_owner=owner, profile_rule=rule, dirty_reason=""))
@@ -1109,6 +1212,14 @@ def build_asset_resolutions(snapshot, profile_name: str, game_profile=None, scop
         seen.add(rel_path)
         owner = _owner_for(rel_path)
         resolutions.append(AssetResolution(rel_path, "inherited", provenance="game-install", reason="used from the game installation at runtime", size=0, source="game-install", sha256="", output_owner=owner, profile_rule="inherited", dirty_reason=""))
+    for rel_path in map_art_matrix.matrix_inherited_paths(game_profile):
+        if rel_path in seen:
+            continue
+        if isinstance(assets, dict) and rel_path in assets:
+            continue
+        seen.add(rel_path)
+        owner = _owner_for(rel_path)
+        resolutions.append(AssetResolution(rel_path, "inherited", provenance=map_art_matrix.INHERITED_PROVENANCE, reason=map_art_matrix.inherited_reason_for(rel_path), size=0, source=map_art_matrix.INHERITED_PROVENANCE, sha256="", output_owner=owner, profile_rule="inherited", dirty_reason=""))
     for rel_path in STRUCTURAL_OPTIONAL_PATHS:
         if rel_path in seen:
             continue
@@ -1166,6 +1277,19 @@ def build_asset_resolutions(snapshot, profile_name: str, game_profile=None, scop
     for rel_path in sorted(set(assets) - seen):
         owner = _owner_for(rel_path)
         rule = _rule_for(rel_path)
+        if map_art_matrix.is_map_art_path(rel_path):
+            if rel_path in dirty:
+                art_disp, art_reason, art_prov = map_art_matrix.classify_leftover_map_art(rel_path, has_bytes=False, dirty=True)
+                resolutions.append(AssetResolution(rel_path, art_disp, provenance=art_prov, reason=art_reason, size=0, source=art_prov, sha256="", output_owner=owner, profile_rule=rule, dirty_reason="dirty asset cannot be regenerated"))
+            else:
+                raw = assets.get(rel_path)
+                try:
+                    usable = isinstance(raw, (bytes, bytearray, memoryview)) and len(raw) > 0
+                except (TypeError, ValueError):
+                    usable = False
+                art_disp, art_reason, art_prov = map_art_matrix.classify_leftover_map_art(rel_path, has_bytes=bool(usable), dirty=False)
+                resolutions.append(AssetResolution(rel_path, art_disp, provenance=art_prov, reason=art_reason, size=_size(raw), source=art_prov, sha256=_sha(raw), output_owner=owner, profile_rule=rule, dirty_reason=""))
+            continue
         if rel_path in dirty:
             if rel_path == "map/cities.txt" or rel_path in PRESERVED_CAPABLE_PATHS:
                 resolutions.append(AssetResolution(rel_path, "generated", provenance="writer-generated", reason="dirty asset is regenerated", size=0, source="writer-generated", sha256="", output_owner=owner, profile_rule=rule, dirty_reason="dirty asset is regenerated"))
@@ -1448,6 +1572,8 @@ def plan_export(tile_map, province_map, terrain_map=None, height_map=None, river
     # (including a mismatch between requested and actual arrays) must stop the
     # export.  Direct library callers that omit dimensions retain the legacy
     # compatibility behavior and receive the same issues as findings.
+    resolutions = build_asset_resolutions(snapshot, profile_name, profile, scope, active_lifecycle)
+    findings.extend(findings_for_asset_blockers(resolutions, profile, active_lifecycle))
     blockers = [note.message for note in findings
                 if note.severity == "blocker"
                 or (note.severity == "error" and dimensions is not None)]
@@ -1464,7 +1590,6 @@ def plan_export(tile_map, province_map, terrain_map=None, height_map=None, river
         if country_mgr is not None:
             occupied.extend(list(getattr(country_mgr, "countries", {}) or {}))
         acceptance_tags = select_acceptance_tags(occupied, count=int(acceptance_count or 0))
-    resolutions = build_asset_resolutions(snapshot, profile_name, profile, scope, active_lifecycle)
     applied = apply_repair_actions(snapshot, to_apply)
     snapshot.fingerprint = compute_fingerprint(
         snapshot.tile_map, snapshot.province_map, snapshot.terrain_map,

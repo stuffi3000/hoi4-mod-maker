@@ -14,7 +14,7 @@ EXPORT_PROFILES = ("foundation", "acceptance", "scaffold", "legacy_full")
 REPAIR_POLICIES = ("off", "propose", "apply-safe")
 REPAIR_SAFETY_LEVELS = ("safe", "semantic", "breaking")
 EXPORT_LIFECYCLES = ("draft", "candidate", "frozen", "accepted")
-ASSET_DISPOSITIONS = ("generated", "preserved", "inherited", "omitted", "unsupported")
+ASSET_DISPOSITIONS = ("generated", "preserved", "inherited", "omitted", "unsupported", "blocked")
 
 RESERVED_ACCEPTANCE_TAGS = ("BEL", "FRA", "GER", "HOL", "LUX", "ENG")
 

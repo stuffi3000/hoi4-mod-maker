@@ -12,6 +12,8 @@ not waivable):
 
 - ``integration.asset_disposition``: profile-required assets without a
   generated, preserved, or profile-permitted inherited resolution;
+  explicitly blocked required assets are reported here as well (the
+  manifest reason carries the remedy);
   preserved resolutions without usable stored bytes (missing key, None,
   or zero-length bytes) or with dirty bytes; and required
   generated/preserved assets missing from the staged output inventory.
@@ -46,7 +48,8 @@ Accepted record shapes:
   ``disposition`` (or ``status``/``state``) keys, a mapping of rel path
   to disposition string or record (records without their own path
   inherit the mapping key), and plain disposition strings as mapping
-  values. Unknown disposition strings on required paths are
+  values. Unknown disposition strings (anything outside generated, preserved,
+  inherited, omitted, unsupported, or blocked) on required paths are
   disposition problems; elsewhere they are record problems.
 - BMP header records accept mappings (or attribute objects) with any of
   ``width``/``height``, ``bits_per_pixel``/``bits``/``bpp``,
@@ -133,6 +136,7 @@ _LEGAL_DISPOSITIONS = (
     "inherited",
     "omitted",
     "unsupported",
+    "blocked",
 )
 
 _PATH_KEYS = ("rel_path", "path", "file", "filename")
@@ -1186,6 +1190,8 @@ def validate_asset_integration(
                 problems.append("'%s' is omitted" % path)
             elif disp == "unsupported":
                 problems.append("'%s' is unsupported" % path)
+            elif disp == "blocked":
+                problems.append("'%s' is blocked: generation cannot satisfy the profile contract" % path)
             else:
                 problems.append(
                     "'%s' has illegal disposition '%s'" % (path, disp)

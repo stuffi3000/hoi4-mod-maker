@@ -26,6 +26,34 @@ REQUIRES = ("tile_map", "province_map")
 PROVIDES = ("land_ids", "sea_ids", "lake_ids", "province_count", "terrain_for_export")
 
 
+def _asset_resolution_disposition(ctx, rel_path):
+    """Return the planned disposition for a path, or None for legacy calls."""
+    for resolution in list(getattr(ctx, "asset_resolutions", None) or ()):
+        try:
+            candidate = resolution.get("rel_path", "") if isinstance(resolution, dict) else resolution.rel_path
+            if str(candidate).replace("\\", "/") != rel_path:
+                continue
+            return str(resolution.get("disposition", "") if isinstance(resolution, dict) else resolution.disposition)
+        except (AttributeError, TypeError, ValueError):
+            continue
+    return None
+
+
+def _can_restore_asset(ctx, rel_path):
+    """Only restore clean bytes when the planner marked them compatible."""
+    disposition = _asset_resolution_disposition(ctx, rel_path)
+    if disposition is not None:
+        return disposition == "preserved" and rel_path in (ctx.assets or {}) and rel_path not in (ctx.dirty_assets or set())
+    return rel_path in (ctx.assets or {}) and rel_path not in (ctx.dirty_assets or set())
+
+
+def _restore_inputs(ctx, rel_path):
+    """Return asset inputs that permit restoration for one writer-owned path."""
+    if _can_restore_asset(ctx, rel_path):
+        return (ctx.assets, ctx.dirty_assets)
+    return ({}, set())
+
+
 def _prepare_legacy_working_copy(ctx) -> None:
     from export.mod_exporter import (
         _merge_tiny_provinces,
@@ -146,14 +174,20 @@ def run(ctx, *, profile=None, map_width=None, map_height=None):
         write_or_restore("map/world_normal.bmp", ctx.output_dir, ctx.assets, ctx.dirty_assets,
                          lambda: _write_normal_map(heightmap, ctx.output_dir))
         from export.writers.map.colormap_dds import write_colormap_dds, write_fow_dds, write_water_colormap_dds
-        write_or_restore("map/terrain/colormap_rgb_cityemissivemask_a.dds", ctx.output_dir,
-                         ctx.assets, ctx.dirty_assets,
+        _dds_profile = getattr(ctx, "game_profile", None)
+        if _dds_profile is None:
+            _dds_profile = profile
+        colormap_path = "map/terrain/colormap_rgb_cityemissivemask_a.dds"
+        colormap_assets, colormap_dirty = _restore_inputs(ctx, colormap_path)
+        write_or_restore(colormap_path, ctx.output_dir,
+                         colormap_assets, colormap_dirty,
                          lambda: write_colormap_dds(tile_map, ctx.output_dir,
                                                     settings=ctx.colormap_settings,
-                                                    terrain_map=terrain_for_export, height_map=heightmap))
+                                                    terrain_map=terrain_for_export, height_map=heightmap,
+                                                    profile=_dds_profile))
         water_paths = ["map/terrain/colormap_water_0.dds", "map/terrain/colormap_water_1.dds",
                        "map/terrain/colormap_water_2.dds"]
-        if all(p in ctx.assets and p not in ctx.dirty_assets for p in water_paths):
+        if all(_can_restore_asset(ctx, path) for path in water_paths):
             for rel_path in water_paths:
                 full = ctx.output_dir + "/" + rel_path
                 import os
@@ -161,9 +195,11 @@ def run(ctx, *, profile=None, map_width=None, map_height=None):
                 with open(full, "wb") as handle:
                     handle.write(ctx.assets[rel_path])
         else:
-            write_water_colormap_dds(tile_map, ctx.output_dir)
-        write_or_restore("map/terrain/fow_rgb_waterspec_a.dds", ctx.output_dir, ctx.assets,
-                         ctx.dirty_assets, lambda: write_fow_dds(tile_map, ctx.output_dir, height_map=heightmap))
+            write_water_colormap_dds(tile_map, ctx.output_dir, profile=_dds_profile)
+        fow_path = "map/terrain/fow_rgb_waterspec_a.dds"
+        fow_assets, fow_dirty = _restore_inputs(ctx, fow_path)
+        write_or_restore(fow_path, ctx.output_dir, fow_assets, fow_dirty,
+                         lambda: write_fow_dds(tile_map, ctx.output_dir, height_map=heightmap, profile=_dds_profile))
         map_note = "map raster and overview layers written"
     else:
         map_note = "map layer disabled by scope; raster and overview files skipped"

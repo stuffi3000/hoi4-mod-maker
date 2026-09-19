@@ -962,6 +962,24 @@ Handle `map/colors.txt` explicitly in import/export. Version-gate `airports.txt`
 
 Use generated miniature fixtures for automated image comparisons. For full maps, write local opt-in contact sheets/previews for terrain, trees, cities, normals, water, FOW, and colormap channels. Record human visual approval in the candidate manifest; do not store copyrighted source textures in the repository.
 
+### M6 implementation checklist (2026-09-19)
+
+- [x] M6.1 — Per-path `AssetResolution` now records disposition, source/provenance, hashes, dirty reason, output owner, and profile rule; legacy manifest records remain readable.
+- [x] M6.2 — Indexed terrain/city writers resolve palettes through the selected target, and missing target palettes block frozen/accepted profile-aware exports instead of silently falling back.
+- [x] M6.3 — The selected terrain-definition registry parses terrain type, palette indices, texture, spawn-city, snow, and custom/dependency entries; selected registry indices are validation authority.
+- [x] M6.4 — Tree dimensions, legal indices, profile overrides, default-map filtering, deterministic generation, and header contracts are implemented for observed and custom map sizes.
+- [x] M6.5 — Profile-aware DDS strategy, deterministic dependency-free BC3/DXT5 encoding, mip chains, payload/header validation, compatible-byte preservation, and explicit unsupported-format blockers are implemented.
+- [x] M6.6 — Map-art families have explicit generated/preserved/inherited/omitted/blocked behavior with actionable provenance and compatibility reasons in the resolution manifest.
+- [x] M6.7 — `map/colors.txt`, airport, rocket-site naming variants, city text, and other optional structural files are preserved, omitted, or reported explicitly without empty legacy output by default.
+- [x] M6.8 — The opt-in visual-regression helper creates deterministic miniatures/contact sheets and stable human-approval records without storing copyrighted source art.
+
+### M6 checkpoint — graphics and asset-resolution pipeline (2026-09-19)
+
+- **Completed:** M6 is implemented in three reviewed batches: target-aware asset/palette/structural handling, selected terrain and tree contracts, and the DDS/map-art/visual-regression pipeline. The final DDS path preserves compatible imports, emits BGRA8 where required, emits deterministic BC3/DXT5 water/FOW assets with the selected mip policy, and blocks unsupported contracts at frozen/accepted scope.
+- **Evidence:** focused M6A/M6B/M6C tests, existing DDS/profile/asset/manifest tests, the M5 regression slice, compilation, and diff checks passed. The broader domain/services/foundation/export run passed except the pre-existing byte-baseline fixture mismatch that reports intentional M6A/M6B changes to `map/terrain.bmp` and optional structural files. Implementation commits are `7a973b0`, `4619baf`, and the grouped M6 graphics commit recorded with this checkpoint.
+- **Worker/review note:** a read-only Muse Spark audit identified the three batches. Grouped workspace-write workers implemented them; the parent independently reviewed, repaired, added regression coverage, optimized the full-map mip path, and ran the broad regression. The follow-up encoder worker was allowed beyond 20 minutes while responsive, per the standing Muse policy. No credentials or protected `.codex` content were touched.
+- **Next controlled slice:** begin M7 assisted engine acceptance; refresh the byte-baseline fixture only as a deliberate compatibility-baseline change, not as an implicit graphics workaround.
+
 ## M7 — assisted engine acceptance
 
 ### M7.1 Set realistic automation boundaries

@@ -70,6 +70,11 @@ def run(ctx):
                 detail += " (%s)" % reason
             if disp in ("generated", "preserved") and not exists:
                 notes.append("%s: %s but file is absent" % (rel_path, detail))
+            elif disp == "blocked":
+                if exists:
+                    notes.append("%s: %s; on-disk preview bytes do not satisfy the contract" % (rel_path, detail))
+                else:
+                    notes.append("%s: %s; no file written" % (rel_path, detail))
             elif disp in ("omitted", "unsupported", "unknown"):
                 notes.append("%s: %s" % (rel_path, detail))
             else:

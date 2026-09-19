@@ -12,11 +12,11 @@ Generation logic: downsample the tile_map from 5632x2048 to 2816x1024, and paint
 from __future__ import annotations
 
 import os
-import struct
 
 import numpy as np
 
 from data.constants import TILE_LAND, TILE_SEA, TILE_LAKE
+from domain.dds_format import build_bgra8_header
 
 # Do not solidify _DDS_WIDTH/_DDS_HEIGHT at the top of the module - that will bind to MAP_WIDTH at import time
 # (5632), set_map_size will not be updated, causing the DDS file header to be inconsistent with the actual pixel size → corrupting the file.
@@ -42,35 +42,127 @@ _TERRAIN_TYPE_COLORS: dict[str, tuple[int, int, int, int]] = {
 }
 
 
+def _resolve_profile_arg(profile=None, game_profile=None):
+    """Prefer an explicit profile, fall back to the game_profile alias."""
+    return profile if profile is not None else game_profile
+
+
+def _dds_contract_for(rel_path, profile):
+    """Return the profile DDS contract entry for rel_path, or None."""
+    if profile is None:
+        return None
+    try:
+        norm = str(rel_path or "").replace("\\", "/")
+    except (TypeError, ValueError):
+        return None
+    try:
+        dds_map = getattr(profile, "dds", None)
+    except (AttributeError, TypeError, ValueError):
+        return None
+    if not isinstance(dds_map, dict):
+        return None
+    try:
+        return dds_map.get(norm)
+    except (TypeError, ValueError):
+        return None
+
+
+def _contract_mip_count(contract, default=1):
+    if isinstance(contract, dict):
+        raw = None
+        for key in ("mip_count", "mips", "mipmaps", "mip_levels", "mipmap_count"):
+            try:
+                if key in contract:
+                    raw = contract[key]
+                    break
+            except (TypeError, ValueError):
+                continue
+    else:
+        raw = None
+        for key in ("mip_count", "mips", "mipmaps", "mip_levels", "mipmap_count"):
+            try:
+                candidate = getattr(contract, key, None)
+            except (AttributeError, TypeError, ValueError):
+                continue
+            if candidate is not None:
+                raw = candidate
+                break
+    try:
+        if isinstance(raw, bool):
+            raise ValueError("bool is not a mip count")
+        count = int(raw)
+    except (TypeError, ValueError):
+        return int(default)
+    return count if count > 0 else int(default)
+
+
+def _write_bgra8_file(path, pixels_bgra):
+    from domain.dds_format import build_bgra8_header
+    pixels = np.ascontiguousarray(pixels_bgra, dtype=np.uint8)
+    height = int(pixels.shape[0])
+    width = int(pixels.shape[1])
+    with open(path, "wb") as handle:
+        handle.write(build_bgra8_header(width, height))
+        handle.write(pixels.tobytes())
+
+
+def _write_pixels_for_contract(rel_path, full_path, pixels_bgra, profile):
+    """Write BGRA pixels as BGRA8 or profile-contract DXT5.
+
+    Legacy callers without a profile (or without a contract entry) keep
+    emitting uncompressed BGRA8. A BGRA8 contract also emits BGRA8. A
+    BC3/DXT5 contract emits deterministic header-plus-mip-chain bytes via
+    the bundled encoder. Any other contracted format raises ValueError so
+    callers fail loudly instead of emitting mislabeled bytes.
+    """
+    from domain import dds_format as dds
+    contract = _dds_contract_for(rel_path, profile)
+    pixels = np.ascontiguousarray(pixels_bgra, dtype=np.uint8)
+    if contract is None or profile is None:
+        return _write_bgra8_file(full_path, pixels)
+    if isinstance(contract, dict):
+        raw_four = None
+        for key in ("four_cc", "fourcc", "format", "pixel_format"):
+            try:
+                if key in contract:
+                    raw_four = contract[key]
+                    break
+            except (TypeError, ValueError):
+                continue
+    else:
+        raw_four = None
+        for key in ("four_cc", "fourcc", "format", "pixel_format"):
+            try:
+                candidate = getattr(contract, key, None)
+            except (AttributeError, TypeError, ValueError):
+                continue
+            if candidate:
+                raw_four = candidate
+                break
+    four_cc = dds.normalize_fourcc(raw_four)
+    if not four_cc or four_cc == "BGRA8":
+        return _write_bgra8_file(full_path, pixels)
+    if four_cc == "DXT5":
+        mip_count = _contract_mip_count(contract, default=1)
+        data = dds.encode_dxt5_dds(pixels, mip_count=mip_count, order="BGRA")
+        with open(full_path, "wb") as handle:
+            handle.write(data)
+        return None
+    raise ValueError(
+        "profile contract for %r requires %s, which the bundled writers "
+        "cannot emit" % (rel_path, four_cc or "an unknown format")
+    )
+
 def _build_dds_header(width: int, height: int) -> bytes:
     """Construct 128-byte DDS file header (uncompressed BGRA8, single mipmap)."""
-    # Matches vanilla parameters: flags=0x100f, pitch=width*4, pf_flags=0x41 (ALPHAPIXELS|RGB)
-    header = bytearray(128)
-    header[0:4] = b"DDS "
-    struct.pack_into("<I", header, 4, 124)           # dwSize
-    struct.pack_into("<I", header, 8, 0x100f)        # dwFlags (CAPS+HEIGHT+WIDTH+PITCH+PIXELFORMAT)
-    struct.pack_into("<I", header, 12, height)       # dwHeight
-    struct.pack_into("<I", header, 16, width)        # dwWidth
-    struct.pack_into("<I", header, 20, width * 4)    # dwPitchOrLinearSize
-    struct.pack_into("<I", header, 24, 0)            # dwDepth
-    struct.pack_into("<I", header, 28, 1)            # dwMipMapCount
-    # dwReserved1[11] — 44 bytes 0
-    # ddspf at offset 76
-    struct.pack_into("<I", header, 76, 32)           # dwSize
-    struct.pack_into("<I", header, 80, 0x41)         # dwFlags (ALPHAPIXELS | RGB)
-    struct.pack_into("<I", header, 84, 0)            # dwFourCC
-    struct.pack_into("<I", header, 88, 32)           # dwRGBBitCount
-    struct.pack_into("<I", header, 92, 0x00FF0000)   # R mask
-    struct.pack_into("<I", header, 96, 0x0000FF00)   # G mask
-    struct.pack_into("<I", header, 100, 0x000000FF)  # B mask
-    struct.pack_into("<I", header, 104, 0xFF000000)  # A mask
-    struct.pack_into("<I", header, 108, 0x1000)      # dwCaps (TEXTURE)
-    return bytes(header)
+    return build_bgra8_header(width, height)
 
 
 def write_water_colormap_dds(
     tile_map: np.ndarray,
     output_dir: str,
+    profile=None,
+    game_profile=None,
 ) -> None:
     """Generate map/terrain/colormap_water_0/1/2.dds — ocean colors, three MIP levels.
 
@@ -81,7 +173,7 @@ def write_water_colormap_dds(
         rgb = water_color_rgb(tile_map)
     except ImportError:
         # No scipy returns solid color
-        return _write_water_colormap_solid(tile_map, output_dir)
+        return _write_water_colormap_solid(tile_map, output_dir, profile=profile, game_profile=game_profile)
 
     rgb = np.clip(rgb, 0, 255).astype(np.uint8)
     full_pixels = np.empty((*tile_map.shape, 4), dtype=np.uint8)
@@ -93,6 +185,7 @@ def write_water_colormap_dds(
     out_dir = os.path.join(output_dir, "map", "terrain")
     os.makedirs(out_dir, exist_ok=True)
 
+    active_profile = _resolve_profile_arg(profile, game_profile)
     src_h, src_w = tile_map.shape
     for level, divisor in enumerate([2, 4, 8]):
         dds_w = src_w // divisor
@@ -100,13 +193,14 @@ def write_water_colormap_dds(
         if dds_w < 1 or dds_h < 1:
             break
         ds = full_pixels[::divisor, ::divisor][:dds_h, :dds_w]
-        header = _build_dds_header(dds_w, dds_h)
-        with open(os.path.join(out_dir, f"colormap_water_{level}.dds"), "wb") as f:
-            f.write(header)
-            f.write(np.ascontiguousarray(ds).tobytes())
+        rel_path = "map/terrain/colormap_water_%d.dds" % level
+        _write_pixels_for_contract(
+            rel_path, os.path.join(out_dir, "colormap_water_%d.dds" % level),
+            np.ascontiguousarray(ds), active_profile,
+        )
 
 
-def _write_water_colormap_solid(tile_map, output_dir):
+def _write_water_colormap_solid(tile_map, output_dir, profile=None, game_profile=None):
     """Fallback (solid color) when scipy is not available."""
     water_color = np.array([110, 70, 30, 255], dtype=np.uint8)
     out_dir = os.path.join(output_dir, "map", "terrain")
@@ -119,16 +213,20 @@ def _write_water_colormap_solid(tile_map, output_dir):
             break
         pixels = np.empty((dds_h, dds_w, 4), dtype=np.uint8)
         pixels[:] = water_color
-        header = _build_dds_header(dds_w, dds_h)
-        with open(os.path.join(out_dir, f"colormap_water_{level}.dds"), "wb") as f:
-            f.write(header)
-            f.write(pixels.tobytes())
+        rel_path = "map/terrain/colormap_water_%d.dds" % level
+        _write_pixels_for_contract(
+            rel_path, os.path.join(out_dir, "colormap_water_%d.dds" % level),
+            np.ascontiguousarray(pixels),
+            _resolve_profile_arg(profile, game_profile),
+        )
 
 
 def write_fow_dds(
     tile_map: np.ndarray,
     output_dir: str,
     height_map: np.ndarray | None = None,
+    profile=None,
+    game_profile=None,
 ) -> None:
     """Generate map/terrain/fow_rgb_waterspec_a.dds — fog of war shading + water reflection.
 
@@ -167,10 +265,12 @@ def write_fow_dds(
 
     out_dir = os.path.join(output_dir, "map", "terrain")
     os.makedirs(out_dir, exist_ok=True)
-    header = _build_dds_header(w, h)
-    with open(os.path.join(out_dir, "fow_rgb_waterspec_a.dds"), "wb") as f:
-        f.write(header)
-        f.write(pixels.tobytes())
+    _write_pixels_for_contract(
+        "map/terrain/fow_rgb_waterspec_a.dds",
+        os.path.join(out_dir, "fow_rgb_waterspec_a.dds"),
+        np.ascontiguousarray(pixels),
+        _resolve_profile_arg(profile, game_profile),
+    )
 
 
 def write_colormap_dds(
@@ -179,6 +279,8 @@ def write_colormap_dds(
     settings=None,
     terrain_map: np.ndarray | None = None,
     height_map: np.ndarray | None = None,
+    profile=None,
+    game_profile=None,
 ) -> None:
     """Generate map/terrain/colormap_rgb_cityemissivemask_a.dds from tile_map + terrain_map.
 
@@ -303,3 +405,113 @@ def write_colormap_dds(
     with open(out_path, "wb") as f:
         f.write(header)
         f.write(pixels.tobytes())
+
+
+# M6.5 inspectable DDS strategy helpers. Legacy calls without a profile
+# emit honestly labeled uncompressed BGRA8 and never claim DXT5/BC3; when a
+# profile with a BC3/DXT5 contract is passed, water and fog writers emit
+# deterministic encoder bytes. These helpers expose the profile strategy
+# behind each overview asset for the planner, the manifest, and tests.
+
+
+def strategy_for_dds_output(rel_path, tile_map, profile=None,
+                            map_width=None, map_height=None):
+    """Return the inspectable DdsStrategy for one overview DDS asset.
+
+    Map dimensions default to the tile_map shape. The strategy carries
+    the expected FourCC, dimensions, mip policy, DX10 flag, encoder
+    capability, and provenance; see domain.dds_format.
+    """
+    from domain import dds_format as dds
+
+    if map_width is None or map_height is None:
+        try:
+            map_height = int(tile_map.shape[0])
+            map_width = int(tile_map.shape[1])
+        except (AttributeError, TypeError, ValueError, IndexError):
+            map_width = None
+            map_height = None
+    return dds.strategy_for_asset(rel_path, profile, map_width, map_height)
+
+
+def _would_be_dds_size(rel_path, map_width, map_height):
+    norm = str(rel_path or "").replace("\\", "/")
+    try:
+        map_width = int(map_width)
+        map_height = int(map_height)
+    except (TypeError, ValueError):
+        return None
+    if norm.endswith("colormap_water_1.dds"):
+        return (map_width // 4, map_height // 4)
+    if norm.endswith("colormap_water_2.dds"):
+        return (map_width // 8, map_height // 8)
+    return (map_width // 2, map_height // 2)
+
+
+def generated_dds_satisfies_contract(rel_path, tile_map, profile=None):
+    """Check whether profile-aware writer output would satisfy a contract.
+
+    Legacy calls without a profile always satisfy the legacy BGRA8 bytes.
+    BGRA8 contracts are satisfied when the writers emit the contracted
+    dimensions. BC3/DXT5 water and fog contracts are satisfied by the
+    bundled deterministic encoder at the contracted dimensions and mip
+    policy (one mip per water file, the contracted chain for fog).
+    Unsupported formats return False so the planner blocks or preserves
+    instead of mislabeling bytes.
+    """
+    strategy = strategy_for_dds_output(rel_path, tile_map, profile)
+    if strategy.requirement != "profile-contract":
+        return (True, "no profile DDS contract; legacy BGRA8 output applies")
+    if not strategy.can_generate:
+        return (
+            False,
+            "profile requires %s, which the bundled writers cannot emit; "
+            "output must be blocked or preserved, never mislabeled"
+            % (strategy.four_cc or "an unsupported format"),
+        )
+    try:
+        map_height = int(tile_map.shape[0])
+        map_width = int(tile_map.shape[1])
+    except (AttributeError, TypeError, ValueError, IndexError):
+        return (False, "tile_map shape is unusable; dimensions are unknown")
+    would_be = _would_be_dds_size(rel_path, map_width, map_height)
+    expected = (strategy.expected_width, strategy.expected_height)
+    if would_be is not None and expected[0] is not None and tuple(would_be) != tuple(expected):
+        return (
+            False,
+            "writers emit %dx%d but the profile expects %sx%s"
+            % (would_be[0], would_be[1], expected[0], expected[1]),
+        )
+    if strategy.has_dx10_header:
+        return (
+            False,
+            "the selected profile requires a DX10 DDS header, but the "
+            "bundled writers emit legacy 128-byte headers",
+        )
+    expected_mips = int(strategy.mip_count or 1)
+    emitted_mips = expected_mips if strategy.four_cc == "DXT5" else 1
+    if expected_mips != emitted_mips:
+        return (
+            False,
+            "writers emit %d mip level(s) but the profile expects %d"
+            % (emitted_mips, expected_mips),
+        )
+    if strategy.four_cc == "DXT5":
+        return (
+            True,
+            "writers emit deterministic BC3/DXT5 at the contracted dimensions and mip policy",
+        )
+    return (
+        True,
+        "writers emit BGRA8 at the contracted dimensions and mip policy",
+    )
+
+
+def read_dds_header_info(path_or_bytes):
+    """Parse emitted DDS bytes or files into inspectable header fields."""
+    from domain.dds_format import parse_dds_header
+
+    if isinstance(path_or_bytes, (bytes, bytearray, memoryview)):
+        return parse_dds_header(bytes(path_or_bytes))
+    with open(path_or_bytes, "rb") as handle:
+        return parse_dds_header(handle.read())
