@@ -99,6 +99,9 @@ def _legacy_block(pid, cx, cy, map_h):
     )
 def write_positions_txt(province_map, tile_map, output_dir, pid_count=None, sum_x=None, sum_y=None, placement_manager=None, map_placement_mgr=None, profile_name=None):
     """Generate positions.txt for each province. Trailing placement args keep direct callers valid."""
+    _foundation_mgr = _resolve_mgr(placement_manager, map_placement_mgr)
+    if profile_name == "foundation" and _foundation_mgr is None:
+        raise ValueError("foundation profile requires a MapPlacementManager; refusing centroid fallback for positions.txt")
     d = os.path.join(output_dir, "map")
     os.makedirs(d, exist_ok=True)
     province_count = int(province_map.max())

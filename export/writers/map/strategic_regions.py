@@ -262,6 +262,8 @@ def write_weatherpositions(region_list, province_map, output_dir, map_placement_
         - compat (acceptance/scaffold/legacy_full) + manager: centroid fallback for regions without reviewed manager weather,
           reviewed manager records overlay without duplicate fallback. Deterministic order by emitted region then record id.
     """
+    if profile_name == "foundation" and map_placement_mgr is None:
+        raise ValueError("foundation profile requires a MapPlacementManager; refusing centroid fallback for weatherpositions.txt")
     d = os.path.join(output_dir, "map")
     os.makedirs(d, exist_ok=True)
     H, W = province_map.shape

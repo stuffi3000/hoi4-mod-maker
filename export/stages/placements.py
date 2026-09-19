@@ -27,12 +27,17 @@ def run(ctx):
         )
         mgr = getattr(ctx, "map_placement_mgr", None)
         profile = getattr(ctx, "profile_name", None)
+        scratch = getattr(ctx, "scratch", None) or {}
+        if mgr is None and profile == "foundation" and scratch.get("foundation_legacy_compat"):
+            writer_profile = None
+        else:
+            writer_profile = profile
         failed_coastal = _write_buildings(
             states, np.asarray(ctx.province_map), np.asarray(ctx.tile_map), ctx.output_dir,
             sea_ids=list(ctx.scratch.get("sea_ids") or []),
             land_to_sea=dict(ctx.scratch.get("land_to_sea") or {}),
             pid_count=ctx.scratch.get("pid_count"), sum_x=ctx.scratch.get("sum_x"),
-            sum_y=ctx.scratch.get("sum_y"), placement_manager=mgr, profile_name=profile)
+            sum_y=ctx.scratch.get("sum_y"), placement_manager=mgr, profile_name=writer_profile)
         if failed_coastal:
             coastal_set = set(ctx.scratch.get("coastal_set") or ())
             coastal_set -= set(failed_coastal)
@@ -45,7 +50,7 @@ def run(ctx):
         _write_empty_unitstacks(ctx.output_dir)
         _write_positions(np.asarray(ctx.province_map), np.asarray(ctx.tile_map), ctx.output_dir,
                          pid_count=ctx.scratch.get("pid_count"), sum_x=ctx.scratch.get("sum_x"),
-                         sum_y=ctx.scratch.get("sum_y"), placement_manager=mgr, profile_name=profile)
+                         sum_y=ctx.scratch.get("sum_y"), placement_manager=mgr, profile_name=writer_profile)
         notes.append("placements written for %d states" % len(states))
         if mgr is not None and profile == "foundation":
             notes.append("foundation placements from reviewed manager records (incomplete provinces omitted)")

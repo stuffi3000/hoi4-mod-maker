@@ -116,6 +116,9 @@ def _reviewed_port_lines(mgr, pid_to_state, map_h):
     return lines
 def write_buildings(states, province_map, tile_map, output_dir, sea_ids=None, land_to_sea=None, pid_count=None, sum_x=None, sum_y=None, placement_manager=None, map_placement_mgr=None, profile_name=None):
     """Write buildings.txt. Trailing placement args keep direct callers valid."""
+    _foundation_mgr = _resolve_mgr(placement_manager, map_placement_mgr)
+    if profile_name == "foundation" and _foundation_mgr is None:
+        raise ValueError("foundation profile requires a MapPlacementManager; refusing centroid fallback for buildings.txt")
     d = os.path.join(output_dir, "map")
     os.makedirs(d, exist_ok=True)
     n = int(province_map.max()) + 1

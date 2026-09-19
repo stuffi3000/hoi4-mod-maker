@@ -27,6 +27,7 @@ from domain.managers.railway import RailwayManager
 from domain.managers.state import StateManager
 from domain.managers.strategic_region import StrategicRegionManager
 from domain.managers.supply_node import SupplyNodeManager
+from domain.managers.map_placement import MapPlacementManager
 from domain.project_io import load_project, read_project_meta
 from export.mod_exporter import export_full_mod
 
@@ -224,6 +225,7 @@ def main(argv: list[str] | None = None) -> int:
         supply_mgr = SupplyNodeManager()
         adjacency_rule_mgr = AdjacencyRuleManager()
         strategic_region_mgr = StrategicRegionManager()
+        map_placement_mgr = MapPlacementManager()
 
         (
             tile_map,
@@ -243,6 +245,7 @@ def main(argv: list[str] | None = None) -> int:
             supply_mgr=supply_mgr,
             adjacency_rule_mgr=adjacency_rule_mgr,
             strategic_region_mgr=strategic_region_mgr,
+            map_placement_mgr=map_placement_mgr,
         )
 
         height, width = tile_map.shape
@@ -378,6 +381,7 @@ def main(argv: list[str] | None = None) -> int:
             supply_mgr=supply_mgr,
             adjacency_rule_mgr=adjacency_rule_mgr,
             strategic_region_mgr=strategic_region_mgr,
+            map_placement_mgr=map_placement_mgr,
             provincial_terrain=provincial_terrain,
             game_target=game_target,
             profile=profile,
@@ -563,6 +567,7 @@ def run_planner_export(args) -> int:
         supply_mgr = SupplyNodeManager()
         adjacency_rule_mgr = AdjacencyRuleManager()
         strategic_region_mgr = StrategicRegionManager()
+        map_placement_mgr = MapPlacementManager()
         (
             tile_map,
             province_map,
@@ -581,6 +586,7 @@ def run_planner_export(args) -> int:
             supply_mgr=supply_mgr,
             adjacency_rule_mgr=adjacency_rule_mgr,
             strategic_region_mgr=strategic_region_mgr,
+            map_placement_mgr=map_placement_mgr,
         )
         try:
             project_meta = read_project_meta(args.project)
@@ -602,6 +608,7 @@ def run_planner_export(args) -> int:
             supply_mgr=supply_mgr,
             adjacency_rule_mgr=adjacency_rule_mgr,
             strategic_region_mgr=strategic_region_mgr,
+            map_placement_mgr=map_placement_mgr,
             provincial_terrain=provincial_terrain,
             project_meta=project_meta,
             profile_name=args.profile,

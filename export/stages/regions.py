@@ -41,6 +41,13 @@ def run(ctx):
         land_to_sea = {p: s for p, s in land_to_sea.items() if p in coastal_set}
     ctx.scratch["coastal_set"] = set(coastal_set)
     ctx.scratch["land_to_sea"] = dict(land_to_sea)
+    placement_mgr = getattr(ctx, "map_placement_mgr", None)
+    profile = getattr(ctx, "profile_name", None)
+    scratch = getattr(ctx, "scratch", None) or {}
+    if placement_mgr is None and profile == "foundation" and scratch.get("foundation_legacy_compat"):
+        writer_profile = None
+    else:
+        writer_profile = profile
     region_list = None
     if ctx.enabled("strategic_regions"):
         if ctx.strategic_region_mgr is not None and ctx.strategic_region_mgr.count() > 0:
@@ -55,7 +62,7 @@ def run(ctx):
                 ctx.output_dir,
                 map_placement_mgr=getattr(ctx, "map_placement_mgr", None),
                 strategic_region_mgr=ctx.strategic_region_mgr,
-                profile_name=getattr(ctx, "profile_name", None),
+                profile_name=writer_profile,
             )
         else:
             from export.mod_exporter import _write_strategic_regions, _write_weatherpositions
@@ -66,7 +73,7 @@ def run(ctx):
                 province_map,
                 ctx.output_dir,
                 map_placement_mgr=getattr(ctx, "map_placement_mgr", None),
-                profile_name=getattr(ctx, "profile_name", None),
+                profile_name=writer_profile,
             )
         notes.append("strategic regions=%d" % (len(region_list) if region_list else 0))
     else:

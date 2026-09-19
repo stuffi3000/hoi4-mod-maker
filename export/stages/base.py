@@ -54,6 +54,16 @@ def build_context_from_plan(plan, output_dir: str) -> StageContext:
     snapshot = plan.snapshot
     arrays = snapshot.mutable_arrays()
     managers = snapshot.fork_managers()
+    profile_name = getattr(plan, "profile_name", None)
+    placement_mgr = managers.get("map_placement_mgr")
+    project_meta = getattr(snapshot, "project_meta", None)
+    lifecycle = getattr(plan, "lifecycle", "draft") or "draft"
+    foundation_legacy_compat = (
+        profile_name == "foundation"
+        and placement_mgr is None
+        and project_meta is None
+        and lifecycle not in ("frozen", "accepted")
+    )
     return StageContext(
         profile_name=plan.profile_name,
         game_profile=plan.game_profile,
@@ -83,7 +93,10 @@ def build_context_from_plan(plan, output_dir: str) -> StageContext:
         assets=dict(snapshot.assets or {}),
         dirty_assets=set(snapshot.dirty_assets or ()),
         acceptance_tags=tuple(plan.acceptance_tags or ()),
-        scratch={"province_type_overrides": dict(snapshot.province_type_overrides or {})},
+        scratch={
+            "province_type_overrides": dict(snapshot.province_type_overrides or {}),
+            "foundation_legacy_compat": foundation_legacy_compat,
+        },
     )
 
 

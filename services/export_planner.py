@@ -933,6 +933,19 @@ def collect_findings(
         except ImportError:
             # Keep the planner compatible with snapshots created before M5.
             pass
+    # M5.2 Slice 1: an explicit foundation path must not silently fall back to
+    # centroid/generated placement data when no placement manager is present.
+    # Metadata-backed exports and frozen/accepted lifecycles are approval
+    # boundaries and are blocked. Legacy direct callers without project
+    # metadata that stay on draft-like lifecycles keep compatibility output.
+    if profile_name == "foundation" and getattr(snapshot, "map_placement_mgr", None) is None:
+        if getattr(snapshot, "project_meta", None) is not None or active_lifecycle in ("frozen", "accepted"):
+            findings.append(ValidationNote(
+                "placement.manager_missing",
+                "blocker",
+                "Foundation profile requires a MapPlacementManager; refusing centroid fallback for placements",
+                layer="placement",
+            ))
     return findings
 
 
