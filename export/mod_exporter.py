@@ -351,12 +351,25 @@ def export_full_mod(
                 write_strategic_regions_from_mgr, write_weatherpositions,
             )
             region_list = write_strategic_regions_from_mgr(strategic_region_mgr, output_dir)
-            write_weatherpositions(region_list, province_map, output_dir)
+            write_weatherpositions(
+                region_list,
+                province_map,
+                output_dir,
+                map_placement_mgr=map_placement_mgr,
+                strategic_region_mgr=strategic_region_mgr,
+                profile_name="legacy_full" if map_placement_mgr is not None else None,
+            )
         else:
             region_list = _write_strategic_regions(
                 province_map, tile_map, output_dir, states_dict=states
             )
-            _write_weatherpositions(region_list, province_map, output_dir)
+            _write_weatherpositions(
+                region_list,
+                province_map,
+                output_dir,
+                map_placement_mgr=map_placement_mgr,
+                profile_name="legacy_full" if map_placement_mgr is not None else None,
+            )
 
     # === Write state file ===
     if _enabled("states"):
@@ -877,9 +890,18 @@ def _write_supply_areas(states, output_dir):
 
 # ────────────────── Strategic area (automatic splitting of multiple areas) ──────────────────
 
-def _write_weatherpositions(region_list, province_map, output_dir):
+def _write_weatherpositions(region_list, province_map, output_dir,
+                            map_placement_mgr=None, strategic_region_mgr=None,
+                            profile_name=None):
     from export.writers.map.strategic_regions import write_weatherpositions
-    return write_weatherpositions(region_list, province_map, output_dir)
+    return write_weatherpositions(
+        region_list,
+        province_map,
+        output_dir,
+        map_placement_mgr=map_placement_mgr,
+        strategic_region_mgr=strategic_region_mgr,
+        profile_name=profile_name,
+    )
 
 
 def _write_strategic_regions(province_map, tile_map, output_dir,

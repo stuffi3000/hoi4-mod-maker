@@ -5,10 +5,11 @@ read-only placement records. The public entry point is
 :func:`validate_placement_references`, which returns a deterministic list
 of :class:`domain.validation.ValidationFinding`.
 
-There is intentionally no placement manager yet, so this module stays
-dependency-free and accepts duck-typed records instead of manager types.
-Every entry may be a mapping or a dataclass-like object; unknown extra
-fields are preserved by being ignored and inputs are never mutated.
+The generic entry point stays dependency-free and accepts duck-typed records
+instead of manager types.  A separate manager-backed weather entry point
+extends the same contract for containment and spacing without mutating the
+manager.  Every entry may be a mapping or a dataclass-like object; unknown
+extra fields are preserved by being ignored.
 
 Accepted record shapes (all fields optional unless noted):
 
@@ -75,6 +76,7 @@ __all__ = [
     "LAYER",
     "MANAGER_COMPLETENESS_CODES",
     "validate_manager_placement_completeness",
+    "validate_manager_weather_positions",
     "validate_placement_references",
 ]
 
@@ -1656,3 +1658,141 @@ def validate_manager_placement_completeness(
             )
         )
     return findings
+
+
+def validate_manager_weather_positions(
+    province_map: Any,
+    manager: Any | None,
+    *,
+    strategic_region_mgr: Any | None = None,
+    lifecycle: Any = "draft",
+    min_spacing: float = 1.0,
+) -> list[ValidationFinding]:
+    """Validate manager weather containment and intra-region spacing.
+
+    Weather records are read through the manager's public ``list_weather``
+    accessor and are never normalized or changed.  Draft-like lifecycles keep
+    the editor usable with warnings; frozen and accepted lifecycles promote
+    the same deterministic finding to a blocker.
+    """
+    if manager is None:
+        return []
+    records = _safe_manager_records(manager, "list_weather")
+    if not records and strategic_region_mgr is None:
+        return []
+
+    try:
+        spacing = float(min_spacing)
+    except (TypeError, ValueError, OverflowError):
+        spacing = 1.0
+    if not math.isfinite(spacing) or spacing <= 0.0:
+        spacing = 1.0
+
+    try:
+        lifecycle_text = str(lifecycle if lifecycle is not None else "draft").strip().lower()
+    except Exception:
+        lifecycle_text = "draft"
+    severity = (
+        "warning"
+        if lifecycle_text in ("draft", "candidate", "draft_preview", "foundation_candidate")
+        else "blocker"
+    )
+
+    province_arr, height, width, _known_provinces = _raster_geometry(province_map)
+    known_regions, province_to_region = _extract_region_lookup(strategic_region_mgr)
+    expected_regions = {int(region_id) for region_id in province_to_region.values()}
+    details: list[str] = []
+    affected_regions: set[int] = set()
+    affected_points: set[tuple[int, int]] = set()
+    valid_by_region: dict[int, list[tuple[float, float, str, tuple[int, int] | None]]] = {}
+
+    for index, record in enumerate(records):
+        raw_id = _field(record, "id", None)
+        record_id = _as_int(raw_id)
+        label = "weather#%d" % (record_id if record_id is not None and record_id > 0 else index)
+        region_id = _manager_int(record, "region_id")
+        x = _as_number(_field(record, "x", None))
+        y = _as_number(_field(record, "y", None))
+        point = _pixel_point(x, y) if x is not None and y is not None else None
+        if point is not None:
+            affected_points.add(point)
+        if region_id is None:
+            details.append("%s has a missing or illegal region_id" % label)
+            continue
+        affected_regions.add(int(region_id))
+        if x is None or y is None:
+            details.append("%s in region %d has missing or malformed coordinates" % (label, region_id))
+            continue
+        if known_regions is not None and int(region_id) not in known_regions:
+            details.append("%s references unknown strategic region %d" % (label, region_id))
+            continue
+        if (
+            province_arr is not None
+            and height is not None
+            and width is not None
+            and not (0.0 <= float(x) < float(width) and 0.0 <= float(y) < float(height))
+        ):
+            details.append(
+                "%s in region %d at (%.2f, %.2f) is out of bounds for %dx%d"
+                % (label, region_id, float(x), float(y), int(width), int(height))
+            )
+            continue
+        if province_to_region and province_arr is not None:
+            actual_province = _province_at(province_arr, x, y)
+            actual_region = (
+                province_to_region.get(int(actual_province))
+                if actual_province is not None and int(actual_province) > 0
+                else None
+            )
+            if actual_region is None:
+                details.append(
+                    "%s declares region %d but resolves to an unassigned province"
+                    % (label, region_id)
+                )
+                continue
+            if int(actual_region) != int(region_id):
+                details.append(
+                    "%s declares region %d but resolves to region %d"
+                    % (label, region_id, int(actual_region))
+                )
+                continue
+        valid_by_region.setdefault(int(region_id), []).append(
+            (float(x), float(y), label, point)
+        )
+
+    for region_id in sorted(expected_regions - set(valid_by_region)):
+        details.append(
+            "strategic region %d has no valid weather position"
+            % int(region_id)
+        )
+        affected_regions.add(int(region_id))
+
+    for region_id in sorted(valid_by_region):
+        points = sorted(valid_by_region[region_id], key=lambda item: (item[0], item[1], item[2]))
+        for left_index, left in enumerate(points):
+            for right in points[left_index + 1 :]:
+                distance = math.hypot(right[0] - left[0], right[1] - left[1])
+                if distance >= spacing:
+                    continue
+                details.append(
+                    "weather positions %s and %s in region %d are %.3f apart; minimum spacing is %.3f"
+                    % (left[2], right[2], region_id, distance, spacing)
+                )
+                affected_regions.add(int(region_id))
+                for point in (left[3], right[3]):
+                    if point is not None:
+                        affected_points.add(point)
+
+    if not details:
+        return []
+    return [
+        ValidationFinding(
+            code="placement.weather",
+            severity=severity,
+            message="%d manager weather placement issues" % len(details),
+            layer=LAYER,
+            affected_ids=_capped_ids(affected_regions),
+            coordinates=_capped_coords(affected_points),
+            evidence=_evidence(sorted(details)),
+        )
+    ]

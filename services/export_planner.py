@@ -909,13 +909,24 @@ def collect_findings(
     # lifecycles. Legacy callers without a placement manager remain unchanged.
     if profile_name == "foundation" and getattr(snapshot, "map_placement_mgr", None) is not None:
         try:
-            from domain.validators.placement import validate_manager_placement_completeness
+            from domain.validators.placement import (
+                validate_manager_placement_completeness,
+                validate_manager_weather_positions,
+            )
 
             findings.extend(
                 validate_manager_placement_completeness(
                     province_map,
                     snapshot.tile_map,
                     snapshot.map_placement_mgr,
+                    lifecycle=active_lifecycle,
+                )
+            )
+            findings.extend(
+                validate_manager_weather_positions(
+                    province_map,
+                    snapshot.map_placement_mgr,
+                    strategic_region_mgr=snapshot.strategic_region_mgr,
                     lifecycle=active_lifecycle,
                 )
             )

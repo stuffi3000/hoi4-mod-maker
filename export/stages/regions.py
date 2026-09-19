@@ -49,12 +49,25 @@ def run(ctx):
                 write_weatherpositions,
             )
             region_list = write_strategic_regions_from_mgr(ctx.strategic_region_mgr, ctx.output_dir)
-            write_weatherpositions(region_list, province_map, ctx.output_dir)
+            write_weatherpositions(
+                region_list,
+                province_map,
+                ctx.output_dir,
+                map_placement_mgr=getattr(ctx, "map_placement_mgr", None),
+                strategic_region_mgr=ctx.strategic_region_mgr,
+                profile_name=getattr(ctx, "profile_name", None),
+            )
         else:
             from export.mod_exporter import _write_strategic_regions, _write_weatherpositions
             region_list = _write_strategic_regions(
                 province_map, np.asarray(ctx.tile_map), ctx.output_dir, states_dict=states)
-            _write_weatherpositions(region_list, province_map, ctx.output_dir)
+            _write_weatherpositions(
+                region_list,
+                province_map,
+                ctx.output_dir,
+                map_placement_mgr=getattr(ctx, "map_placement_mgr", None),
+                profile_name=getattr(ctx, "profile_name", None),
+            )
         notes.append("strategic regions=%d" % (len(region_list) if region_list else 0))
     else:
         notes.append("strategic_regions layer disabled by scope")

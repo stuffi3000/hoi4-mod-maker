@@ -15,6 +15,7 @@ from domain.validators.geography import validate_geography_references
 from domain.validators.logistics import validate_logistics_references
 from domain.validators.placement import (
     validate_manager_placement_completeness,
+    validate_manager_weather_positions,
     validate_placement_references,
 )
 from domain.validators.raster import validate_raster_definition
@@ -230,6 +231,14 @@ def _foundation_placement_check(
             lifecycle=lifecycle,
         )
     )
+    findings.extend(
+        validate_manager_weather_positions(
+            province_map,
+            map_placement_mgr,
+            strategic_region_mgr=strategic_region_mgr,
+            lifecycle=lifecycle,
+        )
+    )
     return findings
 
 
@@ -430,5 +439,6 @@ __all__ = [
     "create_foundation_validator_registry",
     "evaluate_gate",
     "validate_manager_placement_completeness",
+    "validate_manager_weather_positions",
     "run_foundation_validation",
 ]

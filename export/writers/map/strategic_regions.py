@@ -1,5 +1,7 @@
 """strategicregions/*.txt + weatherpositions.txt."""
 import os
+from math import isfinite as _isfinite
+
 import numpy as np
 from data.constants import TILE_LAND, TILE_SEA
 # Note: do not import MAP_WIDTH/HEIGHT from data.constants — from import binding values,
@@ -168,43 +170,209 @@ def write_strategic_regions_from_mgr(region_mgr, output_dir):
     return region_list
 
 
-def write_weatherpositions(region_list, province_map, output_dir):
+_REVIEWED_WEATHER = ("reviewed", "accepted")
+_COMPAT_WEATHER_PROFILES = ("acceptance", "scaffold", "legacy_full")
+_VALID_WEATHER_SIZES = ("small", "medium", "large", "huge")
+
+
+def _normalize_weather_size(value):
+    try:
+        text = str(value).strip().lower()
+    except Exception:
+        return "small"
+    if text in _VALID_WEATHER_SIZES:
+        return text
+    return "small"
+
+
+def _emitted_region_mapping(strategic_region_mgr):
+    if strategic_region_mgr is None:
+        return None
+    try:
+        regions_obj = strategic_region_mgr.regions
+        if callable(regions_obj):
+            regions_obj = regions_obj()
+        if isinstance(regions_obj, dict):
+            items = list(regions_obj.values())
+        else:
+            items = list(regions_obj)
+    except Exception:
+        return {}
+    try:
+        ordered = sorted(items, key=lambda r: int(getattr(r, "id")))
+    except Exception:
+        return {}
+    mapping = {}
+    for new_id, region in enumerate(ordered, start=1):
+        try:
+            orig = int(getattr(region, "id"))
+        except Exception:
+            continue
+        try:
+            provs = getattr(region, "province_ids")
+        except Exception:
+            continue
+        try:
+            if not provs:
+                continue
+        except Exception:
+            continue
+        if orig not in mapping:
+            mapping[orig] = new_id
+    return mapping
+
+
+def _weather_centroid_line(rid, provs, pid_count, sum_x, sum_y, H, W, n):
+    total_pix = 0
+    sx = 0.0
+    sy = 0.0
+    try:
+        iterable = list(provs)
+    except Exception:
+        iterable = []
+    for item in iterable:
+        try:
+            pi = int(item)
+        except Exception:
+            continue
+        if 0 <= pi < n and pid_count[pi] > 0:
+            sx += float(sum_x[pi])
+            sy += float(sum_y[pi])
+            total_pix += int(pid_count[pi])
+    if total_pix == 0:
+        cx, cy = W / 2, H / 2
+    else:
+        cx = sx / total_pix
+        cy = sy / total_pix
+    hoi4_z = H - cy
+    return f"{rid};{cx:.2f};10.00;{hoi4_z:.2f};small"
+
+
+def write_weatherpositions(region_list, province_map, output_dir, map_placement_mgr=None, strategic_region_mgr=None, profile_name=None):
     """Write map/weatherpositions.txt, with one weather position point for each strategic area.
-    The original file must be overwritten, otherwise the region ID in the original file will become invalid → MAP_ERROR "invalid region id".
+    The original file must be overwritten, otherwise the region ID in the original file will become invalid -> MAP_ERROR "invalid region id".
     Format (vanilla validation): `region_id;x;y;z;size`
         - Semicolon separated, no spaces, no parentheses
         - x/y/z are 3D coordinates (z is map coordinates = MAP_HEIGHT - pixel_y)
         - y is height, fixed ~10
-        - size: small / medium / large / huge"""
+        - size: small / medium / large / huge
+    Extended M5.5 behavior (trailing args preserve legacy calls):
+        - No placement manager (or non foundation/compat profile): deterministic centroid fallback, one line per region.
+        - foundation + manager: only reviewed/accepted manager weather mapped to emitted non-empty regions, no fallback.
+        - compat (acceptance/scaffold/legacy_full) + manager: centroid fallback for regions without reviewed manager weather,
+          reviewed manager records overlay without duplicate fallback. Deterministic order by emitted region then record id.
+    """
     d = os.path.join(output_dir, "map")
     os.makedirs(d, exist_ok=True)
-
-    # Vectorize the centroid of each province (dimensions are taken from province_map)
     H, W = province_map.shape
+    mgr = map_placement_mgr
+    is_foundation = (mgr is not None and profile_name == "foundation")
+    is_compat = (mgr is not None and profile_name in _COMPAT_WEATHER_PROFILES)
+    try:
+        regions_snapshot = list(region_list) if region_list is not None else []
+    except Exception:
+        regions_snapshot = []
+    if mgr is None or (not is_foundation and not is_compat):
+        flat_pm = province_map.ravel()
+        n = int(province_map.max()) + 1
+        pid_count = np.bincount(flat_pm, minlength=n)
+        ys_grid, xs_grid = np.mgrid[0:H, 0:W]
+        sum_y = np.bincount(flat_pm, weights=ys_grid.ravel().astype(np.float64), minlength=n)
+        sum_x = np.bincount(flat_pm, weights=xs_grid.ravel().astype(np.float64), minlength=n)
+        with open(os.path.join(d, "weatherpositions.txt"), "w", encoding="utf-8") as f:
+            for rid, provs in regions_snapshot:
+                total_pix = 0
+                sx = 0.0
+                sy = 0.0
+                for item in provs:
+                    pi = int(item)
+                    if pi < n and pid_count[pi] > 0:
+                        sx += sum_x[pi]
+                        sy += sum_y[pi]
+                        total_pix += int(pid_count[pi])
+                if total_pix == 0:
+                    cx, cy = W / 2, H / 2
+                else:
+                    cx = sx / total_pix
+                    cy = sy / total_pix
+                hoi4_z = H - cy
+                f.write(f"{rid};{cx:.2f};10.00;{hoi4_z:.2f};small\n")
+        return
+    try:
+        region_rids = set()
+        for rid, _provs in regions_snapshot:
+            region_rids.add(int(rid))
+    except Exception:
+        region_rids = set()
+    orig_to_emitted = _emitted_region_mapping(strategic_region_mgr)
+    collected = []
+    try:
+        records = mgr.list_weather()
+    except Exception:
+        records = []
+    if records:
+        for rec in records:
+            try:
+                status = getattr(rec, "review_status", None)
+            except Exception:
+                continue
+            if status not in _REVIEWED_WEATHER:
+                continue
+            try:
+                orig_rid = int(getattr(rec, "region_id"))
+                wid = int(getattr(rec, "id"))
+                x = float(getattr(rec, "x"))
+                y = float(getattr(rec, "y"))
+                h = float(getattr(rec, "height", 0.0))
+                size = _normalize_weather_size(getattr(rec, "size", ""))
+            except Exception:
+                continue
+            if not (_isfinite(x) and _isfinite(y) and _isfinite(h)):
+                continue
+            if orig_to_emitted is not None:
+                emitted = orig_to_emitted.get(orig_rid)
+                if emitted is None:
+                    continue
+                if emitted not in region_rids:
+                    continue
+            else:
+                emitted = orig_rid
+                if emitted not in region_rids:
+                    continue
+            hoi4_z = float(H) - y
+            if not _isfinite(hoi4_z):
+                continue
+            collected.append((emitted, wid, f"{emitted};{x:.2f};{h:.2f};{hoi4_z:.2f};{size}"))
+    collected.sort(key=lambda item: (item[0], item[1]))
+    if is_foundation:
+        with open(os.path.join(d, "weatherpositions.txt"), "w", encoding="utf-8") as f:
+            for _emitted, _wid, line in collected:
+                f.write(line + "\n")
+        return
+    by_emitted = {}
+    for emitted, wid, line in collected:
+        by_emitted.setdefault(emitted, []).append((wid, line))
+    for key in list(by_emitted.keys()):
+        by_emitted[key].sort(key=lambda pair: pair[0])
     flat_pm = province_map.ravel()
     n = int(province_map.max()) + 1
     pid_count = np.bincount(flat_pm, minlength=n)
     ys_grid, xs_grid = np.mgrid[0:H, 0:W]
     sum_y = np.bincount(flat_pm, weights=ys_grid.ravel().astype(np.float64), minlength=n)
     sum_x = np.bincount(flat_pm, weights=xs_grid.ravel().astype(np.float64), minlength=n)
-
+    try:
+        ordered = sorted(regions_snapshot, key=lambda pair: int(pair[0]))
+    except Exception:
+        ordered = list(regions_snapshot)
     with open(os.path.join(d, "weatherpositions.txt"), "w", encoding="utf-8") as f:
-        for rid, provs in region_list:
-            # Use the weighted average of pixels from all provinces in the region
-            total_pix = 0
-            sx = 0.0
-            sy = 0.0
-            for p in provs:
-                if p < n and pid_count[p] > 0:
-                    sx += sum_x[p]
-                    sy += sum_y[p]
-                    total_pix += int(pid_count[p])
-            if total_pix == 0:
-                cx, cy = W / 2, H / 2
+        for rid, provs in ordered:
+            try:
+                rid_int = int(rid)
+            except Exception:
+                continue
+            if rid_int in by_emitted:
+                for _wid, line in by_emitted[rid_int]:
+                    f.write(line + "\n")
             else:
-                cx = sx / total_pix
-                cy = sy / total_pix
-            hoi4_z = H - cy
-            # vanilla format: region_id;x;y;z;size
-            f.write(f"{rid};{cx:.2f};10.00;{hoi4_z:.2f};small\n")
-
+                f.write(_weather_centroid_line(rid_int, provs, pid_count, sum_x, sum_y, H, W, n) + "\n")
+    return
