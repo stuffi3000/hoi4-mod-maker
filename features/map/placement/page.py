@@ -21,6 +21,7 @@ from PyQt5.QtWidgets import (
     QListWidgetItem,
     QPlainTextEdit,
     QComboBox,
+    QCheckBox,
     QDoubleSpinBox,
     QFormLayout,
     QScrollArea,
@@ -243,6 +244,20 @@ class PlacementPage(QWidget):
         self._generate_ports_btn.setStyleSheet(_PRIMARY_BTN_STYLE)
         self._generate_ports_btn.clicked.connect(self._on_generate_ports)
         gl.addWidget(self._generate_ports_btn)
+
+        self._replace_generated_check = QCheckBox(
+            tr("placement_replace_generated_label")
+        )
+        self._replace_generated_check.setChecked(False)
+        self._replace_generated_check.setToolTip(
+            tr("placement_replace_generated_help")
+        )
+        gl.addWidget(self._replace_generated_check)
+
+        replace_help = QLabel(tr("placement_replace_generated_help"))
+        replace_help.setWordWrap(True)
+        replace_help.setStyleSheet(_DIM_LABEL_STYLE)
+        gl.addWidget(replace_help)
         lay.addWidget(generate_box)
 
         records_box = _make_section(tr("placement_records_section"))
@@ -355,6 +370,12 @@ class PlacementPage(QWidget):
 
     def review_status(self):
         return self._review_combo.currentData() or "reviewed"
+
+    def replace_generated(self):
+        return bool(self._replace_generated_check.isChecked())
+
+    def set_replace_generated(self, on):
+        self._replace_generated_check.setChecked(bool(on))
 
     def set_records(self, records):
         self._records_list.clear()

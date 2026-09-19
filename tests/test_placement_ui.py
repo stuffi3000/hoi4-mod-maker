@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 from PyQt5.QtCore import Qt
-from PyQt5.QtWidgets import QComboBox, QDoubleSpinBox, QListWidget, QPlainTextEdit, QPushButton
+from PyQt5.QtWidgets import QCheckBox, QComboBox, QDoubleSpinBox, QListWidget, QPlainTextEdit, QPushButton
 
 from features.map.placement import PlacementPage, parse_sea_mapping
 from features.map.placement import page as placement_page_module
@@ -420,3 +420,60 @@ def test_transform_no_selection_emits_nothing_and_shows_status(qtbot):
     page._on_transform_reset()
     assert reset == []
     assert page._status_label.text() == tr("placement_transform_empty")
+def test_replace_generated_defaults_false(qtbot):
+    page = PlacementPage()
+    qtbot.addWidget(page)
+    assert page.replace_generated() is False
+    assert page._replace_generated_check.isChecked() is False
+    assert isinstance(page._replace_generated_check, QCheckBox)
+
+
+def test_replace_generated_toggle_and_setter(qtbot):
+    page = PlacementPage()
+    qtbot.addWidget(page)
+    page.set_replace_generated(True)
+    assert page.replace_generated() is True
+    assert page._replace_generated_check.isChecked() is True
+    page.set_replace_generated(False)
+    assert page.replace_generated() is False
+    page._replace_generated_check.setChecked(True)
+    assert page.replace_generated() is True
+    page._replace_generated_check.setChecked(False)
+    assert page.replace_generated() is False
+
+
+def test_replace_generated_label_and_help_localized(qtbot):
+    page = PlacementPage()
+    qtbot.addWidget(page)
+    label = tr("placement_replace_generated_label")
+    help_text = tr("placement_replace_generated_help")
+    assert label and label != "placement_replace_generated_label"
+    assert help_text and help_text != "placement_replace_generated_help"
+    assert page._replace_generated_check.text() == label
+    assert page._replace_generated_check.toolTip() == help_text
+    assert "unreviewed" in help_text.lower()
+    assert "generated" in help_text.lower()
+    assert "authored" in help_text.lower() or "reviewed" in help_text.lower()
+    helps = [
+        lbl.text()
+        for lbl in page.findChildren(QCheckBox)
+    ]
+    assert label in helps
+    assert page._replace_generated_check.isChecked() is False
+
+
+def test_replace_toggle_preserves_generate_signal_signatures(qtbot):
+    page = PlacementPage()
+    qtbot.addWidget(page)
+    page.set_mapping_text("12:34")
+    page.set_replace_generated(True)
+    slots_seen = []
+    page.generate_slots_requested.connect(lambda: slots_seen.append(True))
+    page._on_generate_slots()
+    assert slots_seen == [True]
+    ports_seen = []
+    page.generate_ports_requested.connect(ports_seen.append)
+    page._on_generate_ports()
+    assert ports_seen == [{12: 34}]
+    page.set_replace_generated(False)
+    assert page.replace_generated() is False

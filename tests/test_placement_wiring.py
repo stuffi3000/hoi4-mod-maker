@@ -124,3 +124,121 @@ def test_main_window_registers_placement_controller_and_routes_page():
     assert ApplicationController._MODE_KEYS["placement"] == "mode_placement"
     assert PlacementController.__name__ == "PlacementController"
     assert PlacementPage.__name__ == "PlacementPage"
+class _FakeReplacePage:
+    def __init__(self, replace_value=False):
+        self._replace_value = bool(replace_value)
+        self.diagnostics_calls = []
+        self.status_calls = []
+
+    def replace_generated(self):
+        return self._replace_value
+
+    def set_diagnostics(self, diagnostics):
+        self.diagnostics_calls.append(list(diagnostics))
+
+    def set_status(self, text):
+        self.status_calls.append(text)
+
+
+class _FakeLegacyPage:
+    def __init__(self):
+        self.diagnostics_calls = []
+        self.status_calls = []
+
+    def set_diagnostics(self, diagnostics):
+        self.diagnostics_calls.append(list(diagnostics))
+
+    def set_status(self, text):
+        self.status_calls.append(text)
+
+
+class _FakeProposalController:
+    def __init__(self):
+        self.slot_kwargs = None
+        self.port_args = None
+        self.port_kwargs = None
+
+    def propose_slots(self, **kwargs):
+        self.slot_kwargs = dict(kwargs)
+        return SimpleNamespace(
+            diagnostics=[],
+            store_report=SimpleNamespace(stored_count=1, skipped_count=0),
+        )
+
+    def propose_ports(self, sea_mapping, **kwargs):
+        self.port_args = sea_mapping
+        self.port_kwargs = dict(kwargs)
+        return SimpleNamespace(
+            diagnostics=[],
+            store_report=SimpleNamespace(stored_count=1, skipped_count=0),
+        )
+
+
+def _make_generate_self(page, controller):
+    refresh_calls = []
+    fake_self = SimpleNamespace(
+        _tool_panel=SimpleNamespace(_placement_page=page),
+        _controllers={"placement": controller},
+        _refresh_placement_page=lambda: refresh_calls.append(True),
+    )
+    return fake_self, refresh_calls
+
+
+def test_main_window_forwards_replace_false_to_propose_slots():
+    page = _FakeReplacePage(replace_value=False)
+    controller = _FakeProposalController()
+    fake_self, refresh_calls = _make_generate_self(page, controller)
+    MainWindow._on_placement_generate_slots(fake_self)
+    assert controller.slot_kwargs == {"replace_generated": False}
+    assert refresh_calls == [True]
+    assert page.diagnostics_calls == [[]]
+
+
+def test_main_window_forwards_replace_true_to_propose_slots():
+    page = _FakeReplacePage(replace_value=True)
+    controller = _FakeProposalController()
+    fake_self, refresh_calls = _make_generate_self(page, controller)
+    MainWindow._on_placement_generate_slots(fake_self)
+    assert controller.slot_kwargs == {"replace_generated": True}
+    assert refresh_calls == [True]
+
+
+def test_main_window_forwards_replace_to_propose_ports():
+    for flag in (False, True):
+        page = _FakeReplacePage(replace_value=flag)
+        controller = _FakeProposalController()
+        fake_self, refresh_calls = _make_generate_self(page, controller)
+        MainWindow._on_placement_generate_ports(fake_self, {12: 34})
+        assert controller.port_args == {12: 34}
+        assert controller.port_kwargs == {"replace_generated": flag}
+        assert refresh_calls == [True]
+
+
+def test_main_window_preserves_legacy_page_without_replace_method():
+    for handler, kwargs in (
+        (MainWindow._on_placement_generate_slots, {}),
+        (MainWindow._on_placement_generate_ports, {"sea_mapping": {1: 2}}),
+    ):
+        page = _FakeLegacyPage()
+        controller = _FakeProposalController()
+        fake_self, refresh_calls = _make_generate_self(page, controller)
+        if kwargs:
+            handler(fake_self, kwargs["sea_mapping"])
+            assert controller.port_args == {1: 2}
+            assert controller.port_kwargs == {"replace_generated": False}
+        else:
+            handler(fake_self)
+            assert controller.slot_kwargs == {"replace_generated": False}
+        assert refresh_calls == [True]
+
+
+def test_placement_replace_helper_defaults_false_for_legacy_and_errors():
+    assert MainWindow._placement_replace_generated(object()) is False
+    assert MainWindow._placement_replace_generated(SimpleNamespace()) is False
+
+    def _boom():
+        raise RuntimeError("boom")
+
+    assert MainWindow._placement_replace_generated(SimpleNamespace(replace_generated=_boom)) is False
+    assert MainWindow._placement_replace_generated(SimpleNamespace(replace_generated=lambda: True)) is True
+    assert MainWindow._placement_replace_generated(SimpleNamespace(replace_generated=lambda: 1)) is True

@@ -856,11 +856,24 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
         except Exception:
             pass
 
+    @staticmethod
+    def _placement_replace_generated(page) -> bool:
+        reader = getattr(page, "replace_generated", None)
+        if callable(reader):
+            try:
+                return bool(reader())
+            except Exception:
+                return False
+        return False
+
     def _on_placement_generate_slots(self) -> None:
         """Generate explicit land-slot proposals through the controller."""
         page = self._tool_panel._placement_page
+        replace_generated = MainWindow._placement_replace_generated(page)
         try:
-            result = self._controllers["placement"].propose_slots()
+            result = self._controllers["placement"].propose_slots(
+                replace_generated=replace_generated
+            )
         except (TypeError, ValueError) as exc:
             page.set_status(f"Placement generation failed: {exc}")
             return
@@ -875,8 +888,11 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
     def _on_placement_generate_ports(self, sea_mapping: object) -> None:
         """Generate port proposals using only the page's explicit mapping."""
         page = self._tool_panel._placement_page
+        replace_generated = MainWindow._placement_replace_generated(page)
         try:
-            result = self._controllers["placement"].propose_ports(sea_mapping)
+            result = self._controllers["placement"].propose_ports(
+                sea_mapping, replace_generated=replace_generated
+            )
         except (TypeError, ValueError) as exc:
             page.set_status(f"Port generation failed: {exc}")
             return

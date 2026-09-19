@@ -943,3 +943,81 @@ def test_mode_enter_placement_does_not_clear_via_exit_path(monkeypatch):
     MainWindow._on_mode_changed(fake_self, "placement")
     assert page.clear_transform_calls == before
     assert ("visible", True) in calls
+def test_generate_handlers_default_false_for_overlay_legacy_page():
+    from types import SimpleNamespace as _NS
+
+    captured = {}
+
+    class _LegacyPage(_FakePage):
+        pass
+
+    # Overlay _FakePage has no replace_generated method; handlers must default to False.
+    assert getattr(_LegacyPage(), "replace_generated", None) is None
+    assert MainWindow._placement_replace_generated(_LegacyPage()) is False
+
+    class _Controller:
+        def propose_slots(self, **kwargs):
+            captured["slots"] = dict(kwargs)
+            return _NS(diagnostics=[], store_report=_NS(stored_count=0, skipped_count=1))
+
+        def propose_ports(self, sea_mapping, **kwargs):
+            captured["ports_mapping"] = sea_mapping
+            captured["ports"] = dict(kwargs)
+            return _NS(diagnostics=[], store_report=_NS(stored_count=0, skipped_count=1))
+
+    for mapping in ({12: 34},):
+        page = _LegacyPage()
+        controller = _Controller()
+        fake_self, refresh_calls = _make_handler_self(
+            _make_project([], [], [], []), page, controller
+        )
+        MainWindow._on_placement_generate_slots(fake_self)
+        assert captured["slots"] == {"replace_generated": False}
+        assert refresh_calls == [True]
+
+        page = _LegacyPage()
+        controller = _Controller()
+        fake_self, refresh_calls = _make_handler_self(
+            _make_project([], [], [], []), page, controller
+        )
+        MainWindow._on_placement_generate_ports(fake_self, mapping)
+        assert captured["ports_mapping"] == mapping
+        assert captured["ports"] == {"replace_generated": False}
+        assert refresh_calls == [True]
+
+
+def test_generate_handlers_forward_true_when_page_opts_in():
+    from types import SimpleNamespace as _NS
+
+    captured = {}
+
+    class _OptInPage(_FakePage):
+        def replace_generated(self):
+            return True
+
+    class _Controller:
+        def propose_slots(self, **kwargs):
+            captured["slots"] = dict(kwargs)
+            return _NS(diagnostics=[], store_report=_NS(stored_count=1, skipped_count=0))
+
+        def propose_ports(self, sea_mapping, **kwargs):
+            captured["ports_mapping"] = sea_mapping
+            captured["ports"] = dict(kwargs)
+            return _NS(diagnostics=[], store_report=_NS(stored_count=1, skipped_count=0))
+
+    page = _OptInPage()
+    controller = _Controller()
+    fake_self, refresh_calls = _make_handler_self(
+        _make_project([], [], [], []), page, controller
+    )
+    MainWindow._on_placement_generate_slots(fake_self)
+    assert captured["slots"] == {"replace_generated": True}
+
+    page = _OptInPage()
+    controller = _Controller()
+    fake_self, refresh_calls = _make_handler_self(
+        _make_project([], [], [], []), page, controller
+    )
+    MainWindow._on_placement_generate_ports(fake_self, {12: 34})
+    assert captured["ports_mapping"] == {12: 34}
+    assert captured["ports"] == {"replace_generated": True}

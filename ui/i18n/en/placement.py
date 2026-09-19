@@ -19,6 +19,8 @@ STRINGS: dict[str, str] = {
     "placement_records_empty": "No placement records.",
     "placement_records_section": "Slot / Port Records",
     "placement_records_summary": "{0} slot(s), {1} port(s)",
+    "placement_replace_generated_help": "Optional opt-in: when checked, generation may replace existing unreviewed generated records. Authored and reviewed records stay protected.",
+    "placement_replace_generated_label": "Replace unreviewed generated records",
     "placement_refresh_btn": "Refresh",
     "placement_review_section": "Review",
     "placement_review_status_label": "Review status:",
