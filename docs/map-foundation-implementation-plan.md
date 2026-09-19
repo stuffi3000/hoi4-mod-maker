@@ -1036,6 +1036,20 @@ The harness must never treat old logs as current evidence.
 - create a save, reload it, and tick again;
 - inspect representative tree, city, terrain, water, FOW, normal, border, and building rendering.
 
+### M7 implementation checklist (2026-09-19)
+
+- [x] **M7.1 - explicit automation boundaries:** added a dependency-free assisted-acceptance contract and dry-run-first CLI; no GUI or mouse automation is attempted, and game execution is opt-in.
+- [x] **M7.2 - isolated acceptance artifact:** reused the existing M2.5 acceptance profile, which creates a sibling acceptance artifact with deterministic unused tags, minimum owners/OOB/bookmark content, and manifest provenance; the harness requires and fingerprints the exact supplied artifact.
+- [x] **M7.3 - local acceptance harness:** added artifact/manifest/lock verification, deterministic inventory identity, pre-run log snapshots, post-run fresh-range classification, fresh-save evidence, bounded no-shell launch execution, and `engine_acceptance.json` recording.
+- [x] **M7.4 - human checklist contract:** added ten stable named in-game checks, CLI help/output rendering, notes, and status gating so an assisted run cannot pass while required checks remain unchecked.
+
+### M7 checkpoint - assisted engine-acceptance harness (2026-09-19)
+
+- **Completed:** the local M7 harness is implemented in `domain/engine_acceptance.py`, `services/engine_acceptance_service.py`, and `tools/run_engine_acceptance.py`. It records exact artifact inventory/identity, supports safe fresh-log and save evidence, classifies findings, launches only with explicit `--execute`, and emits a JSON result with stable run identity and human-checklist state.
+- **Evidence:** the focused M7 suite and relevant manifest, determinism, and validation tests pass; compilation and diff checks pass. Parent review caught and fixed post-launch evidence ordering, failed-launch pass-through, and missing/invalid-manifest acceptance. No real HOI4 process was launched during automated tests.
+- **Acceptance status:** the implementation checklist is complete, but Gate D is not claimed yet. A real run still needs the exact exported acceptance artifact, a selected local game/launcher, fresh logs, at least 30 in-game days, save/reload, and all ten human checks recorded as complete.
+- **Next controlled slice:** run the harness against a real acceptance artifact when a suitable local HOI4 target is available; then begin M8 freeze/change-detection and content handoff work.
+
 Any map/province/terrain/asset/tag error is a failed foundation acceptance unless explicitly proven unrelated.
 
 ## M8 — freeze, change detection, and content handoff
