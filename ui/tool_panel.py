@@ -2,7 +2,9 @@
 
 Refactored from 13 mode grouping list → 7 icon buttons (Draw Map/Province/Terrain/River/Country and Region/Logistics/Settings).
 Use horizontal subtabs to switch subpages in composite mode, and the stack still retains all 13 original pages.
-The externally transmitted mode_id remains unchanged (land/density/province/height/terrain/river/state/...),
+The externally transmitted mode_id remains unchanged for existing modes
+(land/density/province/height/terrain/river/state/...), with placement added
+as an explicit review mode.
 MainWindow/Canvas/Controller Zero changes."""
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout,
@@ -53,6 +55,7 @@ _NAV_MODES: list[tuple[str, str, str, list[tuple[str, str, str]], str]] = [
     ], "nav_tooltip_region"),
     ("logistics_group", "🛤", "nav_logistics", [
         ("strategic_region", "tab_strategic_region", "🟠"),
+        ("placement", "tab_placement", "🟠"),
         ("logistics", "tab_logistics", "🟠"),
     ], "nav_tooltip_logistics"),
     ("preview_group", "👁", "nav_preview", [
@@ -260,7 +263,7 @@ class _SubModeTabBar(QWidget):
 
 # ── Main panel ─────────────────────────────────────────────
 class ToolPanel(QWidget):
-    """Left tool panel — 7 navigation icons + subtabs + 13 page stacks"""
+    """Left tool panel — navigation icons, subtabs, and page stacks."""
 
     # Signal (keeps connection to MainWindow intact)
     mode_changed = pyqtSignal(str)
@@ -383,6 +386,12 @@ class ToolPanel(QWidget):
     create_from_states_toggled = pyqtSignal(bool)
     create_from_states_confirmed = pyqtSignal()
 
+    # placement review signals
+    placement_generate_slots_requested = pyqtSignal()
+    placement_generate_ports_requested = pyqtSignal(object)
+    placement_accept_selected_requested = pyqtSignal(object, object, str)
+    placement_refresh_requested = pyqtSignal()
+
     # Overview map signal
     colormap_color_changed = pyqtSignal(str, int, int, int)
     colormap_reset_requested = pyqtSignal()
@@ -498,6 +507,7 @@ class ToolPanel(QWidget):
         from features.map.country.page import CountryPage
         from features.map.continent.page import ContinentPage
         from features.map.strategic_region.page import StrategicRegionPage
+        from features.map.placement.page import PlacementPage
         from features.map.logistics.page import LogisticsPage
         from features.map.colormap.page import ColormapPage
         from features.map.default_map.page import DefaultMapPage
@@ -515,6 +525,7 @@ class ToolPanel(QWidget):
         self._country_page = CountryPage()
         self._continent_page = ContinentPage()
         self._strategic_region_page = StrategicRegionPage()
+        self._placement_page = PlacementPage()
         self._logistics_page = LogisticsPage()
         self._colormap_page = ColormapPage()
         self._default_map_page = DefaultMapPage()
@@ -533,6 +544,7 @@ class ToolPanel(QWidget):
             ("country", self._country_page),
             ("continent", self._continent_page),
             ("strategic_region", self._strategic_region_page),
+            ("placement", self._placement_page),
             ("logistics", self._logistics_page),
             ("colormap", self._colormap_page),
             ("default_map", self._default_map_page),
@@ -557,6 +569,7 @@ class ToolPanel(QWidget):
         self._connect_country_signals()
         self._connect_continent_signals()
         self._connect_strategic_region_signals()
+        self._connect_placement_signals()
         self._connect_logistics_signals()
         self._connect_colormap_signals()
         self._connect_default_map_signals()
@@ -699,6 +712,13 @@ class ToolPanel(QWidget):
         p.sr_assign_mode_changed.connect(self.sr_assign_mode_changed)
         p.create_from_states_toggled.connect(self.create_from_states_toggled)
         p.create_from_states_confirmed.connect(self.create_from_states_confirmed)
+
+    def _connect_placement_signals(self) -> None:
+        p = self._placement_page
+        p.generate_slots_requested.connect(self.placement_generate_slots_requested)
+        p.generate_ports_requested.connect(self.placement_generate_ports_requested)
+        p.accept_selected_requested.connect(self.placement_accept_selected_requested)
+        p.refresh_requested.connect(self.placement_refresh_requested)
 
     def _connect_logistics_signals(self) -> None:
         p = self._logistics_page

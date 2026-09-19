@@ -30,6 +30,7 @@ from controllers.country import CountryController
 from controllers.continent import ContinentController
 from controllers.logistics import LogisticsController
 from controllers.strategic_region import StrategicRegionController
+from controllers.placement import PlacementController
 from controllers.colormap import ColormapController
 from controllers.default_map import DefaultMapController
 
@@ -79,6 +80,7 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
             "continent": ContinentController(self._project, self._cmd_history),
             "logistics": LogisticsController(self._project, self._cmd_history),
             "strategic_region": StrategicRegionController(self._project, self._cmd_history),
+            "placement": PlacementController(self._project, self._cmd_history),
             "colormap": ColormapController(self._project, self._cmd_history),
             "default_map": DefaultMapController(self._project, self._cmd_history),
         }
@@ -528,6 +530,18 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
         tp.create_from_states_toggled.connect(self._on_sr_from_states_toggled)
         tp.create_from_states_confirmed.connect(self._on_sr_from_states_confirmed)
 
+        # placement review signal → headless placement controller
+        tp.placement_generate_slots_requested.connect(
+            self._on_placement_generate_slots
+        )
+        tp.placement_generate_ports_requested.connect(
+            self._on_placement_generate_ports
+        )
+        tp.placement_accept_selected_requested.connect(
+            self._on_placement_accept_selected
+        )
+        tp.placement_refresh_requested.connect(self._refresh_placement_page)
+
         # Colormap signal → controller
         tp.colormap_color_changed.connect(
             lambda attr, r, g, b: self._controllers["colormap"].change_color(attr, r, g, b)
@@ -573,6 +587,7 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
         bus.subscribe("railway_changed", lambda event: self._refresh_logistics_counts())
         bus.subscribe("sr_colors_dirty", lambda event: self._refresh_feature_statuses())
         bus.subscribe("province_map_regenerated", lambda event: self._refresh_feature_statuses())
+        bus.subscribe("placement_changed", lambda event: self._refresh_placement_page())
 
     def _on_evt_status(self, event) -> None:
         self._status_info.setText(event.data.get("text", ""))
@@ -644,12 +659,79 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
         self._status_mode.setText(tr("status_mode").format(mode=mode_name))
         if mode == "strategic_region":
             self._refresh_sr_list()
+        elif mode == "placement":
+            self._refresh_placement_page()
         elif mode == "logistics":
             self._refresh_logistics_counts()
         self._refresh_feature_statuses()
         # Detect ID holes when entering province mode
         if mode == "province":
             self._check_province_gaps()
+
+    def _refresh_placement_page(self) -> None:
+        """Refresh the slot/port review list from the live placement manager."""
+        page = getattr(self._tool_panel, "_placement_page", None)
+        if page is None:
+            return
+        manager = self._project.map_placement_mgr
+        records = list(manager.list_province_slots()) + list(manager.list_ports())
+        page.set_records(records)
+
+    def _on_placement_generate_slots(self) -> None:
+        """Generate explicit land-slot proposals through the controller."""
+        page = self._tool_panel._placement_page
+        try:
+            result = self._controllers["placement"].propose_slots()
+        except (TypeError, ValueError) as exc:
+            page.set_status(f"Placement generation failed: {exc}")
+            return
+        self._refresh_placement_page()
+        page.set_diagnostics(result.diagnostics)
+        report = result.store_report
+        page.set_status(
+            f"Stored {report.stored_count} slot proposal(s); "
+            f"skipped {report.skipped_count}."
+        )
+
+    def _on_placement_generate_ports(self, sea_mapping: object) -> None:
+        """Generate port proposals using only the page's explicit mapping."""
+        page = self._tool_panel._placement_page
+        try:
+            result = self._controllers["placement"].propose_ports(sea_mapping)
+        except (TypeError, ValueError) as exc:
+            page.set_status(f"Port generation failed: {exc}")
+            return
+        self._refresh_placement_page()
+        page.set_diagnostics(result.diagnostics)
+        report = result.store_report
+        page.set_status(
+            f"Stored {report.stored_count} port proposal(s); "
+            f"skipped {report.skipped_count}."
+        )
+
+    def _on_placement_accept_selected(
+        self,
+        slot_keys: object,
+        port_ids: object,
+        review_status: str,
+    ) -> None:
+        """Advance only the records selected by the review page."""
+        page = self._tool_panel._placement_page
+        try:
+            report = self._controllers["placement"].accept_selected(
+                slot_keys=slot_keys,
+                port_ids=port_ids,
+                review_status=review_status,
+            )
+        except (TypeError, ValueError) as exc:
+            page.set_status(f"Placement acceptance failed: {exc}")
+            return
+        self._refresh_placement_page()
+        page.set_diagnostics(report.missing)
+        page.set_status(
+            f"Accepted {report.accepted_count} placement record(s); "
+            f"missing {report.missing_count}."
+        )
 
     def _on_preview_refresh(self) -> None:
         """"Refresh Preview" on the preview page: clears the synthesis cache and resynthesizes immediately in preview mode."""

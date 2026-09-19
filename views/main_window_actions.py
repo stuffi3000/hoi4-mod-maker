@@ -1807,6 +1807,11 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
             )
         )
         self._tool_panel.set_feature_ready("strategic_region", strategic_ready)
+        placement_ready = bool(
+            self._project.map_placement_mgr.list_province_slots()
+            or self._project.map_placement_mgr.list_ports()
+        )
+        self._tool_panel.set_feature_ready("placement", placement_ready)
         self._tool_panel.set_feature_ready("logistics", logistics_ready)
 
     def _open_logistics_generation(self) -> None:

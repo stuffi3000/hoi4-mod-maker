@@ -83,6 +83,7 @@ class ApplicationController:
         "river": "mode_river", "continent": "mode_continent",
         "logistics": "mode_logistics",
         "strategic_region": "mode_strategic_region",
+        "placement": "mode_placement",
         "colormap": "mode_colormap", "default_map": "mode_default_map",
         "density": "mode_density", "province_terrain": "tab_province_terrain",
         "preview": "nav_preview",
@@ -99,7 +100,12 @@ class ApplicationController:
         if mode == "density":
             self._canvas.display_mode = "land"
         else:
-            self._canvas.display_mode = mode
+            # Placement review uses the strategic-region canvas base until a
+            # dedicated placement overlay is installed. Do not expose the
+            # logical review mode as an unknown canvas display mode.
+            self._canvas.display_mode = (
+                "strategic_region" if mode == "placement" else mode
+            )
 
         # Density mode special: borrow LandController but enable density_mode
         # The density map is overlaid on the land view as a mask
@@ -135,11 +141,15 @@ class ApplicationController:
             self._canvas.set_highlight_country(None)
         elif mode == "country":
             self._refresh_country_colors()
+        elif mode in ("strategic_region", "placement"):
+            self._refresh_sr_colors()
+            if self._canvas._highlight_country_rgb is not None:
+                # Clear country highlighting when entering a non-country
+                # region view, while still refreshing its base colors.
+                self._canvas.set_highlight_country(None)
         elif self._canvas._highlight_country_rgb is not None:
             # Clear country highlighting when leaving state / country mode
             self._canvas.set_highlight_country(None)
-        elif mode == "strategic_region":
-            self._refresh_sr_colors()
         elif mode == "logistics":
             self._refresh_railway_colors()
             self._canvas.refresh_logistics_overlay()
@@ -149,7 +159,7 @@ class ApplicationController:
             self._refresh_continent_colors()
 
         # Hide state border overlay when leaving strategic area mode
-        if mode != "strategic_region":
+        if mode not in ("strategic_region", "placement"):
             self._canvas.show_state_borders(False)
 
         key = self._MODE_KEYS.get(mode)
