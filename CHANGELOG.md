@@ -1,135 +1,191 @@
 # Changelog
 
 All notable changes to HOI4 Map Maker are documented here. Version 1.4.0
-covers the complete development range after the 1.3.4 release through the
-published map-foundation 1.4.0 release on 19 September 2026, including the
-foundation-plan implementation commits and their checkpoints.
+covers the work after v1.3.4 through the published map-foundation release on
+19 September 2026. It is organized by what users can do, rather than by the
+internal implementation milestones.
 
 ## [1.4.0] - 2026-09-19
 
-### Map editing and English UI
+### At a glance
 
-- Completed the English-only interface cleanup and removed untranslated
-  runtime/editor paths.
-- Added reference-image role mapping and reference-assisted land, sea, lake,
-  province, and river generation.
-- Added manual province drawing, incremental generation, merge/split/lasso
-  refinement, and validation of reference-generated provinces.
-- Completed the Belgium Map v1.1 terrain, hydrology, relief, urban-mask, and
-  deterministic province-rework workflows.
-- Added terrain-attribute synchronization, victory-point editing, city-map
-  generation, preview lighting, political shading, and map-mode diagnostics.
-- Regenerated the onboarding and tool-panel screenshots from the current
-  English UI and refreshed the tutorial and release documentation.
+Version 1.4.0 turns the editor into a more complete map-production workflow:
 
-### M0-M2: safe, staged export foundation
+- Build map layers and provinces from reference images, then refine them by
+  hand.
+- Prepare gameplay data, placements, logistics, and graphics with clearer
+  review states and safer fallbacks.
+- Validate an export, reproduce it from a stable source snapshot, and inspect
+  exactly what changed.
+- Freeze a reviewed foundation and hand it to content authors without losing
+  the identity of the approved map.
 
-- Added metadata-only regression evidence for the Belgium map, HOI4 1.19.3.0
-  headers, and DDS contracts without committing base-game binaries.
-- Completed dependency/pytest marker documentation and CLI UTF-8/exit-code
-  handling.
-- Added game-target and versioned map-profile contracts, project metadata, and
-  backward-compatible loading for old archives.
-- Added immutable export snapshots, typed export profiles, repair actions,
-  validation policy, transactional staging, overwrite/backup behavior, and
-  the planner-backed CLI/UI path.
-- Separated `foundation`, `acceptance`, `scaffold`, and `legacy_full` output
-  responsibilities and kept live project managers unchanged during staged
-  export.
+### Map authoring from reference images
 
-### M3: shared validation, manifests, and determinism
+**The biggest change:** a reference image can now be the starting point for
+real map data instead of only a visual guide.
 
-- Added shared typed validation findings, gate policy, reports, readiness
-  integration, CLI reporting, export-dialog reporting, and artifact verifier
-  integration.
-- Added raster, province definition, terrain, rivers, geography, logistics,
-  placement, asset, and cross-layer validation suites.
-- Added deterministic foundation manifests with source fingerprints, output
-  ownership, asset hashes, repair/provenance records, accepted exceptions,
-  and versioned lock compatibility.
-- Added deterministic inventory/hash tests and repeated-export coverage.
+- Added a reference-image color-mapping editor and generation of map layers
+  from reference colors.
+- Distinguished land, sea, and lake imports so each type follows the correct
+  province workflow.
+- Added manual province drawing, incremental generation, selection/deletion,
+  and validation of reference-generated provinces.
+- Added practical refinement paths for splitting, merging, lasso editing, and
+  deterministic province rework.
+- Added a validated Belgium map workflow, including a deterministic province
+  rework tool and a reference-mask-driven urban pass.
 
-### M4: adjacency and logistics semantics
+### Terrain, rivers, hydrology, and city detail
 
-- Added explicit adjacency review states, import/export, undoable editing,
-  adjacency-rule validation, and synthetic fixture coverage for straits,
-  canals, impassable borders, and map-edge cases.
-- Added deterministic railway/supply graph analysis, component reporting,
-  disconnected-network exceptions, and logistics rendering/readiness output.
-- Preserved legacy supply-area output only as an explicitly documented
-  compatibility artifact.
+**Map terrain is now easier to author as a coherent gameplay and visual
+system.**
 
-### M5: authored placements
+- Added a validated Belgium v1.1 generator with hydrology, relief, terrain
+  limits, and administrative map data.
+- Added terrain-attribute synchronization from the visual terrain layer,
+  including a clear action for resynchronizing existing data.
+- Added river and terrain validation coverage and made map-type-specific
+  generation safer around coasts and water bodies.
+- Added exported urban city models and urban-mask painting, while removing
+  artificial city circles that did not represent authored data.
 
-- Added authored placement managers and persistence for province slots, ports,
-  buildings, unit stacks, and weather positions.
-- Added deterministic slot/port/weather proposals, review and acceptance
-  workflows, replacement opt-ins, placement-readiness findings, controller
-  boundaries, and editor review pages.
-- Added read-only placement overlays, map-context guides, transform contracts,
-  undoable transforms, canvas selection/drag intent, and live diagnostics.
-- Blocked unreviewed foundation centroid/building fallbacks while retaining
-  labeled compatibility proposals for disposable profiles.
+### Provinces, states, countries, and map gameplay data
 
-### M6: graphics and asset contracts
+**The editor now connects visual map work to recognizable HOI4 gameplay
+structures.**
 
-- Added profile-aware generated/preserved/inherited/omitted/unsupported asset
-  resolution and asset inventories.
+- Added authored administrative states and countries for the Belgium map
+  workflow.
+- Added victory-point editing and corrected the map-overlay toggle behavior.
+- Added strategic-region generation and logistics-readiness indicators so
+  missing gameplay structure is visible earlier.
+- Preserved deterministic localization precedence so generated names reliably
+  override the intended vanilla entries.
+
+### Safer export and project compatibility
+
+**Exports now have a staged, profile-aware path that can be reviewed before it
+touches the destination.**
+
+- Added game-target profiles, versioned project metadata, immutable source
+  snapshots, typed export profiles, repair actions, and transactional staging.
+- Added distinct `foundation`, `acceptance`, `scaffold`, and `legacy_full`
+  responsibilities for the CLI and export UI.
+- Added safer overwrite/backup behavior, UTF-8 CLI output, useful exit codes,
+  and readiness indicators in the application.
+- Fixed exported-map startup failures, map-incompatible runtime scripts,
+  session-load crashes, AI errors, strict province bounds, and total-conversion
+  export crashes.
+- Kept old project archives, manager JSON schemas, and `_manifest.txt`
+  sidecars readable while the newer planner-based path is adopted.
+
+### Validation and reproducible output
+
+**A finished export now comes with evidence about whether it is safe to use and
+whether it is the same artifact that was reviewed.**
+
+- Added shared validation findings, reports, readiness gates, and repair
+  policies across geometry, raster data, provinces, terrain, rivers,
+  geography, logistics, placements, assets, and cross-layer relationships.
+- Routed the same reports through the export UI, CLI, readiness services, and
+  artifact verifier instead of maintaining separate summaries.
+- Added deterministic foundation manifests containing source identity,
+  output ownership, asset hashes, validation metadata, repair provenance, and
+  accepted exceptions.
+- Added versioned foundation locks, compatibility checks, deterministic
+  inventories, and repeated-export tests to make accidental drift visible.
+
+### Adjacency, railways, and supply networks
+
+**Map connections now have an explicit review workflow instead of being
+treated as opaque generated text.**
+
+- Added adjacency review states, import/export, undoable editing, and rules
+  for straits, canals, impassable borders, and map edges.
+- Added deterministic railway and supply-graph analysis with component
+  reports, disconnected-network exceptions, rendering, and readiness output.
+- Added synthetic fixtures for difficult logistics cases and retained legacy
+  supply-area output only as a clearly identified compatibility artifact.
+
+### Placements and starting content
+
+**Starting positions can now be authored, proposed, reviewed, and accepted
+without silently becoming part of the foundation.**
+
+- Added persistent placement records for province slots, ports, buildings,
+  unit stacks, and weather positions.
+- Added deterministic slot, port, and weather proposals with explicit review
+  and acceptance workflows.
+- Added placement-readiness findings, replacement opt-ins, and a boundary that
+  blocks unreviewed foundation fallbacks.
+- Added placement review pages, read-only map overlays, context guides,
+  transform controls, undoable transforms, canvas selection/drag intent, and
+  live overlay diagnostics.
+
+### Graphics and packaged assets
+
+**Generated and inherited map art now follows the same target/profile rules as
+the rest of the export.**
+
+- Added profile-aware resolution for generated, preserved, inherited, omitted,
+  and unsupported assets.
 - Added version-aware terrain registries, indexed BMP palettes, tree-map
-  contracts, city/normal/water/FOW/colormap handling, DDS headers, BGRA
-  encoding, and deterministic map-art writers.
-- Added explicit target-install resolution and validation for palettes and
-  optional structural assets, with safe legacy fallbacks only for legacy
-  direct callers.
+  contracts, city/normal/water/fog-of-war/colormap handling, and deterministic
+  map-art writers.
+- Added DDS header and BGRA encoding contracts plus asset inventories and
+  validation for optional structural assets.
+- Kept safe legacy fallbacks for direct legacy callers while preventing them
+  from silently defining reviewed foundation output.
 
-### M7: assisted engine acceptance
+### Acceptance, freeze, and handoff
 
-- Added deterministic acceptance content with collision-free test tags,
-  isolated artifact staging, executable launch configuration, fresh log
-  capture, log classification, and acceptance records.
-- Added the engine-acceptance service, CLI harness, manifest integration, and
-  focused tests for start/tick/save/reload evidence and exact artifact
-  identity.
+**A reviewed map can now be tested and handed to the next phase with a clear
+identity.**
 
-### M8: foundation freeze and content handoff
-
-- Added expanded deterministic foundation locks for dimensions, profile/target
-  identity, province/state/region/topology counts, placements, assets,
-  exceptions, and engine acceptance identity.
-- Added breaking-change classes and stable comparison/rerun guidance for
-  identity, topology, foundation visual, placement, and non-foundation content.
+- Added isolated acceptance content with collision-free test tags, fresh log
+  capture, executable launch configuration, log classification, and saved
+  acceptance records.
+- Added start/tick/save/reload evidence and exact-artifact identity checks to
+  the acceptance harness and CLI.
 - Added candidate, freeze, unfreeze-audit, acceptance-record, compare, and
   handoff operations in the service, CLI, and export-result UI.
-- Added deterministic `FOUNDATION-HANDOFF.md` generation describing ownership,
+- Added foundation locks for dimensions, profile/target identity,
+  province/state/region/topology counts, placements, assets, exceptions, and
+  acceptance identity.
+- Added deterministic `FOUNDATION-HANDOFF.md` generation with ownership,
   inheritance, dependencies, exceptions, author rules, prohibited changes,
-  and migration procedure.
+  and migration guidance.
 
-### M9: migration cleanup and published release
+### User experience, documentation, and maintenance
 
-- Kept `export_full_mod()` and legacy bitmap/CSV helpers as compatibility
-  facades while the staged writers become the preferred path.
-- Added legacy scope translation with deprecation warnings, preserved old
-  archive/`_manifest.txt` loading, and kept manager JSON schemas stable.
-- Removed hard-coded absolute install discovery from the CSV compatibility
-  writer, centralized descriptor replacement-path policy, and routed the
-  legacy descriptor helper through the shared writer.
-- Made staged scaffold province limits profile-aware; `legacy_full` retains
-  its historical 25,000 floor while new scaffold exports use the actual
-  province count plus headroom.
-- Kept generated logistics and placement compatibility helpers labeled as
-  proposals rather than silently treating them as reviewed foundation data.
+**The workflow is now easier to understand for a new user and easier to
+diagnose when something needs attention.**
+
+- Completed the English-only interface cleanup and refreshed onboarding and
+  tool-panel screenshots from the current UI.
+- Updated the tutorial, map/building/troubleshooting wiki pages, export
+  contract, CLI help, and export-dialog guidance around profiles, validation,
+  acceptance, and handoff.
+- Added targeted tests, synthetic fixtures, metadata-only regression evidence,
+  and clearer dependency/pytest guidance without committing base-game
+  binaries.
+- Corrected the release build dependency to installable `PyQtDarkTheme2` and
+  published the Windows package with a separate SHA-256 checksum file.
 
 ### Migration notes
 
 - Existing project archives without `project_meta.json` still load as `draft`.
-- Existing asset sidecars using `_manifest.txt` remain readable.
-- Existing `scope` dictionary callers continue to work through `legacy_full`
-  and now receive a `DeprecationWarning`; migrate new callers to the profile
-  and planner APIs.
-- Existing manager JSON schemas are unchanged.
-- The full export byte baseline still has the documented M6 exception for the
-  newer terrain bytes and removed legacy airport/rocket-site inventory; it is
-  not silently refreshed by this release.
+- Existing `_manifest.txt` sidecars remain readable.
+- Existing callers that pass a `scope` dictionary continue to work through
+  `legacy_full` and now receive a `DeprecationWarning`; new callers should use
+  profiles and planner APIs.
+- Existing manager JSON schemas remain unchanged.
+- The executable in the 1.4.0 package is hash-verified but not Authenticode-
+  signed. Verify downloads with `SHA256SUMS.txt` from the GitHub release.
+- The full export byte baseline retains the documented M6 exception for the
+  newer terrain bytes and the removed legacy airport/rocket-site inventory;
+  it was not silently refreshed by this release.
 
 ## [1.3.4] - 2026-07-11
 
