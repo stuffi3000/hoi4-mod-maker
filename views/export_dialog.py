@@ -14,7 +14,7 @@ from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QProgressBar, QFileDialog, QGroupBox, QCheckBox,
     QTextEdit, QMessageBox, QWidget, QComboBox, QScrollArea,
-    QFrame, QGridLayout,
+    QFrame, QGridLayout, QSizePolicy,
 )
 
 from data.constants import DEFAULT_MOD_OUTPUT_PATH, DEFAULT_MOD_NAME
@@ -48,6 +48,39 @@ _SCOPE_TOOLTIP_KEYS = {
     "descriptor": "export_scope_descriptor_tooltip",
     "compact_ids": "export_scope_compact_ids_tooltip",
 }
+
+
+class _WrappedCheckOption(QWidget):
+    """A checkable scope option whose long explanation can wrap cleanly."""
+
+    def __init__(self, text: str, tooltip: str, checked: bool, parent=None) -> None:
+        super().__init__(parent)
+        self.checkbox = QCheckBox()
+        self.checkbox.setChecked(checked)
+        self.checkbox.setAccessibleName(text)
+        self.checkbox.setToolTip(tooltip)
+
+        label = QLabel(text)
+        label.setWordWrap(True)
+        label.setTextFormat(Qt.PlainText)
+        label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        label.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+        label.setToolTip(tooltip)
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(4)
+        layout.addWidget(self.checkbox, 0, Qt.AlignTop)
+        layout.addWidget(label, 1)
+        self.setToolTip(tooltip)
+        self.setCursor(Qt.PointingHandCursor)
+
+    def mousePressEvent(self, event) -> None:
+        if event.button() == Qt.LeftButton and self.isEnabled():
+            self.checkbox.setChecked(not self.checkbox.isChecked())
+            event.accept()
+            return
+        super().mousePressEvent(event)
 
 
 # ── Inspection item data ────────────────────────────────────
@@ -273,7 +306,7 @@ class ExportDialog(QDialog):
 
         self.setWindowTitle(tr("export_dlg_title"))
         self.setMinimumSize(520, 360)
-        self.resize(720, 620)
+        self.resize(880, 620)
         self.setSizeGripEnabled(True)
         self._check_timer = QTimer(self)
         self._check_timer.setSingleShot(True)
@@ -319,18 +352,30 @@ class ExportDialog(QDialog):
         self._check_group.setToolTip(tr("export_readiness_tooltip"))
         check_group_layout = QVBoxLayout(self._check_group)
         check_group_layout.setContentsMargins(6, 6, 6, 6)
+        self._readiness_notice = QLabel()
+        self._readiness_notice.setWordWrap(True)
+        self._readiness_notice.setStyleSheet(
+            "color: #f59e0b; font-weight: bold; padding: 2px 4px;"
+        )
+        self._readiness_notice.setVisible(False)
+        self._readiness_notice.setToolTip(tr("export_readiness_tooltip"))
+        check_group_layout.addWidget(self._readiness_notice)
         self._check_widget = QWidget()
         self._check_layout = QVBoxLayout(self._check_widget)
         self._check_layout.setContentsMargins(4, 4, 4, 4)
         self._check_layout.setSpacing(4)
+        self._warning_rows = []
         self._check_scroll = QScrollArea()
         self._check_scroll.setWidgetResizable(True)
         self._check_scroll.setFrameShape(QFrame.NoFrame)
         self._check_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self._check_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        self._check_scroll.setMinimumHeight(72)
+        self._check_scroll.setMinimumHeight(140)
         self._check_scroll.setMaximumHeight(220)
         self._check_scroll.setWidget(self._check_widget)
+        self._check_scroll.verticalScrollBar().rangeChanged.connect(
+            lambda _minimum, _maximum: self._update_warning_notice()
+        )
         check_group_layout.addWidget(self._check_scroll)
         content_layout.addWidget(self._check_group)
 
@@ -376,14 +421,18 @@ class ExportDialog(QDialog):
         scope_grid = QGridLayout()
         scope_grid.setHorizontalSpacing(18)
         scope_grid.setVerticalSpacing(2)
+        scope_grid.setColumnStretch(0, 1)
+        scope_grid.setColumnStretch(1, 1)
+        self._scope_options = {}
         for key, label, default in scope_items:
-            cb = QCheckBox(label)
-            cb.setChecked(default)
-            cb.setToolTip(tr(_SCOPE_TOOLTIP_KEYS[key]))
+            tooltip = tr(_SCOPE_TOOLTIP_KEYS[key])
+            option = _WrappedCheckOption(label, tooltip, default)
+            cb = option.checkbox
             cb.stateChanged.connect(lambda _state: self._schedule_check())
             self._scope_checks[key] = cb
+            self._scope_options[key] = option
             index = len(self._scope_checks) - 1
-            scope_grid.addWidget(cb, index // 2, index % 2)
+            scope_grid.addWidget(option, index // 2, index % 2)
         scope_layout.addLayout(scope_grid)
         content_layout.addWidget(scope_group)
 
@@ -523,9 +572,11 @@ class ExportDialog(QDialog):
         loading.setToolTip(tr("export_preflight_tooltip"))
         self._check_layout.addWidget(loading)
         self._items = []
+        self._warning_rows = []
         self._has_missing = False
         self._has_blocking = False
         self._plan = None
+        self._readiness_notice.setVisible(False)
         self._plan_label.setPlainText(tr("export_plan_loading"))
         self._plan_label.setToolTip(tr("export_plan_tooltip"))
         self._btn_auto.setEnabled(False)
@@ -543,9 +594,55 @@ class ExportDialog(QDialog):
         )
         return f"{item.name}\n\n{item.detail}\n\n{state} {suggestion}"
 
+    def _update_warning_notice(self) -> None:
+        """Keep a warning count and overflow cue outside the readiness scroll."""
+        warning_count = sum(
+            1 for item in self._items if item.status == "warning"
+        )
+        if warning_count == 0:
+            self._readiness_notice.clear()
+            self._readiness_notice.setVisible(False)
+            return
+
+        viewport_height = self._check_scroll.viewport().height()
+        if viewport_height <= 0:
+            self._readiness_notice.setText(
+                tr("export_readiness_warnings_scrolling").format(count=warning_count)
+            )
+            self._readiness_notice.setVisible(True)
+            return
+
+        visible_warnings = 0
+        used_height = 0
+        row_spacing = max(0, self._check_layout.spacing())
+        for row in self._warning_rows:
+            row_height = max(row.sizeHint().height(), row.minimumSizeHint().height())
+            next_height = used_height + (row_spacing if visible_warnings else 0) + row_height
+            if visible_warnings and next_height > viewport_height:
+                break
+            used_height = next_height
+            visible_warnings += 1
+
+        more = warning_count - visible_warnings
+        if more > 0:
+            text = tr("export_readiness_warnings_more").format(
+                count=warning_count, more=more
+            )
+        else:
+            text = tr("export_readiness_warnings_all").format(count=warning_count)
+        self._readiness_notice.setText(text)
+        self._readiness_notice.setVisible(True)
+
     def _render_readiness(self, items) -> None:
         self._clear_check_rows()
-        self._items = list(items or [])
+        # Keep warnings at the top while retaining the original order inside
+        # each status group, so important rows are visible before the fold.
+        status_order = {"warning": 0, "missing": 1, "ok": 2}
+        self._items = sorted(
+            list(items or []),
+            key=lambda item: status_order.get(item.status, 1),
+        )
+        self._warning_rows = []
         self._has_missing = False
         self._has_blocking = False
 
@@ -590,8 +687,12 @@ class ExportDialog(QDialog):
             container.setLayout(row)
             container.setToolTip(tooltip)
             self._check_layout.addWidget(container)
+            if item.status == "warning":
+                self._warning_rows.append(container)
 
         self._check_widget.adjustSize()
+        self._update_warning_notice()
+        QTimer.singleShot(0, self._update_warning_notice)
 
     def _start_preflight(self) -> None:
         """Start one coalesced readiness/plan request for current options."""
@@ -710,7 +811,11 @@ class ExportDialog(QDialog):
                 continue
             if foundation:
                 check.setChecked(False)
-            check.setEnabled(not foundation)
+            option = self._scope_options.get(key)
+            if option is not None:
+                option.setEnabled(not foundation)
+            else:
+                check.setEnabled(not foundation)
         self._schedule_check()
 
     def _refresh_plan_summary(self) -> None:

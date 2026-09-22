@@ -40,6 +40,16 @@ QTabWidget, QTabBar, QMenuBar, QMenu, QToolBar, QToolButton,
 QStatusBar, QHeaderView, QScrollBar, QToolTip {
     font-family: "Segoe UI", Arial, sans-serif;
 }
+
+/* qdarktheme's default tooltip palette is light; keep tooltips readable in
+   the application's dark theme. This block is appended after its stylesheet
+   so it wins over the theme's QToolTip colors. */
+QToolTip {
+    background-color: #1f2126;
+    color: #e8eaed;
+    border: 1px solid #4f8cff;
+    padding: 4px 8px;
+}
 """
 
     try:
