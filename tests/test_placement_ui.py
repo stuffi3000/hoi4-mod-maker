@@ -310,6 +310,22 @@ def test_transform_editor_constructs_disabled(qtbot):
     assert tr("placement_transform_reset_btn") in texts
 
 
+def test_victory_point_selection_is_explained_as_read_only(qtbot):
+    page = PlacementPage()
+    qtbot.addWidget(page)
+
+    page.set_victory_point_selection(42, 10, "Brussels")
+
+    assert page.selected_transform() is None
+    assert page._transform_label.text() == tr(
+        "placement_transform_vp_selected", 42, "10", ", name Brussels"
+    )
+    assert not page._transform_x_spin.isEnabled()
+    assert not page._transform_y_spin.isEnabled()
+    assert not page._transform_apply_btn.isEnabled()
+    assert not page._transform_reset_btn.isEnabled()
+
+
 def test_set_transform_selection_enables_and_preserves_fractional(qtbot):
     page = PlacementPage()
     qtbot.addWidget(page)

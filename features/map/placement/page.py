@@ -597,6 +597,31 @@ class PlacementPage(QWidget):
         self._transform_label.setText(tr("placement_transform_selected", kind, key))
         self._set_transform_enabled(True)
 
+    def set_victory_point_selection(self, province_id, value=None, name=""):
+        """Show a selected VP as read-only state data in the transform panel."""
+        try:
+            pid = int(province_id)
+        except (TypeError, ValueError):
+            pid = province_id
+        try:
+            value_text = str(int(value)) if value is not None else "?"
+        except (TypeError, ValueError):
+            value_text = str(value) if value is not None else "?"
+        name_text = ""
+        if isinstance(name, str) and name.strip():
+            name_text = ", name " + name.strip()
+        self._transform_kind = "vp"
+        self._transform_key = pid
+        self._transform_has_selection = False
+        self._transform_x_spin.setValue(0.0)
+        self._transform_y_spin.setValue(0.0)
+        self._transform_rotation_spin.setValue(0.0)
+        self._transform_height_spin.setValue(0.0)
+        self._transform_label.setText(
+            tr("placement_transform_vp_selected", pid, value_text, name_text)
+        )
+        self._set_transform_enabled(False)
+
     def clear_transform_selection(self):
         self._transform_kind = None
         self._transform_key = None

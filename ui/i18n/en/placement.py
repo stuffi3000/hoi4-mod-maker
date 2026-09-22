@@ -52,4 +52,5 @@ STRINGS: dict[str, str] = {
     "placement_transform_reset_requested": "Transform reset requested for {0} {1}.",
     "placement_transform_section": "Transform Editor",
     "placement_transform_selected": "Selected {0} {1}",
+    "placement_transform_vp_selected": "Victory point P{0} selected (value {1}{2}). Its map position follows the province centroid, so it cannot be moved with the Placement transform editor. Edit its value or name in the State/Victory Point tools.",
 }

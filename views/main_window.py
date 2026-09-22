@@ -837,6 +837,44 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
         except Exception:
             return {}
 
+    def _placement_vp_details(self, province_id) -> tuple[object, str]:
+        """Return the state-owned VP value and display name for a province."""
+        try:
+            pid = int(province_id)
+        except (TypeError, ValueError):
+            return (None, "")
+        try:
+            project = getattr(self, "_project", None)
+            state_mgr = getattr(project, "state_mgr", None)
+            if state_mgr is None:
+                return (None, "")
+            state = None
+            sid_fn = getattr(state_mgr, "get_state_of_province", None)
+            get_state = getattr(state_mgr, "get_state", None)
+            if callable(sid_fn) and callable(get_state):
+                state = get_state(sid_fn(pid))
+            if state is None:
+                states = getattr(state_mgr, "states", None)
+                if states is None:
+                    states = getattr(state_mgr, "_states", None)
+                for candidate in (states or {}).values():
+                    vp_map = getattr(candidate, "victory_points", None) or {}
+                    if pid in vp_map or str(pid) in vp_map:
+                        state = candidate
+                        break
+            if state is None:
+                return (None, "")
+            vp_map = getattr(state, "victory_points", None) or {}
+            value = vp_map.get(pid, vp_map.get(str(pid)))
+            localized = getattr(state, "vp_names", None) or {}
+            english = getattr(state, "vp_names_en", None) or {}
+            name = english.get(pid) or english.get(str(pid))
+            if not name:
+                name = localized.get(pid) or localized.get(str(pid))
+            return (value, name if isinstance(name, str) else "")
+        except Exception:
+            return (None, "")
+
     def _build_placement_overlay_findings(self, placement_entries, building_entries, weather_entries) -> list:
         """Build read-only collision diagnostics for the placement overlay."""
         if not placement_entries and not building_entries and not weather_entries:
@@ -1231,8 +1269,22 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
             return
         if kind == "vp":
             # Victory points are state data rather than placement records. Keep
-            # the map selection visible, but do not show an editable transform.
-            _clear_selection()
+            # the map selection visible and explain their read-only semantics
+            # in the transform panel instead of pretending they have x/y data.
+            setter = getattr(page, "set_victory_point_selection", None)
+            if setter is None:
+                _clear_selection()
+                return
+            try:
+                value, name = self._placement_vp_details(key)
+            except AttributeError:
+                value, name = MainWindow._placement_vp_details(self, key)
+            except Exception:
+                value, name = (None, "")
+            try:
+                setter(key, value, name)
+            except Exception:
+                _clear_selection()
             return
         project = getattr(self, "_project", None)
         manager = getattr(project, "map_placement_mgr", None)

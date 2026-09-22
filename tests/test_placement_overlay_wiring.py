@@ -76,6 +76,7 @@ class _FakePage:
         self.transform_selection = None
         self.set_transform_calls = []
         self.clear_transform_calls = 0
+        self.victory_point_selection = None
 
     def set_records(self, records):
         self.records = list(records)
@@ -95,6 +96,10 @@ class _FakePage:
 
     def clear_transform_selection(self):
         self.clear_transform_calls += 1
+        self.transform_selection = None
+
+    def set_victory_point_selection(self, province_id, value, name):
+        self.victory_point_selection = (province_id, value, name)
         self.transform_selection = None
 
 
@@ -774,6 +779,24 @@ def test_canvas_selection_supports_mapping_records():
     assert page.set_transform_calls == [("slot", (1, 0), 3.5, 4.5, 1.25, 2.5)]
     assert page.clear_transform_calls == 0
     assert page.status_calls == []
+
+
+def test_canvas_selection_explains_victory_points_without_transforming_them():
+    project = _make_project(
+        [], [], [], [],
+        vps={5: 10},
+        vp_names={5: "Bruxelles"},
+        vp_names_en={5: "Brussels"},
+    )
+    page = _FakePage()
+    canvas = _FakeCanvas()
+    fake_self = _make_self(project, page, canvas)
+
+    MainWindow._on_placement_selection_changed(fake_self, "vp", 5)
+
+    assert page.victory_point_selection == (5, 10, "Brussels")
+    assert page.clear_transform_calls == 0
+    assert page.set_transform_calls == []
 
 
 def test_canvas_selection_clears_on_empty_kind_and_none_key():
