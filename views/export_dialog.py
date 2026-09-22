@@ -50,6 +50,33 @@ _SCOPE_TOOLTIP_KEYS = {
 }
 
 
+# A preflight worker can outlive its dialog when the user closes during a
+# large plan build.  Keep detached workers alive until QThread.finished so
+# closing the modal dialog cannot destroy a running QThread.
+_DETACHED_PREFLIGHT_WORKERS: set[QThread] = set()
+
+
+def _detach_preflight_worker(worker: QThread) -> None:
+    """Let a running preflight finish safely after its dialog closes."""
+    _DETACHED_PREFLIGHT_WORKERS.add(worker)
+    for signal in (
+        worker.readiness_ready,
+        worker.completed,
+        worker.failed,
+        worker.finished,
+    ):
+        try:
+            signal.disconnect()
+        except TypeError:
+            pass
+    worker.setParent(None)
+    worker.finished.connect(worker.deleteLater)
+    worker.finished.connect(
+        lambda finished_worker=worker:
+            _DETACHED_PREFLIGHT_WORKERS.discard(finished_worker)
+    )
+
+
 class _WrappedCheckOption(QWidget):
     """A checkable scope option whose long explanation can wrap cleanly."""
 
@@ -779,6 +806,12 @@ class ExportDialog(QDialog):
         pending = self._preflight_pending and not self._closing
         self._preflight_worker = None
         worker.deleteLater()
+        if self._closing:
+            # Closing may have been requested while the worker was still
+            # building a plan.  Finish the modal close only after the thread
+            # has stopped, so the dialog never destroys a live QThread.
+            super().reject()
+            return
         if pending:
             self._preflight_pending = False
             self._start_preflight()
@@ -1076,15 +1109,36 @@ class ExportDialog(QDialog):
         QMessageBox.critical(self, tr("export_failed_title"), error_msg)
 
     def _stop_preflight(self) -> None:
+        """Request preflight cancellation without blocking the GUI thread.
+
+        The plan builder is cooperative but may be inside a large, non-
+        interruptible operation when the user closes this dialog.  Waiting
+        here blocks Qt's event loop for the remainder of that operation and
+        makes the application appear hung.  Detach the worker and close the
+        modal dialog immediately; the worker is retained until QThread.finish
+        arrives so its parent cannot destroy a live thread.
+        """
         self._closing = True
+        self._preflight_request += 1
+        self._preflight_pending = False
         self._check_timer.stop()
         worker = self._preflight_worker
-        if worker is not None and worker.isRunning():
+        if worker is None:
+            return
+        if worker.isRunning():
             worker.requestInterruption()
-            # A dialog must not destroy a QThread that still owns a running
-            # plan operation. This is only used while cancelling/closing.
-            worker.wait()
+            # QDialog.exec_() keeps the application modal until the dialog
+            # itself closes, so detaching is required to close immediately
+            # without destroying a running QThread.
+            _detach_preflight_worker(worker)
+            self._preflight_worker = None
+            return
+
+        # The thread has already stopped; clean it up before destroying the
+        # dialog.  The finished signal may still be queued, so clear our
+        # reference to make that callback harmless.
         self._preflight_worker = None
+        worker.deleteLater()
 
     def reject(self) -> None:
         self._stop_preflight()
