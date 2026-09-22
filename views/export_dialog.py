@@ -9,16 +9,45 @@ import os
 import traceback
 
 import numpy as np
-from PyQt5.QtCore import Qt, QThread, pyqtSignal
+from PyQt5.QtCore import Qt, QThread, QTimer, pyqtSignal
 from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QProgressBar, QFileDialog, QGroupBox, QCheckBox,
-    QTextEdit, QMessageBox, QWidget, QComboBox,
+    QTextEdit, QMessageBox, QWidget, QComboBox, QScrollArea,
+    QFrame, QGridLayout,
 )
 
 from data.constants import DEFAULT_MOD_OUTPUT_PATH, DEFAULT_MOD_NAME
 from services.readiness_service import check_project_readiness
 from ui.i18n import tr
+
+
+_READINESS_TOOLTIP_KEYS = {
+    "readiness.map_dimensions": "export_tip_readiness_map_dimensions",
+    "readiness.provinces": "export_tip_readiness_provinces",
+    "readiness.land": "export_tip_readiness_land",
+    "readiness.states": "export_tip_readiness_states",
+    "readiness.countries": "export_tip_readiness_countries",
+    "readiness.strategic_regions": "export_tip_readiness_strategic_regions",
+    "readiness.continents": "export_tip_readiness_continents",
+    "readiness.terrain": "export_tip_readiness_terrain",
+    "readiness.heightmap": "export_tip_readiness_heightmap",
+    "readiness.assets": "export_tip_readiness_assets",
+    "readiness.placements": "export_tip_readiness_placements",
+}
+
+_SCOPE_TOOLTIP_KEYS = {
+    "map": "export_scope_map_tooltip",
+    "states": "export_scope_states_tooltip",
+    "countries": "export_scope_countries_tooltip",
+    "strategic_regions": "export_scope_strategic_regions_tooltip",
+    "localisation": "export_scope_localisation_tooltip",
+    "supply": "export_scope_supply_tooltip",
+    "gfx": "export_scope_gfx_tooltip",
+    "replace_path": "export_scope_replace_path_tooltip",
+    "descriptor": "export_scope_descriptor_tooltip",
+    "compact_ids": "export_scope_compact_ids_tooltip",
+}
 
 
 # ── Inspection item data ────────────────────────────────────
@@ -174,6 +203,59 @@ class ExportWorker(QThread):
             self.failed.emit(f"{e}\n\n{traceback.format_exc()}")
 
 
+class PreflightWorker(QThread):
+    """Build the readiness list and export-plan preview off the GUI thread."""
+
+    readiness_ready = pyqtSignal(object)
+    completed = pyqtSignal(object, object, str)
+    failed = pyqtSignal(str)
+
+    def __init__(
+        self, project, canvas, profile_name: str, repair_policy: str,
+        scope: dict[str, bool], parent=None,
+    ) -> None:
+        super().__init__(parent)
+        self.project = project
+        self.canvas = canvas
+        self.profile_name = profile_name or "legacy_full"
+        self.repair_policy = repair_policy or "apply-safe"
+        self.scope = dict(scope or {})
+
+    def run(self) -> None:
+        try:
+            from services.export_planner import format_plan_summary, plan_export_from_project
+            from services.game_profile_service import load_profile_for_target
+
+            game_target = self.project.resolve_game_target()
+            profile = load_profile_for_target(game_target)
+            map_height, map_width = self.canvas.province_map.shape[:2]
+            dimensions = (int(map_width), int(map_height))
+            items = check_project_readiness(
+                self.project,
+                self.canvas,
+                profile=profile,
+                dimensions=dimensions,
+                profile_name=self.profile_name,
+            )
+            self.readiness_ready.emit(items)
+            if self.isInterruptionRequested():
+                return
+
+            plan = plan_export_from_project(
+                self.project,
+                self.canvas,
+                profile_name=self.profile_name,
+                game_target=game_target,
+                game_profile=profile,
+                repair_policy=self.repair_policy,
+                scope=self.scope,
+                dimensions=dimensions,
+            )
+            self.completed.emit(items, plan, format_plan_summary(plan))
+        except Exception as exc:
+            self.failed.emit(f"{exc}\n\n{traceback.format_exc()}")
+
+
 class ExportDialog(QDialog):
     """Export preflight dialog - Check → Autocomplete → Select Directory → Export."""
 
@@ -182,32 +264,82 @@ class ExportDialog(QDialog):
         self.project = project
         self.canvas = canvas
         self._worker: ExportWorker | None = None
+        self._preflight_worker: PreflightWorker | None = None
+        self._preflight_request = 0
+        self._preflight_pending = False
+        self._closing = False
+        self._items = []
+        self._plan = None
 
         self.setWindowTitle(tr("export_dlg_title"))
-        self.setMinimumWidth(560)
-        self.setMinimumHeight(420)
+        self.setMinimumSize(520, 360)
+        self.resize(720, 620)
+        self.setSizeGripEnabled(True)
+        self._check_timer = QTimer(self)
+        self._check_timer.setSingleShot(True)
+        self._check_timer.setInterval(180)
+        self._check_timer.timeout.connect(self._run_check)
         self._build_ui()
-        self._run_check()
+        # Let Qt paint the compact shell before checking large maps or cloning
+        # managers for the plan preview.
+        QTimer.singleShot(0, self._run_check)
 
     # ── UI construction ──
 
     def _build_ui(self) -> None:
-        layout = QVBoxLayout(self)
-        layout.setSpacing(10)
+        root = QVBoxLayout(self)
+        root.setContentsMargins(10, 10, 10, 10)
+        root.setSpacing(8)
+
+        # Keep the action bar visible while the content itself can be shorter
+        # than the form on small screens or at high display scaling.
+        self._content_scroll = QScrollArea()
+        self._content_scroll.setWidgetResizable(True)
+        self._content_scroll.setFrameShape(QFrame.NoFrame)
+        self._content_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._content_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self._content_scroll.setStyleSheet(
+            "QScrollArea { background: transparent; border: none; }"
+        )
+        content = QWidget()
+        content_layout = QVBoxLayout(content)
+        content_layout.setContentsMargins(2, 2, 8, 2)
+        content_layout.setSpacing(8)
+        self._content_scroll.setWidget(content)
+        root.addWidget(self._content_scroll, 1)
 
         # Title
         title = QLabel(tr("export_pre_check_title"))
         title.setStyleSheet("font-size: 16px; font-weight: bold;")
-        layout.addWidget(title)
+        title.setToolTip(tr("export_pre_check_tooltip"))
+        content_layout.addWidget(title)
 
         # Check results area
         self._check_group = QGroupBox(tr("export_project_readiness"))
-        self._check_layout = QVBoxLayout(self._check_group)
-        layout.addWidget(self._check_group)
+        self._check_group.setToolTip(tr("export_readiness_tooltip"))
+        check_group_layout = QVBoxLayout(self._check_group)
+        check_group_layout.setContentsMargins(6, 6, 6, 6)
+        self._check_widget = QWidget()
+        self._check_layout = QVBoxLayout(self._check_widget)
+        self._check_layout.setContentsMargins(4, 4, 4, 4)
+        self._check_layout.setSpacing(4)
+        self._check_scroll = QScrollArea()
+        self._check_scroll.setWidgetResizable(True)
+        self._check_scroll.setFrameShape(QFrame.NoFrame)
+        self._check_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._check_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self._check_scroll.setMinimumHeight(72)
+        self._check_scroll.setMaximumHeight(220)
+        self._check_scroll.setWidget(self._check_widget)
+        check_group_layout.addWidget(self._check_scroll)
+        content_layout.addWidget(self._check_group)
 
         # Export range selection
         scope_group = QGroupBox(tr("export_scope"))
+        scope_group.setToolTip(tr("export_scope_tooltip"))
         scope_layout = QVBoxLayout(scope_group)
+        scope_layout.setContentsMargins(8, 8, 8, 8)
+        scope_layout.setSpacing(6)
 
         # Default button row: Select All / Map Only / Clear
         preset_row = QHBoxLayout()
@@ -220,6 +352,7 @@ class ExportDialog(QDialog):
             btn.setStyleSheet(
                 "QPushButton { padding: 4px 12px; border-radius: 3px; }"
             )
+            btn.setToolTip(tr(f"export_scope_preset_{preset_key}_tooltip"))
             btn.clicked.connect(
                 lambda _checked=False, p=preset_key: self._apply_scope_preset(p)
             )
@@ -240,72 +373,98 @@ class ExportDialog(QDialog):
             ("descriptor", tr("export_scope_descriptor"), True),
             ("compact_ids", tr("export_scope_compact_ids"), True),
         ]
+        scope_grid = QGridLayout()
+        scope_grid.setHorizontalSpacing(18)
+        scope_grid.setVerticalSpacing(2)
         for key, label, default in scope_items:
             cb = QCheckBox(label)
             cb.setChecked(default)
-            scope_layout.addWidget(cb)
+            cb.setToolTip(tr(_SCOPE_TOOLTIP_KEYS[key]))
+            cb.stateChanged.connect(lambda _state: self._schedule_check())
             self._scope_checks[key] = cb
-        layout.addWidget(scope_group)
+            index = len(self._scope_checks) - 1
+            scope_grid.addWidget(cb, index // 2, index % 2)
+        scope_layout.addLayout(scope_grid)
+        content_layout.addWidget(scope_group)
 
         # Export profile selection (M2.5/M2.6: planner profile plus repair policy)
-        profile_group = QGroupBox("Export profile")
-        profile_layout = QHBoxLayout(profile_group)
+        profile_group = QGroupBox(tr("export_profile_group"))
+        profile_group.setToolTip(tr("export_profile_tooltip"))
+        profile_layout = QGridLayout(profile_group)
+        profile_layout.setHorizontalSpacing(8)
+        profile_layout.setVerticalSpacing(6)
         self._profile_combo = QComboBox()
         self._profile_combo.addItems(["legacy_full", "foundation", "acceptance", "scaffold"])
         self._profile_combo.setCurrentText("legacy_full")
         self._profile_combo.currentTextChanged.connect(self._on_profile_changed)
-        profile_layout.addWidget(QLabel("Profile:"))
-        profile_layout.addWidget(self._profile_combo)
+        self._profile_combo.setToolTip(tr("export_profile_combo_tooltip"))
+        profile_layout.addWidget(QLabel(tr("export_profile_label")), 0, 0)
+        profile_layout.addWidget(self._profile_combo, 0, 1)
         self._repair_combo = QComboBox()
         self._repair_combo.addItems(["apply-safe", "propose", "off"])
         self._repair_combo.setCurrentText("apply-safe")
-        self._repair_combo.currentTextChanged.connect(lambda _text: self._run_check())
-        profile_layout.addWidget(QLabel("Repair:"))
-        profile_layout.addWidget(self._repair_combo)
-        self._overwrite_check = QCheckBox("Overwrite existing output")
+        self._repair_combo.setToolTip(tr("export_repair_tooltip"))
+        self._repair_combo.currentTextChanged.connect(lambda _text: self._schedule_check())
+        profile_layout.addWidget(QLabel(tr("export_repair_label")), 0, 2)
+        profile_layout.addWidget(self._repair_combo, 0, 3)
+        self._overwrite_check = QCheckBox(tr("export_overwrite"))
         self._overwrite_check.setChecked(False)
-        profile_layout.addWidget(self._overwrite_check)
-        self._backup_check = QCheckBox("Backup existing output")
+        self._overwrite_check.setToolTip(tr("export_overwrite_tooltip"))
+        profile_layout.addWidget(self._overwrite_check, 1, 0, 1, 2)
+        self._backup_check = QCheckBox(tr("export_backup"))
         self._backup_check.setChecked(False)
-        profile_layout.addWidget(self._backup_check)
-        profile_layout.addStretch()
-        layout.addWidget(profile_group)
+        self._backup_check.setToolTip(tr("export_backup_tooltip"))
+        profile_layout.addWidget(self._backup_check, 1, 2, 1, 2)
+        profile_layout.setColumnStretch(1, 1)
+        profile_layout.setColumnStretch(3, 1)
+        content_layout.addWidget(profile_group)
 
         profile_help = QLabel(
-            "Profiles separate map foundation data from disposable gameplay content. "
-            "Use foundation for a candidate or frozen map package; use acceptance "
-            "for engine testing; use scaffold for optional generated scenario data. "
-            "The legacy_full profile keeps the pre-staged export path available "
-            "during migration."
+            tr("export_profile_help_short")
         )
         profile_help.setWordWrap(True)
         profile_help.setStyleSheet("color: #9aa0ab; font-size: 12px; padding: 2px 4px;")
-        layout.addWidget(profile_help)
+        profile_help.setToolTip(tr("export_profile_help"))
+        content_layout.addWidget(profile_help)
 
-        self._plan_label = QLabel("")
-        self._plan_label.setWordWrap(True)
-        layout.addWidget(self._plan_label)
+        plan_group = QGroupBox(tr("export_plan"))
+        plan_group.setToolTip(tr("export_plan_tooltip"))
+        plan_layout = QVBoxLayout(plan_group)
+        plan_layout.setContentsMargins(6, 6, 6, 6)
+        self._plan_label = QTextEdit()
+        self._plan_label.setReadOnly(True)
+        self._plan_label.setMinimumHeight(48)
+        self._plan_label.setMaximumHeight(125)
+        self._plan_label.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self._plan_label.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._plan_label.setPlaceholderText(tr("export_plan_loading"))
+        self._plan_label.setToolTip(tr("export_plan_tooltip"))
+        plan_layout.addWidget(self._plan_label)
+        content_layout.addWidget(plan_group)
 
 
         # Log area (initially hidden)
         self._log_box = QGroupBox(tr("export_log"))
+        self._log_box.setToolTip(tr("export_log_tooltip"))
         log_layout = QVBoxLayout(self._log_box)
         self._log_text = QTextEdit()
         self._log_text.setReadOnly(True)
         self._log_text.setMaximumHeight(150)
+        self._log_text.setToolTip(tr("export_log_tooltip"))
         log_layout.addWidget(self._log_text)
         self._log_box.setVisible(False)
-        layout.addWidget(self._log_box)
+        content_layout.addWidget(self._log_box)
 
         # Progress bar (initially hidden)
         self._progress_bar = QProgressBar()
         self._progress_bar.setRange(0, 0)  # indeterminate
         self._progress_bar.setVisible(False)
-        layout.addWidget(self._progress_bar)
+        content_layout.addWidget(self._progress_bar)
 
         self._progress_label = QLabel("")
         self._progress_label.setVisible(False)
-        layout.addWidget(self._progress_label)
+        self._progress_label.setWordWrap(True)
+        content_layout.addWidget(self._progress_label)
 
         # button row
         btn_layout = QHBoxLayout()
@@ -320,6 +479,7 @@ class ExportDialog(QDialog):
         )
         self._btn_auto.clicked.connect(self._on_auto_export)
         btn_layout.addWidget(self._btn_auto)
+        self._btn_auto.setToolTip(tr("export_auto_tooltip"))
 
         self._btn_export_direct = QPushButton(tr("export_btn_direct"))
         self._btn_export_direct.setStyleSheet(
@@ -330,6 +490,7 @@ class ExportDialog(QDialog):
         )
         self._btn_export_direct.clicked.connect(self._on_direct_export)
         btn_layout.addWidget(self._btn_export_direct)
+        self._btn_export_direct.setToolTip(tr("export_direct_tooltip"))
 
         self._btn_cancel = QPushButton(tr("btn_cancel"))
         self._btn_cancel.setStyleSheet(
@@ -338,45 +499,60 @@ class ExportDialog(QDialog):
         self._btn_cancel.clicked.connect(self.reject)
         btn_layout.addWidget(self._btn_cancel)
 
-        layout.addLayout(btn_layout)
+        self._btn_cancel.setToolTip(tr("export_cancel_tooltip"))
+        root.addLayout(btn_layout)
 
     # ── Check ──
 
-    def _run_check(self) -> None:
-        """Performs the check and displays the results."""
-        # Clear old results
+    def _schedule_check(self) -> None:
+        """Debounce option changes so presets do not start many plans at once."""
+        self._check_timer.start()
+
+    def _clear_check_rows(self) -> None:
         while self._check_layout.count():
             child = self._check_layout.takeAt(0)
-            if child.widget():
-                child.widget().deleteLater()
-        self._btn_auto.setEnabled(True)
-        self._btn_export_direct.setEnabled(True)
+            widget = child.widget()
+            if widget is not None:
+                widget.deleteLater()
 
-        try:
-            from services.game_profile_service import load_profile_for_target
+    def _set_preflight_loading(self) -> None:
+        self._clear_check_rows()
+        loading = QLabel(tr("export_preflight_loading"))
+        loading.setWordWrap(True)
+        loading.setStyleSheet("color: #9aa0ab; padding: 8px;")
+        loading.setToolTip(tr("export_preflight_tooltip"))
+        self._check_layout.addWidget(loading)
+        self._items = []
+        self._has_missing = False
+        self._has_blocking = False
+        self._plan = None
+        self._plan_label.setPlainText(tr("export_plan_loading"))
+        self._plan_label.setToolTip(tr("export_plan_tooltip"))
+        self._btn_auto.setEnabled(False)
+        self._btn_export_direct.setEnabled(False)
 
-            game_target = self.project.resolve_game_target()
-            profile = load_profile_for_target(game_target)
-        except Exception:
-            profile = None
-        try:
-            _export_profile_name = str(self._profile_combo.currentText())
-        except Exception:
-            _export_profile_name = None
-        map_height, map_width = self.canvas.province_map.shape[:2]
-        self._items = check_project_readiness(
-            self.project,
-            self.canvas,
-            profile=profile,
-            dimensions=(int(map_width), int(map_height)),
-            profile_name=_export_profile_name,
+    def _readiness_tooltip(self, item) -> str:
+        suggestion_key = _READINESS_TOOLTIP_KEYS.get(
+            str(getattr(item, "code", "") or "")
         )
+        suggestion = tr(suggestion_key) if suggestion_key else tr(
+            "export_tip_readiness_default"
+        )
+        state = tr("export_tip_readiness_ok") if item.status == "ok" else tr(
+            "export_tip_readiness_action"
+        )
+        return f"{item.name}\n\n{item.detail}\n\n{state} {suggestion}"
 
-        has_missing = False
-        has_blocking = False
+    def _render_readiness(self, items) -> None:
+        self._clear_check_rows()
+        self._items = list(items or [])
+        self._has_missing = False
+        self._has_blocking = False
 
         for item in self._items:
             row = QHBoxLayout()
+            row.setSpacing(6)
+            tooltip = self._readiness_tooltip(item)
 
             # status icon
             if item.status == "ok":
@@ -388,13 +564,16 @@ class ExportDialog(QDialog):
             else:
                 icon = "✗"
                 color = "#ef4444"
-                has_missing = True
+                self._has_missing = True
                 if not item.can_auto:
-                    has_blocking = True
+                    self._has_blocking = True
 
             icon_label = QLabel(icon)
-            icon_label.setStyleSheet(f"color: {color}; font-size: 16px; font-weight: bold;")
+            icon_label.setStyleSheet(
+                f"color: {color}; font-size: 16px; font-weight: bold;"
+            )
             icon_label.setFixedWidth(24)
+            icon_label.setToolTip(tooltip)
             row.addWidget(icon_label)
 
             # name + details
@@ -404,22 +583,104 @@ class ExportDialog(QDialog):
             info = QLabel(text)
             info.setWordWrap(True)
             info.setTextFormat(Qt.RichText)
+            info.setToolTip(tooltip)
             row.addWidget(info, 1)
 
             container = QWidget()
             container.setLayout(row)
+            container.setToolTip(tooltip)
             self._check_layout.addWidget(container)
 
-        # There are blocking errors that cannot be automatically repaired → Disable export
-        if has_blocking:
-            self._btn_auto.setEnabled(False)
-            self._btn_export_direct.setEnabled(False)
+        self._check_widget.adjustSize()
 
-        # No missing items → Hide "AutoComplete" button
-        if not has_missing:
-            self._btn_auto.setText(tr("export_btn_export"))
-            self._btn_export_direct.setVisible(False)
-        self._refresh_plan_summary()
+    def _start_preflight(self) -> None:
+        """Start one coalesced readiness/plan request for current options."""
+        self._preflight_request += 1
+        request_id = self._preflight_request
+        current = self._preflight_worker
+        if current is not None and current.isRunning():
+            self._preflight_pending = True
+            current.requestInterruption()
+            self._set_preflight_loading()
+            return
+
+        self._preflight_pending = False
+        self._set_preflight_loading()
+        scope = {key: cb.isChecked() for key, cb in self._scope_checks.items()}
+        worker = PreflightWorker(
+            self.project,
+            self.canvas,
+            profile_name=str(self._profile_combo.currentText()),
+            repair_policy=str(self._repair_combo.currentText()),
+            scope=scope,
+            parent=self,
+        )
+        self._preflight_worker = worker
+        worker.readiness_ready.connect(
+            lambda items, rid=request_id: self._on_preflight_readiness(rid, items)
+        )
+        worker.completed.connect(
+            lambda items, plan, summary, rid=request_id:
+                self._on_preflight_completed(rid, items, plan, summary)
+        )
+        worker.failed.connect(
+            lambda message, rid=request_id: self._on_preflight_failed(rid, message)
+        )
+        worker.finished.connect(lambda w=worker: self._on_preflight_thread_finished(w))
+        worker.start()
+
+    def _run_check(self) -> None:
+        """Queue readiness and plan work without blocking the dialog shell."""
+        self._start_preflight()
+
+    def _on_preflight_readiness(self, request_id: int, items) -> None:
+        if request_id != self._preflight_request or self._closing:
+            return
+        self._render_readiness(items)
+
+    def _on_preflight_completed(self, request_id: int, items, plan, summary: str) -> None:
+        if request_id != self._preflight_request or self._closing:
+            return
+        if not self._items:
+            self._render_readiness(items)
+        self._plan = plan
+        self._plan_label.setPlainText(summary)
+        self._plan_label.setToolTip(
+            tr("export_plan_tooltip")
+            + ("\n\n" + "\n".join(str(blocker) for blocker in plan.blockers)
+               if getattr(plan, "blockers", None) else "")
+        )
+
+        blocked = self._has_blocking or bool(getattr(plan, "blocked", False))
+        self._btn_auto.setText(
+            tr("export_btn_auto") if self._has_missing else tr("export_btn_export")
+        )
+        self._btn_export_direct.setVisible(self._has_missing)
+        self._btn_auto.setEnabled(not blocked)
+        self._btn_export_direct.setEnabled(not blocked and self._has_missing)
+
+    def _on_preflight_failed(self, request_id: int, error_msg: str) -> None:
+        if request_id != self._preflight_request or self._closing:
+            return
+        self._clear_check_rows()
+        error = QLabel(tr("export_preflight_failed").format(error=error_msg))
+        error.setWordWrap(True)
+        error.setStyleSheet("color: #ef4444; padding: 8px;")
+        error.setToolTip(error_msg)
+        self._check_layout.addWidget(error)
+        self._plan_label.setPlainText(tr("export_plan_unavailable"))
+        self._btn_auto.setEnabled(False)
+        self._btn_export_direct.setEnabled(False)
+
+    def _on_preflight_thread_finished(self, worker: PreflightWorker) -> None:
+        if self._preflight_worker is not worker:
+            return
+        pending = self._preflight_pending and not self._closing
+        self._preflight_worker = None
+        worker.deleteLater()
+        if pending:
+            self._preflight_pending = False
+            self._start_preflight()
 
     # ── Default ──
 
@@ -450,30 +711,11 @@ class ExportDialog(QDialog):
             if foundation:
                 check.setChecked(False)
             check.setEnabled(not foundation)
-        self._run_check()
+        self._schedule_check()
 
     def _refresh_plan_summary(self) -> None:
-        try:
-            from services.export_planner import format_plan_summary, plan_export_from_project
-            from services.game_profile_service import load_profile_for_target
-            game_target = self.project.resolve_game_target()
-            profile = load_profile_for_target(game_target)
-            map_height, map_width = self.canvas.province_map.shape[:2]
-            scope = {k: cb.isChecked() for k, cb in self._scope_checks.items()}
-            plan = plan_export_from_project(
-                self.project, self.canvas,
-                profile_name=str(self._profile_combo.currentText()),
-                game_target=game_target, game_profile=profile,
-                repair_policy=str(self._repair_combo.currentText()),
-                scope=scope, dimensions=(int(map_width), int(map_height)))
-            self._plan_label.setText(format_plan_summary(plan).replace("\n", " | "))
-            if plan.blocked:
-                self._btn_auto.setEnabled(False)
-                self._btn_export_direct.setEnabled(False)
-        except Exception as exc:
-            self._plan_label.setText("Export plan unavailable: %s" % exc)
-            self._btn_auto.setEnabled(False)
-            self._btn_export_direct.setEnabled(False)
+        """Compatibility hook for callers that request a refreshed preview."""
+        self._schedule_check()
 
 
     # ── Export action ──
@@ -615,10 +857,27 @@ class ExportDialog(QDialog):
             tr("export_result_title_errors") if verify_errors
             else tr("export_result_title_ok")
         )
-        dlg.setMinimumWidth(560)
-        dlg.setMinimumHeight(400)
+        dlg.setMinimumSize(560, 380)
+        dlg.resize(760, 620)
 
-        layout = QVBoxLayout(dlg)
+        root = QVBoxLayout(dlg)
+        root.setContentsMargins(10, 10, 10, 10)
+        root.setSpacing(8)
+
+        result_scroll = QScrollArea()
+        result_scroll.setWidgetResizable(True)
+        result_scroll.setFrameShape(QFrame.NoFrame)
+        result_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        result_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        result_scroll.setStyleSheet(
+            "QScrollArea { background: transparent; border: none; }"
+        )
+        result_content = QWidget()
+        layout = QVBoxLayout(result_content)
+        layout.setContentsMargins(2, 2, 8, 2)
+        layout.setSpacing(8)
+        result_scroll.setWidget(result_content)
+        root.addWidget(result_scroll, 1)
 
         # title tag
         if verify_errors:
@@ -637,6 +896,9 @@ class ExportDialog(QDialog):
         text_edit = QTextEdit()
         text_edit.setReadOnly(True)
         text_edit.setPlainText("\n".join(lines))
+        text_edit.setMinimumHeight(170)
+        text_edit.setMaximumHeight(300)
+        text_edit.setToolTip(tr("export_result_report_tooltip"))
         layout.addWidget(text_edit)
 
         # Foundation-freeze workflow (M8): reachable from foundation exports only.
@@ -694,7 +956,7 @@ class ExportDialog(QDialog):
         btn_layout = QHBoxLayout()
         btn_layout.addStretch()
         btn_layout.addWidget(btn_close)
-        layout.addLayout(btn_layout)
+        root.addLayout(btn_layout)
 
         dlg.exec_()
         self.accept()
@@ -707,3 +969,22 @@ class ExportDialog(QDialog):
         self._btn_cancel.setEnabled(True)
 
         QMessageBox.critical(self, tr("export_failed_title"), error_msg)
+
+    def _stop_preflight(self) -> None:
+        self._closing = True
+        self._check_timer.stop()
+        worker = self._preflight_worker
+        if worker is not None and worker.isRunning():
+            worker.requestInterruption()
+            # A dialog must not destroy a QThread that still owns a running
+            # plan operation. This is only used while cancelling/closing.
+            worker.wait()
+        self._preflight_worker = None
+
+    def reject(self) -> None:
+        self._stop_preflight()
+        super().reject()
+
+    def closeEvent(self, event) -> None:
+        self._stop_preflight()
+        event.accept()
