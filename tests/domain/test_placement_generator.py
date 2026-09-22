@@ -110,3 +110,18 @@ def test_sea_unknown_and_insufficient_space_are_explicit():
         (3, "non_land"),
         (99, "unknown_province"),
     ]
+
+
+def test_lake_dominant_mixed_province_is_not_buildable():
+    province = np.full((3, 4), 7, dtype=np.int32)
+    tile = np.full(province.shape, TILE_LAKE, dtype=np.uint8)
+    tile[0, 0] = TILE_LAND
+
+    result = generate_placement_proposals(
+        province, tile, province_ids=[7], slot_count=6,
+    )
+
+    assert result.slots == []
+    assert [(item.province_id, item.code) for item in result.diagnostics] == [
+        (7, "non_land"),
+    ]

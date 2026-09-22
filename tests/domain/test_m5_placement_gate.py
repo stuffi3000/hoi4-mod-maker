@@ -6,7 +6,7 @@ import copy
 import numpy as np
 import pytest
 
-from data.constants import TILE_LAND, TILE_SEA
+from data.constants import TILE_LAKE, TILE_LAND, TILE_SEA
 from domain.managers.map_placement import MapPlacementManager
 from domain.validators.placement import (
     validate_manager_placement_completeness,
@@ -50,6 +50,30 @@ def test_complete_reviewed_and_accepted_land_slots_pass_and_sea_is_optional():
     manager = MapPlacementManager()
     _complete(manager, 1, "reviewed")
     _complete(manager, 2, "accepted")
+
+    assert validate_manager_placement_completeness(
+        province, tile, manager, lifecycle="frozen"
+    ) == []
+
+
+def test_lake_dominant_mixed_province_does_not_require_position_slots():
+    province = np.array(
+        [
+            [1, 1, 2, 2],
+            [1, 1, 2, 2],
+            [1, 1, 2, 2],
+        ],
+        dtype=np.int32,
+    )
+    tile = np.full(province.shape, TILE_LAKE, dtype=np.uint8)
+    tile[:, :2] = TILE_LAND
+    tile[0, 2] = TILE_LAND
+
+    manager = MapPlacementManager()
+    _complete(manager, 1)
+    manager.set_province_slot(
+        2, 0, 2.5, 0.5, provenance="generated", review_status="reviewed"
+    )
 
     assert validate_manager_placement_completeness(
         province, tile, manager, lifecycle="frozen"

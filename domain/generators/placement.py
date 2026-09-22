@@ -38,8 +38,9 @@ Determinism:
     province id then slot.
 
 Absence handling:
-    Sea, lake, and non land provinces are skipped, they receive no land
-    proposals. Provinces with fewer usable pixels than requested slots
+    Sea, lake, mixed, and other non-land-majority provinces are skipped;
+    they receive no land proposals. Provinces with fewer usable pixels than
+    requested slots
     receive fewer unique records, never duplicated centroids. Every
     absence is reported explicitly with a PlacementDiagnostic. This module
     never emits silently repeated centroids and never emits authored,
@@ -103,8 +104,9 @@ class PlacementDiagnostic:
     Attributes:
         province_id: Province the diagnostic refers to.
         code: One of non_land, unknown_province, or insufficient_space.
-            non_land means the province has no land pixels and sea, lake,
-            and non land provinces are skipped for land proposals.
+            non_land means the province is not a land-majority province;
+            sea, lake, mixed, and other non-land provinces are skipped for
+            land proposals.
             unknown_province means the requested id is absent from the
             province map. insufficient_space means fewer unique separated
             slots were available than requested.
@@ -239,6 +241,34 @@ def _coerce_province_list(
     return collected
 
 
+def _land_majority_ids(
+    province_arr: np.ndarray,
+    tile_arr: np.ndarray,
+    present_ids: set[int],
+) -> set[int]:
+    """Return provinces whose raster surface is strictly land-majority."""
+    max_pid = max(present_ids, default=0)
+    try:
+        flat_provinces = province_arr.ravel()
+        total_counts = np.bincount(flat_provinces, minlength=max_pid + 1)
+        land_counts = np.bincount(
+            flat_provinces,
+            weights=(tile_arr.ravel() == int(TILE_LAND)).astype(np.int64),
+            minlength=max_pid + 1,
+        )
+    except (TypeError, ValueError, OverflowError):
+        # The public generator contract uses integer province IDs. If a
+        # malformed raster cannot be counted, no province is safe to treat as
+        # buildable based on a stray land pixel.
+        return set()
+    return {
+        int(pid)
+        for pid in present_ids
+        if int(pid) < len(total_counts)
+        and int(land_counts[int(pid)]) * 2 > int(total_counts[int(pid)])
+    }
+
+
 def _tiebreak_keys(
     seed_u32: int,
     province_id: int,
@@ -346,8 +376,8 @@ def generate_placement_proposals(
         and diagnostics sorted by province id, code, and message. Every
         slot uses provenance generated with review status unreviewed,
         rotation 0.0, fractional pixel-center coordinates, and finite
-        floats. Provinces without land pixels produce no slots and one
-        non_land diagnostic. Unknown requested ids produce one
+        floats. Provinces that are not land-majority provinces produce no
+        slots and one non_land diagnostic. Unknown requested ids produce one
         unknown_province diagnostic. Provinces with fewer unique separated
         pixels than requested produce the available unique slots plus one
         insufficient_space diagnostic. No coordinates are ever duplicated
@@ -380,6 +410,13 @@ def generate_placement_proposals(
         if pid_int > 0:
             present_ids.add(pid_int)
     ordered_pids = _coerce_province_list(province_ids, present_ids)
+
+    # A province can contain a small number of border or rasterization pixels
+    # with a different surface type. One stray land pixel must not make a
+    # lake buildable.
+    land_majority_ids = _land_majority_ids(
+        province_arr, tile_arr, present_ids
+    )
 
     safe_height: np.ndarray | None = None
     slope_field: np.ndarray | None = None
@@ -432,6 +469,19 @@ def generate_placement_proposals(
                     message=(
                         f"province {int(province_id)} is absent from "
                         "province_map, no proposals generated"
+                    ),
+                )
+            )
+            continue
+        if province_id not in land_majority_ids:
+            result_diagnostics.append(
+                PlacementDiagnostic(
+                    province_id=int(province_id),
+                    code="non_land",
+                    message=(
+                        f"province {int(province_id)} is not a land-majority "
+                        "province; sea, lake, mixed, and non land provinces "
+                        "are skipped"
                     ),
                 )
             )
@@ -711,8 +761,8 @@ def generate_port_proposals(
         mapping entries produce missing_mapping. Non positive integer
         mapping values produce invalid_mapping. Absent land ids produce
         unknown_province. Absent sea ids produce unknown_sea. Land
-        provinces without land pixels produce non_land. Sea provinces
-        without sea surface tiles produce non_sea. Land provinces with
+        non-land-majority provinces produce non_land. Sea provinces without
+        sea surface tiles produce non_sea. Land provinces with
         no exact adjacency produce no_adjacency, and no fallback sea is
         ever chosen. Diagnostics carry the requesting land province id
         and name both ids in the message.
@@ -743,6 +793,9 @@ def generate_port_proposals(
         pid_int = int(raw_pid)
         if pid_int > 0:
             present_ids.add(pid_int)
+    land_majority_ids = _land_majority_ids(
+        province_arr, tile_arr, present_ids
+    )
 
     mapping_snapshot = dict(sea_mapping)
     clean_mapping: dict[int, object] = {}
@@ -826,6 +879,19 @@ def generate_port_proposals(
                     message=(
                         f"province {int(province_id)} has no intended sea "
                         "province in sea_mapping, no port proposal generated"
+                    ),
+                )
+            )
+            continue
+        if province_id not in land_majority_ids:
+            result_diagnostics.append(
+                PlacementDiagnostic(
+                    province_id=int(province_id),
+                    code="non_land",
+                    message=(
+                        f"province {int(province_id)} is not a land-majority "
+                        "province; sea, lake, mixed, and non land provinces "
+                        "are skipped"
                     ),
                 )
             )

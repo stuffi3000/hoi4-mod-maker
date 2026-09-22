@@ -1590,11 +1590,11 @@ def validate_manager_placement_completeness(
     """Validate manager records that a foundation writer would consume.
 
     This is deliberately narrower than :func:`validate_placement_references`:
-    it checks only whether land provinces have all six explicitly reviewed
-    position slots and whether existing manager records are reviewed. It does
-    not duplicate coordinate, surface, state, region, or port-adjacency
-    validation. A missing manager disables this compatibility check, matching
-    legacy callers that have no authored placement model yet.
+    it checks only whether land-majority provinces have all six explicitly
+    reviewed position slots and whether existing manager records are
+    reviewed. It does not duplicate coordinate, surface, state, region, or
+    port-adjacency validation. A missing manager disables this compatibility
+    check, matching legacy callers that have no authored placement model yet.
 
     Draft-like lifecycles report warnings so an editor can continue to work;
     ``frozen`` and ``accepted`` report blockers. The manager and raster inputs
@@ -1640,14 +1640,18 @@ def validate_manager_placement_completeness(
             "province and tile maps must be matching two-dimensional arrays"
         )
     else:
-        try:
-            land_values = province_arr[tile_arr == int(TILE_LAND)].ravel()
-            for raw_pid in land_values.tolist():
-                pid = _as_int(raw_pid)
-                if pid is not None and pid > 0:
-                    land_ids.add(int(pid))
-        except (TypeError, ValueError, IndexError):
+        surfaces = _surface_table(tile_arr, province_arr)
+        if surfaces is None:
             completeness_details.append("land province set could not be read")
+        else:
+            # A few rasterization pixels may disagree with the province's
+            # dominant surface. Only land-majority provinces can host the
+            # six positions.txt slots; a lake with a stray land pixel must
+            # not create a placement requirement.
+            land_ids = {
+                int(pid) for pid, surface in surfaces.items()
+                if surface == "land"
+            }
 
     slot_records = _safe_manager_records(manager, "list_province_slots")
     slots_by_province: dict[int, dict[int, list[Any]]] = {}
