@@ -12,7 +12,7 @@ from domain.managers.state import StateManager, StateData
 from domain.managers.country import CountryManager
 from domain.managers.continent import ContinentManager
 from domain.managers.strategic_region import StrategicRegionManager
-from data.constants import TILE_LAND, TILE_SEA
+from data.constants import TILE_LAND, TILE_SEA, TILE_LAKE
 
 
 def _map_source(h=8, w=16):
@@ -92,6 +92,19 @@ def test_id_gap_reported_as_warning():
     proj = _project(with_state=False, with_country=False)
     items = check_project_readiness(proj, src)
     assert items[0].status == "warning"
+
+
+def test_land_lake_split_is_reported_as_auto_fixable_surface_warning():
+    src = _map_source()
+    src.tile_map[4, :4] = TILE_LAKE
+    items = check_project_readiness(_project(), src)
+
+    surface = [item for item in items if item.code == "readiness.province_surfaces"]
+    assert len(surface) == 1
+    assert surface[0].status == "warning"
+    assert surface[0].can_auto is True
+    assert surface[0].count == 1
+    assert "2" in surface[0].detail
 
 
 def test_accepts_mapdata_as_source():

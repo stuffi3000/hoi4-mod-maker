@@ -4,7 +4,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from data.constants import TILE_LAND, TILE_SEA
+from data.constants import TILE_LAND, TILE_SEA, TILE_LAKE
 from domain.validation import FINDING_SEVERITIES
 from domain.validators.raster import (
     CODES,
@@ -167,6 +167,23 @@ def test_surface_mixed_and_threshold():
         mixed_threshold=0.6,
     )
     assert "raster.surface_mixed" not in _codes(suppressed)
+
+
+def test_land_lake_split_is_a_non_waivable_export_error():
+    tile = np.full((4, 4), TILE_LAKE, dtype=np.uint8)
+    tile[:2, :2] = TILE_LAND
+    prov = np.ones((4, 4), dtype=np.int32)
+
+    findings = validate_raster_definition(
+        tile, prov, wrap_horizontal=False, max_bbox_ratio=_RATIO_RELAXED,
+        mixed_threshold=1.0,
+    )
+    split = [f for f in findings if f.code == "raster.land_lake_split"]
+    assert len(split) == 1
+    assert split[0].severity == "error"
+    assert split[0].affected_ids == (1,)
+    assert split[0].repair_code == "province.land_lake_sync"
+    assert split[0].waivable is False
 
 
 def test_surface_unknown_when_undefined_dominates():

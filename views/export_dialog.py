@@ -34,6 +34,7 @@ _READINESS_TOOLTIP_KEYS = {
     "readiness.heightmap": "export_tip_readiness_heightmap",
     "readiness.assets": "export_tip_readiness_assets",
     "readiness.placements": "export_tip_readiness_placements",
+    "readiness.province_surfaces": "export_tip_readiness_surface",
 }
 
 _SCOPE_TOOLTIP_KEYS = {
@@ -125,6 +126,18 @@ def auto_complete_project(project, canvas) -> list[str]:
     province_count = int(pm.max())
     if province_count == 0:
         return [tr("export_auto_no_provinces")]
+
+    # A province is one engine surface. Normalize accidental land/lake
+    # splits before generating state and region data from the tile raster.
+    from domain.province_surface import normalize_land_lake_splits
+    normalized = normalize_land_lake_splits(tm, pm)
+    if normalized:
+        log.append(
+            tr("export_auto_normalize_land_lake").format(
+                count=len(normalized),
+                pixels=sum(item.changed_pixels for item in normalized),
+            )
+        )
 
     # 1. Automatically generate State
     state_mgr = project.state_mgr

@@ -10,7 +10,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from data.constants import TILE_LAND, TILE_SEA
+from data.constants import TILE_LAND, TILE_SEA, TILE_LAKE
 from domain.managers.continent import ContinentManager
 from domain.managers.country import CountryManager
 from domain.managers.state import StateManager, StateData
@@ -285,6 +285,24 @@ def test_pre_export_populates_report_without_mutation():
     early = pre_export_check_and_fix(empty_tm, empty_pm, None, StateManager(), CountryManager())
     assert early.warnings == ["No province data"]
     assert [item.code for item in early.validation_report.findings] == ["preflight.provinces"]
+
+
+def test_pre_export_normalizes_land_lake_split_before_terrain_sync():
+    tile = np.full((6, 6), TILE_LAKE, dtype=np.uint8)
+    province = np.ones((6, 6), dtype=np.int32)
+    province[:, 3:] = 2
+    tile[0, 0] = TILE_LAKE
+    tile[1, 1] = TILE_LAND
+    terrain = np.full((6, 6), 14, dtype=np.uint8)
+
+    state_mgr = StateManager()
+    country_mgr = CountryManager()
+    report = pre_export_check_and_fix(
+        tile, province, terrain, state_mgr, country_mgr
+    )
+
+    assert np.all(tile[province == 1] == TILE_LAKE)
+    assert any("land/lake-split" in item for item in report.fixed)
 
 
 def test_export_report_compat_and_preserved_through_export_mod(monkeypatch):

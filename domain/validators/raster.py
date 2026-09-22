@@ -16,6 +16,7 @@ Stable finding codes (all use layer ``provinces``):
 - ``raster.id_gap``: positive IDs are not contiguous ``1..max``.
 - ``raster.surface_unknown``: a province whose dominant tile surface is
   not land/sea/lake (undefined or illegal tile values dominate).
+- ``raster.land_lake_split``: a province contains both land and lake pixels.
 - ``raster.surface_mixed``: a province whose pixels mix surfaces.
 - ``raster.connectivity``: a province ID with several 4-connected parts.
 - ``raster.x_crossing``: a 2x2 block (or horizontal seam block when
@@ -72,6 +73,7 @@ CODES = (
     "raster.definition_orphan",
     "raster.id_gap",
     "raster.surface_unknown",
+    "raster.land_lake_split",
     "raster.surface_mixed",
     "raster.connectivity",
     "raster.x_crossing",
@@ -527,6 +529,8 @@ def validate_raster_definition(
         unknown_ids: list[int] = []
         mixed_ids: list[int] = []
         mixed_details: list[str] = []
+        land_lake_ids: list[int] = []
+        land_lake_details: list[str] = []
         unknown_details: list[str] = []
         for pid in sorted(table):
             land_n, sea_n, lake_n, unknown_n, total = table[pid]
@@ -538,6 +542,12 @@ def validate_raster_definition(
                     "pid=%d land=%d sea=%d lake=%d unknown=%d" % (int(pid), land_n, sea_n, lake_n, unknown_n)
                 )
                 continue
+            if land_n > 0 and lake_n > 0:
+                land_lake_ids.append(int(pid))
+                land_lake_details.append(
+                    "pid=%d land=%d lake=%d sea=%d total=%d"
+                    % (int(pid), land_n, lake_n, sea_n, total)
+                )
             _name, dominant_n = _dominant_surface(land_n, sea_n, lake_n)
             minority = int(total) - int(dominant_n)
             if minority < 0:
@@ -559,6 +569,19 @@ def validate_raster_definition(
                     affected_ids=tuple(unknown_ids),
                     coordinates=tuple(coords[pid] for pid in unknown_ids if pid in coords),
                     evidence="; ".join(unknown_details[:6]) + ("; ..." if len(unknown_details) > 6 else ""),
+                )
+            )
+        if land_lake_ids:
+            findings.append(
+                ValidationFinding(
+                    code="raster.land_lake_split",
+                    severity="error",
+                    message="%d provinces contain both land and lake pixels" % len(land_lake_ids),
+                    layer=LAYER,
+                    affected_ids=tuple(land_lake_ids),
+                    coordinates=tuple(coords[pid] for pid in land_lake_ids if pid in coords),
+                    evidence="; ".join(land_lake_details[:6]) + ("; ..." if len(land_lake_details) > 6 else ""),
+                    repair_code="province.land_lake_sync",
                 )
             )
         if mixed_ids:

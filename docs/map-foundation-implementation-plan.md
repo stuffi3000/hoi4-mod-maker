@@ -359,7 +359,7 @@ Refactor `pre_export_check_and_fix()`, `fill_default_state_data()`, ID compactio
 
 Every `RepairAction` should include:
 
-- stable code such as `province.mixed_type.majority_normalization`;
+- stable codes such as `province.land_lake_sync` for strict lake/land normalization;
 - safety class: `safe`, `semantic`, or `breaking`;
 - affected province/state/reference IDs;
 - pixel or record counts;
@@ -503,6 +503,7 @@ Project validation and artifact validation have different inputs but should shar
 - ID continuity policy and maximum ID/profile guidance;
 - forbidden/duplicate colors;
 - land/sea/lake majority and mixed-type reporting;
+- strict detection and safe normalization of provinces containing both land and lake pixels;
 - coastal classification and map-edge wrap behavior;
 - 4-connectivity, X-crossings, minimum area, bounding boxes, and oversized provinces;
 - exact old/new ID mapping after a proposed repair.
@@ -1373,10 +1374,10 @@ The manifest should be machine-readable and stable. A shortened conceptual examp
   },
   "repairs": [
     {
-      "code": "province.mixed_type.majority_normalization",
-      "safety": "semantic",
+      "code": "province.land_lake_sync",
+      "safety": "safe",
       "province_ids": [9706],
-      "changed_pixels": 14,
+      "changed_pixels": 12,
       "approved": true
     }
   ],
@@ -1447,7 +1448,7 @@ This project is the first release candidate and should exercise the complete wor
 
 - [x] Store and confirm the HOI4 1.19.x target profile in project metadata.
 - [x] Export from an immutable snapshot and prove no live manager/array mutation.
-- [x] Review province `9706`; the 14-pixel classification synchronization is recorded and applied as the sole safe repair.
+- [x] Correct province `9706` to lake-only; the 12-pixel synchronization is recorded and applied as the sole safe repair.
 - [x] Generate and inspect the old-to-new ID report; the 1–12,521 range is frozen after the approved repair.
 - [x] Mark special adjacencies as `none_intended` with a geographic review, or author required entries/rules.
 - [ ] Review all 327 railway components.

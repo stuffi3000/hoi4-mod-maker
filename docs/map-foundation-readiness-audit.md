@@ -75,7 +75,7 @@ For the current 5,632 × 2,048 target, the core raster is structurally strong:
 
 The province IDs are compact and the generated province-color mapping is reversible. That is a substantially better position than an export that merely produces files with plausible names. The current project also has a clear land/sea/lake classification and no detected raster geometry defects in the tested image.
 
-One important caveat is that the exporter does not simply serialize the project. It performs repairs and normalization in the export path, including tiny-province merging, large-province repair, majority classification, and tile synchronization. In this project, province `9706` contains both 14 land pixels and 1,402 lake pixels. The exporter classifies it as a lake and rewrites the 14 corresponding tile pixels in the export copy. The resulting exported raster is clean, but this is a hidden semantic change unless the user is shown a before/after mutation report. IDs and geometry should be frozen only after those transformations are intentional and recorded.
+One important caveat is that the exporter does not simply serialize the project. It performs repairs and normalization in the export path, including tiny-province merging, large-province repair, majority classification, and tile synchronization. The pre-correction Belgium project had one mixed province: `9706` contained 12 land pixels and 1,404 lake pixels. It has now been corrected in the project itself to lake-only, and the checker/auto-correction paths explicitly reject or normalize any future land/lake split. An audit of all 261 lake provinces now reports zero remaining lake/land splits.
 
 ### Structural map file coverage
 
@@ -428,7 +428,7 @@ The current Belgium artifact should be considered **“structurally promising, n
 
 1. Select and record HOI4 1.19.3.0 as the target profile.
 2. Decide whether the 12,521 IDs and current 290-state/48-region partition are final.
-3. Review and accept or correct the mixed province `9706` normalization.
+3. Keep the corrected lake-only province `9706` under regression coverage; the current audit finds no lake/land splits.
 4. Explicitly record whether zero special adjacencies is intended for this geography.
 5. Resolve the 327 railway components and 48 supply nodes absent from the railway graph.
 6. Replace repeated centroid positions and placeholder building/state data with either reviewed foundation geometry or a clearly separated test scaffold.

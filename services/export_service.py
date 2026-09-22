@@ -47,6 +47,27 @@ def validate_before_export(canvas, state_mgr, country_mgr, profile=None, game_ta
     if int(pm.max()) == 0:
         warnings.append("No province data; generate provinces first")
         return warnings
+    tile_source = getattr(canvas, "tile_map", None)
+    if tile_source is None:
+        tile_source = getattr(getattr(canvas, "map_data", None), "tile_map", None)
+    if tile_source is None:
+        land_lake_splits = ()
+    else:
+        try:
+            from domain.province_surface import find_land_lake_splits
+
+            land_lake_splits = find_land_lake_splits(tile_source, pm)
+        except (ImportError, TypeError, ValueError):
+            land_lake_splits = ()
+    if land_lake_splits:
+        warnings.append(
+            "%d provinces contain both land and lake pixels and will be normalized to one surface during export: %s"
+            % (
+                len(land_lake_splits),
+                ", ".join(str(item.province_id) for item in land_lake_splits[:12])
+                + (", ..." if len(land_lake_splits) > 12 else ""),
+            )
+        )
     if dimensions is not None or profile is not None or game_target is not None:
         try:
             _w, _h = (int(dimensions[0]), int(dimensions[1])) if dimensions is not None else (int(pm.shape[1]), int(pm.shape[0]))
@@ -120,6 +141,26 @@ def validate_before_export_report(canvas, state_mgr, country_mgr, profile=None, 
 
 # ────────────────── Export pre-check steps (scheduled by pre_export_check_and_fix)──────────────────
 # One function per step: does one thing and writes the result to the passed warnings / fixed list.
+
+
+def _precheck_normalize_land_lake(province_map, tile_map, fixed) -> None:
+    """Make each province either land, sea, or lake before export."""
+    from domain.province_surface import normalize_land_lake_splits
+
+    normalized = normalize_land_lake_splits(tile_map, province_map)
+    if not normalized:
+        return
+    changed = sum(item.changed_pixels for item in normalized)
+    details = ", ".join(
+        "%d→%s" % (item.province_id, item.target_surface)
+        for item in normalized[:12]
+    )
+    if len(normalized) > 12:
+        details += ", ..."
+    fixed.append(
+        "Normalized %d land/lake-split province(s) to one surface (%d tile pixels): %s"
+        % (len(normalized), changed, details)
+    )
 
 
 def _precheck_sync_terrain_tile(terrain_map, tile_map, fixed) -> None:
@@ -437,7 +478,10 @@ def pre_export_check_and_fix(
             warnings.extend(
                 active_profile.validate_dimensions(requested_width, requested_height)
             )
-    # ── 1. Synchronize terrain_map and tile_map ──
+    # ── 1. Normalize province surface classes before terrain synchronization ──
+    _precheck_normalize_land_lake(province_map, tile_map, fixed)
+
+    # ── 2. Synchronize terrain_map and tile_map ──
     if terrain_map is not None:
         _precheck_sync_terrain_tile(terrain_map, tile_map, fixed)
 

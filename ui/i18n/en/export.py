@@ -6,6 +6,7 @@ STRINGS: dict[str, str] = {
     "export_auto_create_country": "Auto-created default country AAA",
     "export_auto_gen_sr": "Auto-generated {count} strategic regions",
     "export_auto_gen_states": "Auto-generated {count} states (~15 provinces each)",
+    "export_auto_normalize_land_lake": "Normalized {count} land/lake-split province(s) to one surface ({pixels} tile pixels)",
     "export_auto_no_provinces": "Error: no province data, cannot auto-complete",
     "export_auto_set_capital": "Country {tag} auto-set capital to province {pid}",
     "export_btn_auto": "Auto-Complete & Export",
@@ -46,10 +47,13 @@ STRINGS: dict[str, str] = {
     "export_check_state": "State",
     "export_check_state_ok": "{count} states total",
     "export_check_state_orphans": "{count} states, but {orphans} land provinces unassigned (will be auto-adopted on export)",
+    "export_check_surface": "Province surfaces",
+    "export_check_land_lake_split": "{count} province(s) contain both land and lake pixels ({provinces}); auto-correction will make each one surface-only",
     "export_check_strategic_region": "Strategic Region",
     "export_check_strategic_region_ok": "{count} strategic regions total",
     "export_check_terrain": "Terrain",
     "export_check_terrain_ok": "Terrain data is set",
+    "export_tip_readiness_surface": "Use Auto-Complete or normalize the affected province tile pixels so each province is one surface class.",
     "export_choose_dir": "Choose Export Directory",
     "export_confirm_skip": """The following data is missing: {names}
 

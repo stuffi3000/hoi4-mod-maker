@@ -349,6 +349,7 @@ def resolve_lifecycle_for_plan(lifecycle=None, project_meta=None) -> str:
     return candidate
 
 APPLICATION_ORDER = (
+    "province.land_lake_sync",
     "terrain.tile_sync",
     "state.empty_cleanup",
     "province.tiny_merge",
@@ -538,16 +539,20 @@ def analyze_province_compact_ids(snapshot) -> list:
 
 def analyze_province_tile_sync(snapshot) -> list:
     from data.constants import TILE_LAND, TILE_SEA, TILE_LAKE
+    from domain.province_surface import find_land_lake_splits
     province_map = np.asarray(snapshot.province_map)
     tile_map = np.asarray(snapshot.tile_map)
     land_ids, sea_ids, lake_ids = classify_provinces(
         province_map, tile_map, overrides=snapshot.province_type_overrides)
     land_set, sea_set, lake_set = set(land_ids), set(sea_ids), set(lake_ids)
+    land_lake_split_ids = {
+        item.province_id for item in find_land_lake_splits(tile_map, province_map)
+    }
     flat_pm, flat_tm = province_map.ravel(), tile_map.ravel()
     disagree = 0
     for pid in np.unique(flat_pm):
         pid = int(pid)
-        if pid <= 0:
+        if pid <= 0 or pid in land_lake_split_ids:
             continue
         mask = flat_pm == pid
         tiles = flat_tm[mask]
@@ -568,6 +573,40 @@ def analyze_province_tile_sync(snapshot) -> list:
         before="%d tile pixels disagree with their province majority type" % disagree,
         after="every tile pixel matches its province land/sea/lake class",
         rerun_validations=("raster.definition", "placement.coordinates"),
+        layer="provinces",
+    )]
+
+
+def analyze_province_land_lake_sync(snapshot) -> list:
+    """Propose the safe repair that makes every land/lake split one surface."""
+    from domain.province_surface import find_land_lake_splits
+
+    splits = find_land_lake_splits(snapshot.tile_map, snapshot.province_map)
+    if not splits:
+        return []
+    changed_pixels = sum(
+        item.land + item.sea + item.lake
+        - (item.land if item.dominant_surface == "land" else 0)
+        - (item.sea if item.dominant_surface == "sea" else 0)
+        - (item.lake if item.dominant_surface == "lake" else 0)
+        for item in splits
+    )
+    targets = ", ".join(
+        "%d→%s" % (item.province_id, item.dominant_surface)
+        for item in splits[:10]
+    )
+    if len(splits) > 10:
+        targets += ", ..."
+    return [RepairAction(
+        code="province.land_lake_sync",
+        safety="safe",
+        summary="Normalize %d province(s) that mix land and lake pixels" % len(splits),
+        affected_ids=tuple(sorted(item.province_id for item in splits)),
+        pixel_count=int(changed_pixels),
+        record_count=len(splits),
+        before="land/lake split provinces: %s" % targets,
+        after="every affected province uses its dominant land/sea/lake surface",
+        rerun_validations=("raster.definition", "terrain.registry", "placement.coordinates"),
         layer="provinces",
     )]
 
@@ -791,6 +830,33 @@ def collect_findings(
         findings.append(ValidationNote("province.empty", "blocker",
                                        "No province data; generate provinces first", layer="provinces"))
         return findings
+    try:
+        from domain.province_surface import find_land_lake_splits
+
+        land_lake_splits = find_land_lake_splits(
+            snapshot.tile_map, snapshot.province_map
+        )
+    except (ImportError, TypeError, ValueError):
+        land_lake_splits = ()
+    if land_lake_splits:
+        details = ", ".join(
+            "%d (%d land/%d lake → %s)" % (
+                item.province_id,
+                item.land,
+                item.lake,
+                item.dominant_surface,
+            )
+            for item in land_lake_splits[:8]
+        )
+        if len(land_lake_splits) > 8:
+            details += ", ..."
+        findings.append(ValidationNote(
+            "province.land_lake_split",
+            "warning",
+            "%d province(s) contain both land and lake pixels: %s; apply the safe land/lake normalization repair"
+            % (len(land_lake_splits), details),
+            layer="provinces",
+        ))
     state_mgr = snapshot.state_mgr
     country_mgr = snapshot.country_mgr
     if state_mgr is None or not getattr(state_mgr, "states", None):
@@ -1324,6 +1390,20 @@ def _apply_terrain_tile_sync(snapshot, action) -> None:
     _edit_snapshot_array(snapshot, "terrain_map", _run)
 
 
+def _apply_province_land_lake_sync(snapshot, action) -> None:
+    from domain.province_surface import normalize_land_lake_splits
+
+    def _run(tile):
+        normalize_land_lake_splits(
+            tile,
+            np.asarray(snapshot.province_map),
+            province_ids=action.affected_ids,
+            overrides=snapshot.province_type_overrides,
+        )
+
+    _edit_snapshot_array(snapshot, "tile_map", _run)
+
+
 def _apply_state_empty_cleanup(snapshot, action) -> None:
     from services.export_service import _precheck_clean_empty_states
     if snapshot.state_mgr is None:
@@ -1476,6 +1556,7 @@ def _apply_region_split(snapshot, action) -> None:
 
 
 _APPLY_HANDLERS = {
+    "province.land_lake_sync": _apply_province_land_lake_sync,
     "terrain.tile_sync": _apply_terrain_tile_sync,
     "state.empty_cleanup": _apply_state_empty_cleanup,
     "province.tiny_merge": _apply_province_tiny_merge,
@@ -1570,6 +1651,7 @@ def plan_export(tile_map, province_map, terrain_map=None, height_map=None, river
         game_target=target,
     )
     repairs: list = []
+    repairs.extend(analyze_province_land_lake_sync(snapshot))
     repairs.extend(analyze_terrain_tile_sync(snapshot))
     repairs.extend(analyze_state_empty_cleanup(snapshot))
     repairs.extend(analyze_province_tiny_merge(snapshot))

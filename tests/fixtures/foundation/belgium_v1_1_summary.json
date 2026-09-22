@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "fixture_kind": "metadata_only",
-  "captured_at": "2026-09-17",
+  "captured_at": "2026-09-22",
   "source": {
     "project": "projects/Belgium_Map_v1_1.hoi4proj",
     "output_inventory": "tests/fixtures/export_baseline.json"
@@ -18,9 +18,9 @@
     },
     "pixels": {
       "surface_type_counts": {
-        "land": 10007842,
+        "land": 10007828,
         "sea": 1482021,
-        "lake": 44473
+        "lake": 44487
       },
       "river_non_background": 1577118
     },
@@ -31,7 +31,7 @@
         "sea": 160,
         "lake": 261
       },
-      "mixed_type_count": 1
+      "mixed_type_count": 0
     },
     "coverage": {
       "states": 290,
@@ -44,8 +44,8 @@
     "graphs": {
       "special_adjacencies": 0,
       "adjacency_rules": 0,
-      "railway_entries": 3510,
-      "supply_nodes": 421
+      "railway_entries": 4518,
+      "supply_nodes": 2543
     }
   },
   "output_inventory": {

@@ -8,7 +8,7 @@ import numpy as np
 from pathlib import Path
 import pytest
 
-from data.constants import TILE_LAND, TILE_SEA
+from data.constants import TILE_LAND, TILE_SEA, TILE_LAKE
 from data.terrain_types import TERRAIN_PALETTE_INDEX
 from domain.export_contract import (
     EXPORT_PROFILES,
@@ -134,6 +134,32 @@ def test_plan_does_not_mutate_live_project(m2_tmp):
     assert _live_fingerprint(tile, prov, terrain, managers) == before
     for live, saved in zip((tile, prov, terrain), before_arrays):
         assert np.array_equal(live, saved)
+
+
+def test_plan_normalizes_land_lake_splits_on_export_snapshot():
+    tile = np.full((32, 32), TILE_LAKE, dtype=np.uint8)
+    prov = np.ones((32, 32), dtype=np.int32)
+    tile[0, 0] = TILE_LAND
+    terrain = np.full(tile.shape, TERRAIN_PALETTE_INDEX["lakes"], dtype=np.uint8)
+    states, countries, continents = _fixture_managers()
+
+    plan = plan_export(
+        tile,
+        prov,
+        terrain,
+        state_mgr=states,
+        country_mgr=countries,
+        continent_mgr=continents,
+        profile_name="foundation",
+        repair_policy="apply-safe",
+    )
+
+    repairs = [r for r in plan.applied_repairs if r.code == "province.land_lake_sync"]
+    assert len(repairs) == 1
+    assert repairs[0].affected_ids == (1,)
+    assert np.all(plan.snapshot.tile_map == TILE_LAKE)
+    assert tile[0, 0] == TILE_LAND
+    assert any(f.code == "province.land_lake_split" for f in plan.findings)
 
 
 def test_snapshot_arrays_are_read_only():

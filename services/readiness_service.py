@@ -183,6 +183,29 @@ def check_project_readiness(project, map_source, profile=None, dimensions: tuple
             tr("export_check_province_ok").format(count=province_count),
             False, province_count, code="readiness.provinces"))
 
+    # A province must resolve to one surface class.  Lake/land splits are
+    # safe to normalize, so the export auto-correct path can repair them.
+    try:
+        from domain.province_surface import find_land_lake_splits
+
+        land_lake_splits = find_land_lake_splits(tm, pm)
+    except (ImportError, TypeError, ValueError):
+        land_lake_splits = ()
+    if land_lake_splits:
+        ids = ", ".join(str(item.province_id) for item in land_lake_splits[:12])
+        if len(land_lake_splits) > 12:
+            ids += ", ..."
+        items.append(CheckItem(
+            tr("export_check_surface"),
+            "warning",
+            tr("export_check_land_lake_split").format(
+                count=len(land_lake_splits), provinces=ids
+            ),
+            True,
+            len(land_lake_splits),
+            code="readiness.province_surfaces",
+        ))
+
     # 2. State
     state_mgr = project.state_mgr
     state_count = len(state_mgr.states) if state_mgr.states else 0
