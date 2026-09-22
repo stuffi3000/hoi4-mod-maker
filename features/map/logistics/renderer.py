@@ -174,7 +174,23 @@ def build_logistics_component_colors(
 
 
 def render(canvas) -> None:
-    """Logistics Mode: Railroad grade coloring."""
+    """Render the logistics backdrop.
+
+    Railway and supply markers are drawn by ``refresh_logistics_overlay`` as a
+    separate transparent layer.  This renderer therefore only selects the
+    requested base map and keeps the existing dark logistics diagnostics as
+    the default.
+    """
+    background = getattr(canvas, "_logistics_background", "dark")
+    if background == "terrain":
+        from features.map.land import renderer as land_renderer
+        land_renderer.render(canvas)
+        return
+    if background == "countries":
+        from features.map.country import renderer as country_renderer
+        country_renderer.render(canvas)
+        return
+
     color_rgb = getattr(canvas, "_logistics_component_rgb", None)
     if color_rgb is None:
         color_rgb = getattr(canvas, "_railway_color_rgb", None)
@@ -191,6 +207,16 @@ def render(canvas) -> None:
 
 def partial_render(canvas, x0: int, y0: int, x1: int, y1: int) -> None:
     buf = canvas._display_buffer[y0:y1, x0:x1]
+    background = getattr(canvas, "_logistics_background", "dark")
+    if background == "terrain":
+        from features.map.land import renderer as land_renderer
+        land_renderer.partial_render(canvas, x0, y0, x1, y1)
+        return
+    if background == "countries":
+        from features.map.country import renderer as country_renderer
+        country_renderer.partial_render(canvas, x0, y0, x1, y1)
+        return
+
     color_rgb = getattr(canvas, "_logistics_component_rgb", None)
     if color_rgb is None:
         color_rgb = getattr(canvas, "_railway_color_rgb", None)

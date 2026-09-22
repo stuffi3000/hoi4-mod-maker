@@ -1770,6 +1770,12 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
         # loading needlessly scans the full raster.
         self._canvas._supply_mgr = self._project.supply_mgr
         self._canvas._railway_mgr = self._project.railway_mgr
+        if (
+            self._canvas.display_mode == "logistics"
+            and getattr(self._canvas, "_logistics_background", "dark") == "countries"
+            and getattr(self._canvas, "_country_color_rgb", None) is None
+        ):
+            self._app._refresh_country_colors()
         if rebuild_overlay is None:
             rebuild_overlay = self._canvas.display_mode == "logistics"
         if not rebuild_overlay:

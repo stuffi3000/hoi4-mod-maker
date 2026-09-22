@@ -147,12 +147,18 @@ class ApplicationController:
                 # Clear country highlighting when entering a non-country
                 # region view, while still refreshing its base colors.
                 self._canvas.set_highlight_country(None)
+        elif mode == "logistics":
+            if getattr(self._canvas, "_logistics_background", "dark") == "countries":
+                self._refresh_country_colors()
+            if self._canvas._highlight_country_rgb is not None:
+                # Logistics country backgrounds are deliberately unlabelled
+                # and should not retain the country-selection highlight.
+                self._canvas.set_highlight_country(None)
+            self._refresh_railway_colors()
+            self._canvas.refresh_logistics_overlay()
         elif self._canvas._highlight_country_rgb is not None:
             # Clear country highlighting when leaving state / country mode
             self._canvas.set_highlight_country(None)
-        elif mode == "logistics":
-            self._refresh_railway_colors()
-            self._canvas.refresh_logistics_overlay()
         elif mode == "province_terrain":
             self._refresh_provincial_terrain_colors()
         elif mode == "continent":
@@ -431,6 +437,11 @@ class ApplicationController:
             self.invalidate_province_cache()
             self._refresh_state_list()
             self._refresh_state_colors()
+            if (
+                self._canvas.display_mode == "logistics"
+                and getattr(self._canvas, "_logistics_background", "dark") == "countries"
+            ):
+                self._refresh_country_colors()
         elif action == "modified":
             sid = event.data.get("state_id", 0)
             state = self._project.state_mgr.get_state(sid)
@@ -443,6 +454,11 @@ class ApplicationController:
                 self._refresh_state_colors()
                 # The province count [id] name (N) in the list item must also be refreshed, otherwise the allocation will not be updated when clicking on it.
                 self._refresh_state_list()
+                if (
+                    self._canvas.display_mode == "logistics"
+                    and getattr(self._canvas, "_logistics_background", "dark") == "countries"
+                ):
+                    self._refresh_country_colors()
         elif action == "selected":
             sid = event.data.get("state_id", 0)
             state = self._project.state_mgr.get_state(sid)
@@ -521,6 +537,8 @@ class ApplicationController:
         elif mode == "strategic_region":
             self._refresh_sr_colors()
         elif mode == "logistics":
+            if getattr(self._canvas, "_logistics_background", "dark") == "countries":
+                self._refresh_country_colors()
             self._refresh_railway_colors()
             self._canvas.refresh_logistics_overlay()
 
@@ -635,6 +653,8 @@ class ApplicationController:
         """Refresh canvas after undo/redo + rebuild colormap by mode + notify all list refreshes."""
         mode = self._canvas.display_mode
         if mode == "logistics":
+            if getattr(self._canvas, "_logistics_background", "dark") == "countries":
+                self._refresh_country_colors()
             self._refresh_railway_colors()
             self._canvas.refresh_logistics_overlay()
         elif mode == "state":

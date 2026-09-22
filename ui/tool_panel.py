@@ -363,6 +363,7 @@ class ToolPanel(QWidget):
     generate_logistics_requested = pyqtSignal()
     logistics_railway_level_changed = pyqtSignal(int)
     logistics_supply_pick_toggled = pyqtSignal(bool, bool)
+    logistics_background_changed = pyqtSignal(str)
 
     # continental division signal
     continent_pick_toggled = pyqtSignal(bool)
@@ -732,6 +733,7 @@ class ToolPanel(QWidget):
         p.generate_logistics_requested.connect(self.generate_logistics_requested)
         p.logistics_railway_level_changed.connect(self.logistics_railway_level_changed)
         p.logistics_supply_pick_toggled.connect(self.logistics_supply_pick_toggled)
+        p.logistics_background_changed.connect(self.logistics_background_changed)
 
     def _connect_colormap_signals(self) -> None:
         p = self._colormap_page

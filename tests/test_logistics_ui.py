@@ -44,6 +44,36 @@ def test_logistics_generation_button_emits_request(qtbot):
         button.click()
 
 
+def test_logistics_help_and_background_selector(qtbot):
+    from PyQt5.QtWidgets import QLabel
+
+    page = LogisticsPage()
+    qtbot.addWidget(page)
+
+    labels = "\n".join(label.text() for label in page.findChildren(QLabel))
+    assert "left-click" in labels
+    assert "yellow-gold" in labels
+    assert "Generate Logistics" in labels
+
+    assert page._background_combo.count() == 3
+    assert page._background_combo.itemData(0) == "dark"
+    assert page._background_combo.itemData(1) == "terrain"
+    assert page._background_combo.itemData(2) == "countries"
+
+
+def test_logistics_background_selector_emits_value(qtbot):
+    page = LogisticsPage()
+    qtbot.addWidget(page)
+    received = []
+    page.logistics_background_changed.connect(received.append)
+
+    page._background_combo.setCurrentIndex(1)
+    assert received == ["terrain"]
+
+    page._background_combo.setCurrentIndex(2)
+    assert received == ["terrain", "countries"]
+
+
 def test_logistics_group_status_dots_reflect_feature_readiness(qtbot):
     bar = _SubModeTabBar()
     qtbot.addWidget(bar)

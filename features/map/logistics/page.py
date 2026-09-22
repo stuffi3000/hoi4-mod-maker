@@ -7,7 +7,7 @@ Three sections:
 from PyQt5.QtCore import pyqtSignal
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QButtonGroup,
+    QButtonGroup, QComboBox,
 )
 
 from ui.i18n import tr
@@ -15,6 +15,7 @@ from ui.styles import (
     make_section as _make_section,
     _DIM_LABEL_STYLE,
     _PRIMARY_BTN_STYLE, _SECONDARY_BTN_STYLE,
+    _COMBOBOX_STYLE,
 )
 
 # Corresponding color of railway grade (consistent with renderer)
@@ -43,6 +44,7 @@ class LogisticsPage(QWidget):
     generate_logistics_requested = pyqtSignal()
     logistics_railway_level_changed = pyqtSignal(int)
     logistics_supply_pick_toggled = pyqtSignal(bool, bool)  # (on, erase)
+    logistics_background_changed = pyqtSignal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -57,6 +59,30 @@ class LogisticsPage(QWidget):
         tip.setStyleSheet(_DIM_LABEL_STYLE)
         tip.setWordWrap(True)
         lay.addWidget(tip)
+
+        # -- Map backdrop -------------------------------------------------
+        background_box = _make_section(tr("logistics_background_section"))
+        background_lay = background_box.layout()
+
+        background_hint = QLabel(tr("logistics_background_hint"))
+        background_hint.setStyleSheet(_DIM_LABEL_STYLE)
+        background_hint.setWordWrap(True)
+        background_lay.addWidget(background_hint)
+
+        self._background_combo = QComboBox()
+        self._background_combo.setStyleSheet(_COMBOBOX_STYLE)
+        for value, label_key in (
+            ("dark", "logistics_background_dark"),
+            ("terrain", "logistics_background_terrain"),
+            ("countries", "logistics_background_countries"),
+        ):
+            self._background_combo.addItem(tr(label_key), value)
+        self._background_combo.setToolTip(tr("logistics_background_tooltip"))
+        self._background_combo.currentIndexChanged.connect(
+            self._on_background_changed
+        )
+        background_lay.addWidget(self._background_combo)
+        lay.addWidget(background_box)
 
         # ── Adjacent relationship ──
         adj_box = _make_section(tr("logistics_adj_section"))
@@ -92,6 +118,7 @@ class LogisticsPage(QWidget):
 
         lbl = QLabel(tr("logistics_click_province_hint"))
         lbl.setStyleSheet(_DIM_LABEL_STYLE)
+        lbl.setWordWrap(True)
         tool_lay.addWidget(lbl)
 
         # Unify button group
@@ -169,6 +196,11 @@ class LogisticsPage(QWidget):
         sup_row.addStretch()
         tool_lay.addLayout(sup_row)
 
+        color_hint = QLabel(tr("logistics_color_hint"))
+        color_hint.setStyleSheet(_DIM_LABEL_STYLE)
+        color_hint.setWordWrap(True)
+        tool_lay.addWidget(color_hint)
+
         # Railway class 3 is selected by default
         self._tool_btn_group.button(3).setChecked(True)
         self._tool_btn_group.idClicked.connect(self._on_tool_clicked)
@@ -196,3 +228,8 @@ class LogisticsPage(QWidget):
             self.logistics_supply_pick_toggled.emit(True, False)
         elif btn_id == _ID_SUPPLY_ERASE:
             self.logistics_supply_pick_toggled.emit(True, True)
+
+    def _on_background_changed(self, index: int) -> None:
+        value = self._background_combo.itemData(index)
+        if value:
+            self.logistics_background_changed.emit(str(value))

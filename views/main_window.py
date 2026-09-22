@@ -503,6 +503,7 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
         tp.logistics_supply_pick_toggled.connect(
             lambda on, erase: self._controllers["logistics"].toggle_supply_pick(on, erase)
         )
+        tp.logistics_background_changed.connect(self._on_logistics_background_changed)
 
         # Continent signal → controller
         tp.continent_pick_toggled.connect(self._on_continent_pick_toggled)
@@ -661,6 +662,17 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
                 self._adjacency_rule_dialog.receive_picked_province(pid)
 
     # ═══════════════════════ Mode switch ═══════════════════════
+
+    def _on_logistics_background_changed(self, background: str) -> None:
+        """Switch the logistics backdrop while keeping the editing overlays."""
+        background = str(background)
+        if background == "countries":
+            # Country rendering is lazy in logistics mode, so populate its
+            # colour buffer before switching to the country backdrop.
+            self._app._refresh_country_colors()
+        self._canvas.set_logistics_background(background)
+        if self._canvas.display_mode == "logistics":
+            self._canvas.refresh_logistics_overlay()
 
     def _on_mode_changed(self, mode: str) -> None:
         if mode == "preview":

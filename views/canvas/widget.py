@@ -127,6 +127,9 @@ class MapCanvas(InputMixin, OverlayMixin, NameLabelsMixin, RefImageMixin, QGraph
 
         # display/edit mode
         self._display_mode = "land"
+        # Logistics mode can keep its editing overlays while showing a more
+        # useful map backdrop.  The dark view remains the default.
+        self._logistics_background = "dark"
 
         # Framework tools (new spec): When not None, mouse events are forwarded to it
         self._framework_tool = None     # core.tools.base.Tool instance
@@ -783,7 +786,10 @@ class MapCanvas(InputMixin, OverlayMixin, NameLabelsMixin, RefImageMixin, QGraph
         # The political view in the preview is superimposed with the national color → it will be disabled altogether.
         self._preview_political_cache = None
         # The state mode also superimposes national borders → needs to be refreshed when changing country ownership
-        if self._display_mode in ("country", "state"):
+        if self._display_mode in ("country", "state") or (
+            self._display_mode == "logistics"
+            and self._logistics_background == "countries"
+        ):
             self._full_render()
 
     def set_highlight_country(self, rgb: tuple[int, int, int] | None) -> None:
@@ -827,6 +833,20 @@ class MapCanvas(InputMixin, OverlayMixin, NameLabelsMixin, RefImageMixin, QGraph
         self._railway_color_rgb = rgb
         if self._display_mode == "logistics":
             self._full_render()
+
+    def set_logistics_background(self, background: str) -> None:
+        """Set the backdrop used by logistics mode.
+
+        Railway/supply overlays are separate from the backdrop and are
+        refreshed by the caller, so changing this only rebuilds the base map
+        and the province-boundary layer.
+        """
+        if background not in ("dark", "terrain", "countries"):
+            return
+        self._logistics_background = background
+        if self._display_mode == "logistics":
+            self._full_render()
+            self._render_province_overlay()
 
     def set_logistics_component_colors(self, rgb: np.ndarray | None) -> None:
         """Store graph-component colors and trigger logistics rendering."""
