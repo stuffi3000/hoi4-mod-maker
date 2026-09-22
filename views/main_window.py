@@ -9,7 +9,7 @@ from __future__ import annotations
 from PyQt5.QtWidgets import (
     QMainWindow, QAction, QFileDialog, QMessageBox, QWidget,
     QLabel, QApplication, QStackedWidget, QHBoxLayout,
-    QWidgetAction, QSlider, QProgressBar,
+    QWidgetAction, QSlider, QProgressBar, QToolBar,
 )
 from PyQt5.QtCore import Qt, QTimer, QPoint
 from PyQt5.QtGui import QKeySequence
@@ -166,6 +166,21 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
     def _init_menu(self) -> None:
         menubar = self.menuBar()
 
+        # Keep the map finder available independently of the selected editor
+        # page.  The same action is also added to the Tools menu below.
+        self._top_toolbar = QToolBar(self)
+        self._top_toolbar.setObjectName("topToolbar")
+        self._top_toolbar.setMovable(False)
+        self._top_toolbar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
+        self.addToolBar(Qt.ToolBarArea.TopToolBarArea, self._top_toolbar)
+
+        self._find_action = QAction(tr("action_find"), self)
+        self._find_action.setToolTip(tr("action_find_tip"))
+        self._find_action.setShortcut(QKeySequence("Ctrl+F"))
+        self._find_action.setShortcutContext(Qt.ShortcutContext.WindowShortcut)
+        self._find_action.triggered.connect(self._on_open_find_dialog)
+        self._top_toolbar.addAction(self._find_action)
+
         # File
         file_menu = menubar.addMenu(tr("menu_file"))
         self._add_action(file_menu, tr("action_new"), self._on_new_project, QKeySequence.StandardKey.New)
@@ -249,6 +264,8 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
 
         # Tools
         tools_menu = menubar.addMenu(tr("menu_tools"))
+        tools_menu.addAction(self._find_action)
+        tools_menu.addSeparator()
         self._add_action(tools_menu, tr("action_generate_all_provinces"),
                          lambda: self._on_generate_provinces("all", DEFAULT_PROVINCES), "Ctrl+G")
         self._add_action(tools_menu, tr("action_validate"), self._on_validate, "Ctrl+Shift+V")
@@ -671,6 +688,61 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
                 self._adjacency_rule_dialog.receive_picked_province(pid)
 
     # ═══════════════════════ Mode switch ═══════════════════════
+
+    def _on_open_find_dialog(self) -> None:
+        """Open the project-wide map entity finder."""
+        from services.find_service import FindService
+        from views.find_dialog import FindDialog
+
+        dialog = FindDialog(
+            FindService(self._project),
+            self._on_find_result,
+            parent=self,
+        )
+        dialog.exec_()
+
+    def _on_find_result(self, result) -> None:
+        """Center on a Find result and show its provinces for three seconds."""
+        import numpy as np
+
+        province_ids = tuple(
+            sorted(
+                {
+                    int(pid)
+                    for pid in getattr(result, "province_ids", ())
+                    if int(pid) > 0
+                }
+            )
+        )
+        entity = {
+            "province": "province",
+            "state": "state",
+            "strategic_region": "strategic region",
+        }.get(getattr(result, "kind", ""), "map entity")
+        entity_id = int(getattr(result, "entity_id", getattr(result, "id", 0)))
+
+        if not province_ids:
+            self._status_info.setText(
+                tr("find_status_no_map_area").format(entity=entity, id=entity_id)
+            )
+            return
+
+        province_map = self._canvas.province_map
+        mask = np.isin(province_map, province_ids)
+        ys, xs = np.where(mask)
+        if len(ys) == 0:
+            self._status_info.setText(
+                tr("find_status_no_map_area").format(entity=entity, id=entity_id)
+            )
+            return
+
+        cx = int(xs.mean())
+        cy = int(ys.mean())
+        self._canvas.center_on_pixel(cx, cy, zoom=2.0)
+        self._canvas.set_temporary_highlight_pids(province_ids, duration_ms=3000)
+        self._status_info.setText(
+            tr("find_status_located").format(entity=entity, id=entity_id)
+        )
 
     def _on_logistics_background_changed(self, background: str) -> None:
         """Switch the logistics backdrop while keeping the editing overlays."""

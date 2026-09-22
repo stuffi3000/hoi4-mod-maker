@@ -333,6 +333,17 @@ class MapCanvas(InputMixin, OverlayMixin, NameLabelsMixin, RefImageMixin, QGraph
         self._lasso_overlay.setVisible(False)
         self._scene.addItem(self._lasso_overlay)
 
+        # Temporary Find-tool highlight.  Keep this separate from the lasso /
+        # batch-selection overlay so locating an entity never changes an
+        # active editing selection or logistics overlay.
+        self._find_highlight_overlay = QGraphicsPixmapItem()
+        self._find_highlight_overlay.setZValue(10)
+        self._find_highlight_overlay.setVisible(False)
+        self._scene.addItem(self._find_highlight_overlay)
+        self._find_highlight_timer = QTimer(self)
+        self._find_highlight_timer.setSingleShot(True)
+        self._find_highlight_timer.timeout.connect(self.clear_temporary_highlight)
+
         # Local refinement lasso preview (blue dashed polygon)
         self._refine_lasso_item = QGraphicsPathItem()
         refine_pen = QPen(QColor(80, 150, 255, 240), 2)
@@ -417,6 +428,7 @@ class MapCanvas(InputMixin, OverlayMixin, NameLabelsMixin, RefImageMixin, QGraph
         Let canvas and project share the same MapData instance,
         In this way, when the controller modifies the array of project.map_data through Command,
         canvas can also see changes immediately."""
+        self.clear_temporary_highlight()
         self._map_data = map_data
         self._tile_map = map_data.tile_map
         self._province_map = map_data.province_map
@@ -893,6 +905,45 @@ class MapCanvas(InputMixin, OverlayMixin, NameLabelsMixin, RefImageMixin, QGraph
         img._ref = rgba  # Prevent memory from being freed
         self._lasso_overlay.setPixmap(QPixmap.fromImage(img))
         self._lasso_overlay.setVisible(True)
+
+    def set_temporary_highlight_pids(
+        self, pids: list[int] | tuple[int, ...] | set[int], duration_ms: int = 3000
+    ) -> bool:
+        """Highlight provinces for a short period without touching other overlays.
+
+        Returns ``True`` when at least one requested province has pixels on the
+        current map.  A later call replaces the current highlight and restarts
+        the three-second timer.
+        """
+        self.clear_temporary_highlight()
+        if not pids or self._province_map is None:
+            return False
+
+        valid_pids = tuple(sorted({int(pid) for pid in pids if int(pid) > 0}))
+        if not valid_pids:
+            return False
+
+        mask = np.isin(self._province_map, valid_pids)
+        if not np.any(mask):
+            return False
+
+        h, w = self._province_map.shape
+        rgba = np.zeros((h, w, 4), dtype=np.uint8)
+        # BGRA byte order: a warm yellow fill that remains readable over every
+        # map mode while the province borders remain visible underneath.
+        rgba[mask] = (0, 210, 255, 150)
+        img = QImage(rgba.data, w, h, w * 4, QImage.Format.Format_ARGB32)
+        img._ref = rgba
+        self._find_highlight_overlay.setPixmap(QPixmap.fromImage(img))
+        self._find_highlight_overlay.setVisible(True)
+        self._find_highlight_timer.start(max(1, int(duration_ms)))
+        return True
+
+    def clear_temporary_highlight(self) -> None:
+        """Hide the Find-tool highlight immediately, if it is visible."""
+        if self._find_highlight_timer.isActive():
+            self._find_highlight_timer.stop()
+        self._find_highlight_overlay.setVisible(False)
 
     def refresh_logistics_overlay(self) -> None:
         """Draw supply nodes and railway overlay in logistics mode (draw on _lasso_overlay).
