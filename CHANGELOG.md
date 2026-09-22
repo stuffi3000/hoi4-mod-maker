@@ -4,6 +4,20 @@ All notable changes to HOI4 Map Maker are documented here. Entries are
 organized by what users can do, rather than by internal implementation
 milestones.
 
+## [1.4.2] - 2026-09-22
+
+### Faster large-project loading
+
+**Opening a large project is fast again, including the Belgium project used
+for regression testing.**
+
+- Deferred hidden placement-overlay work until the overlay is actually shown.
+- Cached province centroids and skipped empty placement validation during load.
+- Deferred logistics component-color rebuilding until Logistics mode is active,
+  then vectorized the component and highlight calculations.
+- Reduced the measured Belgium project load from about 51 seconds to about
+  1.3 seconds.
+
 ## [1.4.1] - 2026-09-22
 
 ### Engine testing and safer launches
@@ -248,6 +262,7 @@ diagnose when something needs attention.**
 - UTF-8 validation and language-setting reliability improvements.
 - World-normal regeneration and post-export strategic-region checks.
 
+[1.4.2]: https://github.com/stuffi3000/hoi4-mod-maker/releases/tag/v1.4.2
 [1.4.1]: https://github.com/stuffi3000/hoi4-mod-maker/releases/tag/v1.4.1
 [1.4.0]: https://github.com/stuffi3000/hoi4-mod-maker/releases/tag/v1.4.0
 [1.3.4]: https://github.com/stuffi3000/hoi4-mod-maker/commit/3dda2da6c90e6eec532f35d4a5e919cc135ecd29

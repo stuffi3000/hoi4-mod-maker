@@ -12,8 +12,8 @@ pytestmark = pytest.mark.unit
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_release_metadata_is_1_4_1():
-    assert VERSION == "1.4.1"
+def test_release_metadata_is_1_4_2():
+    assert VERSION == "1.4.2"
     assert VERSION_DATE == "2026-09-22"
     assert (ROOT / "CHANGELOG.md").is_file()
 

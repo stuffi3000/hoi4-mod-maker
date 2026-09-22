@@ -1,9 +1,17 @@
 """Application version and release history."""
 
-VERSION = "1.4.1"
+VERSION = "1.4.2"
 VERSION_DATE = "2026-09-22"
 
 CHANGELOG = {
+    "1.4.2": {
+        "date": "2026-09-22",
+        "changes": [
+            "Reduced large-project loading time by deferring hidden placement overlays and caching province centroids.",
+            "Avoided rebuilding logistics overlay colors until logistics mode is active and vectorized component highlighting.",
+            "Verified the Belgium project load path at roughly 1.3 seconds after the regression fix.",
+        ],
+    },
     "1.4.1": {
         "date": "2026-09-22",
         "changes": [
