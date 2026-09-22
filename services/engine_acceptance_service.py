@@ -15,11 +15,16 @@ observed after the snapshot offset are classified.
 from __future__ import annotations
 
 import csv
+import copy
 import hashlib
 import json
 import os
+import re
+import stat as stat_module
 import subprocess
 import time
+import uuid
+from contextlib import contextmanager
 from collections.abc import Mapping, Sequence
 from datetime import datetime, timezone
 from pathlib import Path
@@ -37,10 +42,48 @@ DEFAULT_LOG_NAMES = ("error.log", "exceptions.log", "setup.log", "system.log")
 MAX_FINDINGS = 1000
 MAX_FINDING_TEXT_CHARS = 500
 MAX_FRESH_BYTES = 4 * 1024 * 1024
+LOG_FULL_FINGERPRINT_LIMIT_BYTES = 1024 * 1024
+LOG_FINGERPRINT_SAMPLE_BYTES = 4096
 MAX_OUTPUT_CHARS = 65536
 MAX_ARCHIVE_BYTES = 10 * 1024 * 1024
 MAX_NOTE_CHARS = 500
 SAVE_HASH_LIMIT_BYTES = 256 * 1024 * 1024
+MANAGED_DESCRIPTOR_FILENAME = "hoi4_map_maker_acceptance.mod"
+MAX_MANAGED_DESCRIPTOR_BYTES = 128 * 1024
+MAX_DLC_LOAD_BYTES = 1024 * 1024
+_ACTIVE_MOD_COUNT_RE = re.compile(r"\bActive Mod Count:\s*(\d+)\s*$", re.IGNORECASE)
+_ACTIVE_MOD_RE = re.compile(r"\bActive Mod:\s*(.*?)\s*$", re.IGNORECASE)
+_ACTIVE_DLC_COUNT_RE = re.compile(r"\bActive DLC Count:\s*(\d+)\s*$", re.IGNORECASE)
+_ACTIVE_DLC_RE = re.compile(r"\bActive DLC:\s*(.*?)\s*$", re.IGNORECASE)
+_DLC_CHECKSUM_ERROR_RE = re.compile(
+    r"\[dlc\.cpp:142\]:\s*incorrect checksum for DLC\b",
+    re.IGNORECASE,
+)
+_MISSING_OPTIONAL_DLC_ENTITY_RE = re.compile(
+    r"\[equipment_graphic_database\.cpp:72\].*?"
+    r"Entity referenced in equipment graphic database does not exist:\s*"
+    r"[\"']?(GER_super_heavy_armor_entity|SOV_super_heavy_armor_entity)[\"']?(?![A-Za-z0-9_])"
+)
+_MISSING_OPTIONAL_DLC_RULE_RE = re.compile(
+    r"\[triggerimplementation\.cpp:9803\].*?"
+    r"common[/\\]scripted_effects[/\\]BLT_scripted_effects\.txt:"
+    r"(?P<line>77|83|213|219):.*?"
+    r"has_game_rule:\s*game rule\s*[\"']?(?P<rule>LIT_ai_behavior|EST_ai_behavior)[\"']?\s+does not exist\b"
+)
+_DESCRIPTOR_NAME_RE = re.compile(r'^\s*name\s*=\s*"([^"\r\n]*)"\s*(?:#.*)?$', re.IGNORECASE)
+_DESCRIPTOR_PATH_RE = re.compile(r"^\s*path\s*=.*$", re.IGNORECASE)
+
+_OPTIONAL_DLC_ENTITY_OWNERS = {
+    "GER_super_heavy_armor_entity": "German Tanks Unit Pack",
+    "SOV_super_heavy_armor_entity": "Soviet Tanks Unit Pack",
+}
+_OPTIONAL_DLC_RULE_LINES = {
+    ("LIT_ai_behavior", "77"),
+    ("LIT_ai_behavior", "83"),
+    ("EST_ai_behavior", "213"),
+    ("EST_ai_behavior", "219"),
+}
+_OPTIONAL_DLC_RULE_OWNER = "No Step Back"
 
 
 def _utc_iso_from_ns(moment_ns: int) -> str:
@@ -123,6 +166,21 @@ def _manifest_target(manifest: Any) -> dict[str, Any]:
     return {}
 
 
+def _manifest_foundation_source_identity(manifest: Any) -> dict[str, str]:
+    """Derive the profile-agnostic foundation source identity from a manifest."""
+    if not isinstance(manifest, Mapping):
+        return {"identity_hash": "", "algorithm": ""}
+    try:
+        from services.export_manifest import foundation_source_identity
+        record = foundation_source_identity(dict(manifest))
+    except Exception:
+        return {"identity_hash": "", "algorithm": ""}
+    return {
+        "identity_hash": str(record.get("identity_hash", "") or ""),
+        "algorithm": str(record.get("algorithm", "") or ""),
+    }
+
+
 def verify_artifact(
     artifact_dir: str | os.PathLike[str],
     expected_identity_hash: str = "",
@@ -144,7 +202,14 @@ def verify_artifact(
         "files": [],
         "file_count": 0,
         "fingerprint": "",
-        "manifest": {"present": False, "identity_hash": "", "profile": "", "target": {}, "status": "absent"},
+        "manifest": {
+            "present": False,
+            "identity_hash": "",
+            "foundation_source_identity": {"identity_hash": "", "algorithm": ""},
+            "profile": "",
+            "target": {},
+            "status": "absent",
+        },
         "lock": {"present": False, "identity_hash": "", "status": "absent"},
         "mismatch": [],
     }
@@ -183,13 +248,37 @@ def verify_artifact(
         except (OSError, ValueError):
             manifest = {}
             manifest_status = "unreadable"
+        source_identity = _manifest_foundation_source_identity(manifest)
         record["manifest"] = {
             "present": True,
             "identity_hash": _manifest_identity(manifest),
+            "foundation_source_identity": source_identity,
             "profile": _manifest_profile(manifest),
             "target": _manifest_target(manifest),
             "status": manifest_status,
         }
+        stored_source_identity = manifest.get("foundation_source_identity") if isinstance(manifest, Mapping) else None
+        if isinstance(stored_source_identity, Mapping):
+            stored_hash = str(stored_source_identity.get("identity_hash", "") or "")
+            stored_algorithm = str(stored_source_identity.get("algorithm", "") or "")
+            if stored_hash != source_identity["identity_hash"]:
+                record["mismatch"].append({
+                    "field": "foundation_source_identity",
+                    "expected": source_identity["identity_hash"],
+                    "actual": stored_hash,
+                })
+            if stored_algorithm != source_identity["algorithm"]:
+                record["mismatch"].append({
+                    "field": "foundation_source_identity_algorithm",
+                    "expected": source_identity["algorithm"],
+                    "actual": stored_algorithm,
+                })
+        elif stored_source_identity is not None:
+            record["mismatch"].append({
+                "field": "foundation_source_identity",
+                "expected": source_identity["identity_hash"],
+                "actual": "<malformed>",
+            })
     lock_path = root / LOCK_FILENAME
     if lock_path.is_file():
         try:
@@ -286,6 +375,331 @@ def resolve_log_paths(
     return resolved
 
 
+def _file_identity(stat: os.stat_result) -> str:
+    """Return the available stable device/inode pair for one open file."""
+    device = int(getattr(stat, "st_dev", 0) or 0)
+    inode = int(getattr(stat, "st_ino", 0) or 0)
+    return "%d:%d" % (device, inode)
+
+
+def _lstat_optional(path: Path) -> os.stat_result | None:
+    """Return lstat data without following links, or None when absent."""
+    try:
+        return path.lstat()
+    except FileNotFoundError:
+        return None
+
+
+def _require_regular_path(path: Path, label: str, required: bool = True) -> os.stat_result | None:
+    """Reject links and special files at a transaction-owned path."""
+    info = _lstat_optional(path)
+    if info is None:
+        if required:
+            raise ValueError("%s does not exist: %s" % (label, path))
+        return None
+    if stat_module.S_ISLNK(info.st_mode) or not stat_module.S_ISREG(info.st_mode):
+        raise ValueError("%s must be a regular non-symlink file: %s" % (label, path))
+    return info
+
+
+def _reject_duplicate_json_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    """Build JSON objects while refusing duplicate keys that hide settings."""
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("dlc_load.json contains duplicate JSON key %r" % key)
+        result[key] = value
+    return result
+
+
+def _descriptor_with_artifact_path(artifact_dir: Path) -> tuple[bytes, str]:
+    """Copy descriptor metadata while replacing only its root path directive."""
+    source = artifact_dir / "descriptor.mod"
+    info = _require_regular_path(source, "artifact descriptor")
+    assert info is not None
+    if int(info.st_size) > MAX_MANAGED_DESCRIPTOR_BYTES:
+        raise ValueError("artifact descriptor exceeds the safe size limit")
+    try:
+        text = source.read_bytes().decode("utf-8-sig")
+    except (OSError, UnicodeDecodeError) as exc:
+        raise ValueError("artifact descriptor is unreadable UTF-8: %s" % source) from exc
+    if "\x00" in text:
+        raise ValueError("artifact descriptor contains a NUL byte")
+
+    lines = text.splitlines()
+    names: list[str] = []
+    path_indexes: list[int] = []
+    for index, line in enumerate(lines):
+        name_match = _DESCRIPTOR_NAME_RE.fullmatch(line)
+        if name_match is not None:
+            names.append(name_match.group(1))
+        if _DESCRIPTOR_PATH_RE.fullmatch(line) is not None:
+            path_indexes.append(index)
+    if len(names) != 1 or not names[0].strip():
+        raise ValueError("artifact descriptor must contain exactly one non-empty quoted name")
+    if len(path_indexes) > 1:
+        raise ValueError("artifact descriptor contains ambiguous duplicate path directives")
+
+    artifact_path = artifact_dir.as_posix()
+    if any(character in artifact_path for character in ('"', "\r", "\n")):
+        raise ValueError("artifact directory cannot be represented safely in a descriptor path")
+    path_line = 'path="%s"' % artifact_path
+    if path_indexes:
+        lines[path_indexes[0]] = path_line
+    else:
+        lines.append(path_line)
+    return (("\n".join(lines) + "\n").encode("utf-8"), names[0])
+
+
+def _read_regular_file_bytes(path: Path, label: str, max_bytes: int) -> bytes:
+    """Read a bounded regular file while detecting replacement during the read."""
+    before = _require_regular_path(path, label)
+    assert before is not None
+    if int(before.st_size) > max_bytes:
+        raise OSError("%s exceeds the safe size limit: %s" % (label, path))
+    with open(path, "rb") as handle:
+        opened = os.fstat(handle.fileno())
+        if not stat_module.S_ISREG(opened.st_mode) or _file_identity(opened) != _file_identity(before):
+            raise OSError("%s changed while it was being opened: %s" % (label, path))
+        content = handle.read(max_bytes + 1)
+    after = _require_regular_path(path, label)
+    assert after is not None
+    if (
+        len(content) > max_bytes
+        or len(content) != int(before.st_size)
+        or _file_identity(after) != _file_identity(before)
+        or int(after.st_size) != int(before.st_size)
+        or int(after.st_mtime_ns) != int(before.st_mtime_ns)
+    ):
+        raise OSError("%s changed while it was being read: %s" % (label, path))
+    return content
+
+
+def _atomic_replace_bytes(
+    path: Path,
+    content: bytes,
+    expected_current_bytes: bytes | None = None,
+) -> None:
+    """Atomically replace a regular file using a unique same-directory temp."""
+    temporary = path.with_name(path.name + ".codex-" + uuid.uuid4().hex + ".tmp")
+    try:
+        with open(temporary, "xb") as handle:
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
+        current = _lstat_optional(path)
+        if current is not None and (stat_module.S_ISLNK(current.st_mode) or not stat_module.S_ISREG(current.st_mode)):
+            raise OSError("refusing to replace a non-regular dlc_load.json path: %s" % path)
+        if expected_current_bytes is not None:
+            current_bytes = _read_regular_file_bytes(path, "dlc_load.json", MAX_DLC_LOAD_BYTES)
+            if current_bytes != expected_current_bytes:
+                raise OSError("dlc_load.json changed concurrently; refusing to overwrite: %s" % path)
+        os.replace(str(temporary), str(path))
+    finally:
+        temporary_info = _lstat_optional(temporary)
+        if temporary_info is not None:
+            if stat_module.S_ISLNK(temporary_info.st_mode) or not stat_module.S_ISREG(temporary_info.st_mode):
+                raise OSError("temporary activation file changed type before cleanup: %s" % temporary)
+            temporary.unlink()
+
+
+def _remove_owned_regular_file(
+    path: Path,
+    expected_identity: str,
+    label: str,
+    expected_bytes: bytes | None = None,
+) -> None:
+    """Remove a staged file only if its filesystem identity is still ours."""
+    info = _lstat_optional(path)
+    if info is None:
+        return
+    if stat_module.S_ISLNK(info.st_mode) or not stat_module.S_ISREG(info.st_mode):
+        raise OSError("refusing to remove a replaced or non-regular %s: %s" % (label, path))
+    if not expected_identity or _file_identity(info) != expected_identity:
+        raise OSError("refusing to remove a %s that no longer matches the staged file: %s" % (label, path))
+    if expected_bytes is not None and _read_regular_file_bytes(path, label, MAX_DLC_LOAD_BYTES) != expected_bytes:
+        raise OSError("%s changed concurrently; refusing to remove it: %s" % (label, path))
+    path.unlink()
+
+
+@contextmanager
+def managed_artifact_activation(
+    artifact_dir: str | os.PathLike[str],
+    hoi4_user_dir: str | os.PathLike[str],
+):
+    """Temporarily activate one artifact through HOI4's user ``dlc_load.json``.
+
+    The fixed staged descriptor name is collision-checked and created
+    exclusively beneath the existing user ``mod`` directory.  Only the
+    ``enabled_mods`` JSON value is changed.  The previous config bytes are
+    restored exactly in all ordinary exit paths, and only this invocation's
+    descriptor is eligible for cleanup.
+    """
+    supplied_user_dir = Path(hoi4_user_dir).expanduser()
+    if not supplied_user_dir.is_absolute():
+        raise ValueError("--hoi4-user-dir must be an absolute, unambiguous path")
+    if supplied_user_dir.is_symlink():
+        raise ValueError("--hoi4-user-dir must not be a symlink")
+    try:
+        user_dir = supplied_user_dir.resolve(strict=True)
+    except OSError as exc:
+        raise ValueError("HOI4 user-data directory does not exist: %s" % supplied_user_dir) from exc
+    if not user_dir.is_dir():
+        raise ValueError("HOI4 user-data path is not a directory: %s" % user_dir)
+
+    mod_dir = user_dir / "mod"
+    mod_info = _lstat_optional(mod_dir)
+    if mod_info is None or stat_module.S_ISLNK(mod_info.st_mode) or not stat_module.S_ISDIR(mod_info.st_mode):
+        raise ValueError("HOI4 user-data directory must contain a real mod directory: %s" % mod_dir)
+    resolved_mod_dir = mod_dir.resolve(strict=True)
+    if resolved_mod_dir.parent != user_dir:
+        raise ValueError("HOI4 mod directory resolves outside the supplied user-data directory")
+
+    supplied_artifact = Path(artifact_dir).expanduser()
+    if supplied_artifact.is_symlink():
+        raise ValueError("artifact directory must not be a symlink")
+    try:
+        resolved_artifact = supplied_artifact.resolve(strict=True)
+    except OSError as exc:
+        raise ValueError("artifact directory does not exist: %s" % supplied_artifact) from exc
+    if not resolved_artifact.is_dir():
+        raise ValueError("artifact path is not a directory: %s" % resolved_artifact)
+    if resolved_artifact in (user_dir, resolved_mod_dir):
+        raise ValueError("artifact directory cannot be the HOI4 user-data or mod root")
+
+    descriptor_bytes, descriptor_name = _descriptor_with_artifact_path(resolved_artifact)
+    staged_descriptor = resolved_mod_dir / MANAGED_DESCRIPTOR_FILENAME
+    if _lstat_optional(staged_descriptor) is not None:
+        raise ValueError("managed activation descriptor already exists; refusing to overwrite: %s" % staged_descriptor)
+
+    dlc_load_path = user_dir / "dlc_load.json"
+    old_info = _require_regular_path(dlc_load_path, "dlc_load.json", required=False)
+    old_bytes: bytes | None = None
+    if old_info is not None:
+        if int(old_info.st_size) > MAX_DLC_LOAD_BYTES:
+            raise ValueError("dlc_load.json exceeds the safe size limit")
+        try:
+            old_bytes = _read_regular_file_bytes(dlc_load_path, "dlc_load.json", MAX_DLC_LOAD_BYTES)
+        except OSError as exc:
+            raise ValueError("dlc_load.json is unreadable or changed while being inspected") from exc
+        check_info = _require_regular_path(dlc_load_path, "dlc_load.json")
+        assert check_info is not None
+        if (
+            _file_identity(check_info) != _file_identity(old_info)
+            or int(check_info.st_size) != int(old_info.st_size)
+            or int(check_info.st_mtime_ns) != int(old_info.st_mtime_ns)
+        ):
+            raise ValueError("dlc_load.json changed while it was being inspected")
+        try:
+            settings = json.loads(old_bytes.decode("utf-8-sig"), object_pairs_hook=_reject_duplicate_json_keys)
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise ValueError("dlc_load.json is not valid UTF-8 JSON") from exc
+        if not isinstance(settings, dict):
+            raise ValueError("dlc_load.json must contain a JSON object")
+    else:
+        settings = {}
+
+    descriptor_reference = "mod/" + MANAGED_DESCRIPTOR_FILENAME
+    settings["enabled_mods"] = [descriptor_reference]
+    activation_json = (json.dumps(settings, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
+    activation_hash = hashlib.sha256(activation_json).hexdigest()
+
+    descriptor_identity = ""
+    dlc_created_identity = ""
+    activation_installed = False
+    try:
+        with open(staged_descriptor, "xb") as handle:
+            descriptor_identity = _file_identity(os.fstat(handle.fileno()))
+            if descriptor_identity == "0:0":
+                raise OSError("filesystem does not provide a stable identity for the staged descriptor")
+            handle.write(descriptor_bytes)
+            handle.flush()
+            os.fsync(handle.fileno())
+
+        if old_bytes is not None:
+            _atomic_replace_bytes(dlc_load_path, activation_json, expected_current_bytes=old_bytes)
+            activation_installed = True
+        else:
+            with open(dlc_load_path, "xb") as handle:
+                dlc_created_identity = _file_identity(os.fstat(handle.fileno()))
+                if dlc_created_identity == "0:0":
+                    raise OSError("filesystem does not provide a stable identity for created dlc_load.json")
+                handle.write(activation_json)
+                handle.flush()
+                os.fsync(handle.fileno())
+            activation_installed = True
+
+        yield {
+            "expected_mod_name": descriptor_name,
+            "descriptor_reference": descriptor_reference,
+            "descriptor_path": str(staged_descriptor),
+            "dlc_load_path": str(dlc_load_path),
+        }
+    finally:
+        try:
+            if old_bytes is not None and activation_installed:
+                current_bytes = _read_regular_file_bytes(dlc_load_path, "dlc_load.json", MAX_DLC_LOAD_BYTES)
+                if current_bytes != activation_json or hashlib.sha256(current_bytes).hexdigest() != activation_hash:
+                    raise OSError(
+                        "dlc_load.json changed concurrently; original bytes were left untouched: %s" % dlc_load_path
+                    )
+                _atomic_replace_bytes(dlc_load_path, old_bytes, expected_current_bytes=activation_json)
+            elif old_bytes is None and dlc_created_identity:
+                if activation_installed:
+                    current_bytes = _read_regular_file_bytes(dlc_load_path, "dlc_load.json", MAX_DLC_LOAD_BYTES)
+                    if current_bytes != activation_json or hashlib.sha256(current_bytes).hexdigest() != activation_hash:
+                        raise OSError(
+                            "dlc_load.json changed concurrently; created file was left untouched: %s" % dlc_load_path
+                        )
+                    _remove_owned_regular_file(
+                        dlc_load_path,
+                        dlc_created_identity,
+                        "created dlc_load.json",
+                        expected_bytes=activation_json,
+                    )
+                else:
+                    _remove_owned_regular_file(dlc_load_path, dlc_created_identity, "created dlc_load.json")
+        finally:
+            if descriptor_identity:
+                _remove_owned_regular_file(staged_descriptor, descriptor_identity, "staged activation descriptor")
+
+
+def _log_fingerprint_samples(size: int) -> list[dict[str, int]]:
+    """Choose a bounded full fingerprint for small logs or samples for large logs."""
+    total = max(0, int(size))
+    if total == 0:
+        return []
+    if total <= LOG_FULL_FINGERPRINT_LIMIT_BYTES:
+        return [{"offset": 0, "length": total}]
+    width = min(LOG_FINGERPRINT_SAMPLE_BYTES, total)
+    offsets = {0}
+    if total > width:
+        offsets.add((total - width) // 2)
+        offsets.add(total - width)
+    return [
+        {"offset": offset, "length": min(width, total - offset)}
+        for offset in sorted(offsets)
+    ]
+
+
+def _log_content_fingerprint(handle, samples: Sequence[Mapping[str, Any]]) -> str:
+    """Hash selected fixed byte ranges without reading the entire log file."""
+    digest = hashlib.sha256()
+    for sample in samples:
+        offset = int(sample.get("offset", 0) or 0)
+        length = int(sample.get("length", 0) or 0)
+        if offset < 0 or length < 0:
+            raise OSError("invalid log fingerprint range")
+        handle.seek(offset)
+        content = handle.read(length)
+        if len(content) != length:
+            raise OSError("log changed while checking its fingerprint")
+        digest.update(offset.to_bytes(8, "big", signed=False))
+        digest.update(length.to_bytes(8, "big", signed=False))
+        digest.update(content)
+    return digest.hexdigest()
+
+
 def snapshot_log_file(
     path: str | os.PathLike[str],
     archive_dir: str | os.PathLike[str] | None = None,
@@ -305,6 +719,10 @@ def snapshot_log_file(
         "offset": 0,
         "mtime_ns": 0,
         "mtime_iso": "",
+        "ctime_ns": 0,
+        "file_identity": "",
+        "fingerprint_samples": [],
+        "fingerprint": "",
         "snapshot_ns": moment_ns,
         "snapshot_iso": _utc_iso_from_ns(moment_ns),
         "status": "missing",
@@ -318,16 +736,24 @@ def snapshot_log_file(
         present = False
     if not present:
         return record
+    record["exists"] = True
     try:
-        stat = candidate.stat()
+        with open(candidate, "rb") as handle:
+            stat = os.fstat(handle.fileno())
+            size = int(stat.st_size)
+            samples = _log_fingerprint_samples(size)
+            fingerprint = _log_content_fingerprint(handle, samples)
     except OSError:
         record["status"] = "unreadable"
         return record
-    record["exists"] = True
-    record["size"] = int(stat.st_size)
-    record["offset"] = int(stat.st_size)
+    record["size"] = size
+    record["offset"] = size
     record["mtime_ns"] = int(stat.st_mtime_ns)
     record["mtime_iso"] = _utc_iso_from_ns(int(stat.st_mtime_ns))
+    record["ctime_ns"] = int(getattr(stat, "st_ctime_ns", 0) or 0)
+    record["file_identity"] = _file_identity(stat)
+    record["fingerprint_samples"] = samples
+    record["fingerprint"] = fingerprint
     record["status"] = "snapshotted"
     if archive_dir:
         try:
@@ -353,12 +779,14 @@ def snapshot_log_file(
 
 
 def read_fresh_lines(snapshot: Mapping[str, Any], max_bytes: int = MAX_FRESH_BYTES) -> dict[str, Any]:
-    """Read only the bytes appended after a log snapshot offset."""
+    """Read post-snapshot log bytes, restarting at zero when the file was rewritten."""
     try:
         path = str(snapshot.get("path", ""))
         offset = int(snapshot.get("offset", 0) or 0)
+        existed_before = bool(snapshot.get("exists", False))
+        snapshot_status = str(snapshot.get("status", "") or "")
     except (AttributeError, TypeError, ValueError):
-        return {"path": "", "status": "invalid_snapshot", "text": "", "lines": [], "byte_count": 0, "new_offset": 0, "truncated": False}
+        return {"path": "", "status": "invalid_snapshot", "text": "", "lines": [], "byte_count": 0, "new_offset": 0, "truncated": False, "generated": False, "rewritten": False, "read_offset": 0}
     outcome: dict[str, Any] = {
         "path": path,
         "status": "ok",
@@ -367,22 +795,60 @@ def read_fresh_lines(snapshot: Mapping[str, Any], max_bytes: int = MAX_FRESH_BYT
         "byte_count": 0,
         "new_offset": offset,
         "truncated": False,
+        "generated": False,
+        "rewritten": False,
+        "read_offset": offset,
     }
     candidate = Path(path)
+    if existed_before and snapshot_status not in ("snapshotted", "archive_failed"):
+        outcome["status"] = "unreadable"
+        return outcome
     if not candidate.is_file():
         outcome["status"] = "missing"
         return outcome
     try:
-        size = candidate.stat().st_size
-    except OSError:
-        outcome["status"] = "unreadable"
-        return outcome
-    if size < offset:
-        offset = 0
-    try:
         with open(candidate, "rb") as handle:
+            stat = os.fstat(handle.fileno())
+            size = int(stat.st_size)
+            if existed_before:
+                if "fingerprint" not in snapshot or "fingerprint_samples" not in snapshot:
+                    outcome["status"] = "unreadable"
+                    return outcome
+                baseline_fingerprint = str(snapshot.get("fingerprint", "") or "")
+                baseline_samples = snapshot.get("fingerprint_samples", ())
+                if size < offset:
+                    current_fingerprint = ""
+                else:
+                    current_fingerprint = _log_content_fingerprint(handle, baseline_samples)
+                current_identity = _file_identity(stat)
+                identity_changed = current_identity != str(snapshot.get("file_identity", "") or "")
+                fingerprint_changed = size < offset or current_fingerprint != baseline_fingerprint
+                rewritten = size < offset or identity_changed or fingerprint_changed
+                baseline_size = int(snapshot.get("size", offset) or 0)
+                baseline_mtime_ns = int(snapshot.get("mtime_ns", 0) or 0)
+                baseline_ctime_ns = int(snapshot.get("ctime_ns", 0) or 0)
+                outcome["generated"] = bool(
+                    rewritten
+                    or size != baseline_size
+                    or int(stat.st_mtime_ns) != baseline_mtime_ns
+                    or int(getattr(stat, "st_ctime_ns", 0) or 0) != baseline_ctime_ns
+                )
+                outcome["rewritten"] = bool(rewritten)
+                if rewritten:
+                    offset = 0
+            else:
+                if snapshot_status not in ("", "missing"):
+                    outcome["status"] = "unreadable"
+                    return outcome
+                offset = 0
+                outcome["generated"] = True
+            outcome["read_offset"] = offset
+            outcome["new_offset"] = offset
             handle.seek(offset)
             raw = handle.read(max_bytes + 1)
+    except FileNotFoundError:
+        outcome["status"] = "missing"
+        return outcome
     except OSError:
         outcome["status"] = "unreadable"
         return outcome
@@ -397,27 +863,203 @@ def read_fresh_lines(snapshot: Mapping[str, Any], max_bytes: int = MAX_FRESH_BYT
     return outcome
 
 
-def collect_fresh_findings(snapshots: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+def _is_system_log_path(path: str | os.PathLike[str]) -> bool:
+    """Return whether a path names system.log under either path convention."""
+    normalized = str(path or "").replace("\\", "/").rstrip("/").casefold()
+    return normalized.rsplit("/", 1)[-1] == "system.log"
+
+
+def _active_mod_evidence(
+    sources: Sequence[Mapping[str, Any]],
+    expected_name: str = "",
+    required: bool = False,
+) -> dict[str, Any]:
+    """Prove managed activation from fresh system.log lines only."""
+    expected = str(expected_name or "")
+    evidence: dict[str, Any] = {
+        "required": bool(required),
+        "expected_name": expected,
+        "count": None,
+        "observed_names": [],
+        "status": "not_configured" if required else "not_required",
+        "source": "",
+        "fresh_lines": 0,
+        "truncated": False,
+    }
+    if not required or not sources:
+        return evidence
+    if len(sources) != 1:
+        evidence["status"] = "ambiguous"
+        evidence["sources"] = [str(source.get("path", "") or "") for source in sources]
+        return evidence
+
+    source = sources[0]
+    evidence["source"] = str(source.get("path", "") or "")
+    evidence["fresh_lines"] = int(source.get("fresh_lines", 0) or 0)
+    evidence["truncated"] = bool(source.get("truncated", False))
+    source_status = str(source.get("status", "") or "")
+    if source_status == "missing":
+        evidence["status"] = "missing"
+        return evidence
+    if source_status != "ok" or evidence["truncated"]:
+        evidence["status"] = "unreadable"
+        return evidence
+
+    count_records: list[tuple[int, int]] = []
+    mod_records: list[tuple[int, str]] = []
+    for line_number, line in enumerate(source.get("lines", ()) or (), start=1):
+        text = str(line)
+        count_match = _ACTIVE_MOD_COUNT_RE.search(text)
+        if count_match is not None:
+            count_records.append((line_number, int(count_match.group(1))))
+        mod_match = _ACTIVE_MOD_RE.search(text)
+        if mod_match is not None:
+            name = mod_match.group(1).strip()
+            if name:
+                mod_records.append((line_number, name))
+
+    if count_records:
+        count_line, active_count = count_records[-1]
+        mod_records = [record for record in mod_records if record[0] > count_line]
+        evidence["count"] = active_count
+    evidence["observed_names"] = [name for _line, name in mod_records]
+    if evidence["count"] is None or not mod_records:
+        evidence["status"] = "missing"
+    elif (
+        evidence["count"] != 1
+        or len(mod_records) != 1
+        or evidence["observed_names"] != [expected]
+    ):
+        evidence["status"] = "mismatch"
+    else:
+        evidence["status"] = "matched"
+    return evidence
+
+
+def _active_dlc_evidence(sources: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    """Prove the fresh active-DLC list is complete before using it for correlation."""
+    evidence: dict[str, Any] = {
+        "count": None,
+        "observed_names": [],
+        "status": "not_observed",
+        "source": "",
+        "fresh_lines": 0,
+        "truncated": False,
+    }
+    if not sources:
+        return evidence
+    if len(sources) != 1:
+        evidence["status"] = "ambiguous"
+        evidence["sources"] = [str(source.get("path", "") or "") for source in sources]
+        return evidence
+
+    source = sources[0]
+    evidence["source"] = str(source.get("path", "") or "")
+    evidence["fresh_lines"] = int(source.get("fresh_lines", 0) or 0)
+    evidence["truncated"] = bool(source.get("truncated", False))
+    source_status = str(source.get("status", "") or "")
+    if source_status == "missing":
+        evidence["status"] = "missing"
+        return evidence
+    if source_status != "ok" or evidence["truncated"]:
+        evidence["status"] = "unreadable"
+        return evidence
+
+    count_records: list[tuple[int, int]] = []
+    dlc_records: list[tuple[int, str, bool]] = []
+    for line_number, line in enumerate(source.get("lines", ()) or (), start=1):
+        text = str(line)
+        count_match = _ACTIVE_DLC_COUNT_RE.search(text)
+        if count_match is not None:
+            count_records.append((line_number, int(count_match.group(1))))
+        dlc_match = _ACTIVE_DLC_RE.search(text)
+        if dlc_match is not None:
+            name = dlc_match.group(1).strip()
+            dlc_records.append((line_number, name, not bool(name)))
+
+    if count_records:
+        count_line, active_count = count_records[-1]
+        dlc_records = [record for record in dlc_records if record[0] > count_line]
+        evidence["count"] = active_count
+    malformed_name = any(malformed for _line, _name, malformed in dlc_records)
+    names = [name for _line, name, _malformed in dlc_records]
+    evidence["observed_names"] = names
+    if evidence["count"] is None:
+        evidence["status"] = "incomplete"
+    elif (
+        malformed_name
+        or evidence["count"] != len(names)
+        or len({name.casefold() for name in names}) != len(names)
+    ):
+        evidence["status"] = "incomplete"
+    else:
+        evidence["status"] = "complete"
+    return evidence
+
+
+def _optional_dlc_owner_for_line(line: str, source: str) -> str:
+    """Return an owner only for the exact known HOI4 missing-entity/rule signatures."""
+    if not _is_error_log_path(source):
+        return ""
+    text = str(line or "")
+    entity_match = _MISSING_OPTIONAL_DLC_ENTITY_RE.search(text)
+    if entity_match is not None:
+        return _OPTIONAL_DLC_ENTITY_OWNERS[entity_match.group(1)]
+
+    rule_match = _MISSING_OPTIONAL_DLC_RULE_RE.search(text)
+    if rule_match is not None and (rule_match.group("rule"), rule_match.group("line")) in _OPTIONAL_DLC_RULE_LINES:
+        return _OPTIONAL_DLC_RULE_OWNER
+    return ""
+
+
+def _owner_dlc_proven_inactive(owner: str, evidence: Mapping[str, Any]) -> bool:
+    """Treat an owner as inactive only when a complete fresh DLC list omits it."""
+    if str(evidence.get("status", "") or "") != "complete":
+        return False
+    observed = {
+        str(name).strip().casefold()
+        for name in evidence.get("observed_names", ()) or ()
+        if str(name).strip()
+    }
+    return str(owner or "").strip().casefold() not in observed
+
+
+def collect_fresh_findings(
+    snapshots: Sequence[Mapping[str, Any]],
+    expected_active_mod_name: str = "",
+    require_active_mod: bool = False,
+) -> dict[str, Any]:
     """Classify only fresh post-snapshot log ranges into structured findings."""
     findings: list[dict[str, Any]] = []
     files: list[dict[str, Any]] = []
+    system_log_sources: list[dict[str, Any]] = []
+    fresh_records: list[tuple[str, Sequence[str]]] = []
     dropped = 0
     for snapshot in snapshots or ():
         try:
             label = str(snapshot.get("path", ""))
-            exists = bool(snapshot.get("exists", False))
-            status = str(snapshot.get("status", ""))
         except AttributeError:
             continue
-        if not exists:
-            files.append({"path": label, "status": "missing", "fresh_bytes": 0, "fresh_lines": 0, "new_offset": 0, "truncated": False})
-            continue
-        if status not in ("snapshotted", "archive_failed"):
-            files.append({"path": label, "status": status, "fresh_bytes": 0, "fresh_lines": 0, "new_offset": 0, "truncated": False})
-            continue
         fresh = read_fresh_lines(snapshot)
+        if _is_system_log_path(label):
+            system_log_sources.append({
+                "path": label,
+                "status": fresh.get("status", "unreadable"),
+                "fresh_lines": len(fresh.get("lines", ()) or ()),
+                "truncated": bool(fresh.get("truncated", False)),
+                "lines": fresh.get("lines", ()) or (),
+            })
         if fresh["status"] != "ok":
-            files.append({"path": label, "status": fresh["status"], "fresh_bytes": 0, "fresh_lines": 0, "new_offset": 0, "truncated": False})
+            files.append({
+                "path": label,
+                "status": fresh["status"],
+                "fresh_bytes": 0,
+                "fresh_lines": 0,
+                "new_offset": int(fresh.get("new_offset", 0) or 0),
+                "truncated": False,
+                "generated": bool(fresh.get("generated", False)),
+                "rewritten": bool(fresh.get("rewritten", False)),
+            })
             continue
         files.append({
             "path": label,
@@ -426,11 +1068,27 @@ def collect_fresh_findings(snapshots: Sequence[Mapping[str, Any]]) -> dict[str, 
             "fresh_lines": len(fresh["lines"]),
             "new_offset": int(fresh["new_offset"]),
             "truncated": bool(fresh["truncated"]),
+            "generated": bool(fresh["generated"]),
+            "rewritten": bool(fresh["rewritten"]),
         })
-        for index, line in enumerate(fresh["lines"], start=1):
-            kind, category = contract.classify_line(line)
+        fresh_records.append((label, fresh["lines"]))
+
+    active_dlc = _active_dlc_evidence(system_log_sources)
+    for label, lines in fresh_records:
+        for index, line in enumerate(lines, start=1):
+            kind, category = contract.classify_line(line, source=label)
             if kind == "info":
                 continue
+            if kind == "error":
+                owner = _optional_dlc_owner_for_line(line, label)
+                if owner and _owner_dlc_proven_inactive(owner, active_dlc):
+                    category = "dlc_unrelated"
+                elif (
+                    _is_error_log_path(label)
+                    and _DLC_CHECKSUM_ERROR_RE.search(line) is not None
+                    and active_dlc.get("status") == "complete"
+                ):
+                    category = "dlc_unrelated"
             if len(findings) >= MAX_FINDINGS:
                 dropped += 1
                 continue
@@ -441,7 +1099,17 @@ def collect_fresh_findings(snapshots: Sequence[Mapping[str, Any]]) -> dict[str, 
                 severity=kind,
                 text=_bounded_text(line),
             ).to_dict())
-    return {"findings": findings, "files": files, "dropped_findings": dropped}
+    return {
+        "findings": findings,
+        "files": files,
+        "dropped_findings": dropped,
+        "active_dlc": active_dlc,
+        "active_mod": _active_mod_evidence(
+            system_log_sources,
+            expected_name=expected_active_mod_name,
+            required=require_active_mod,
+        ),
+    }
 
 
 def summarize_findings(findings: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
@@ -512,16 +1180,15 @@ def detect_expected_saves(
             "mtime_iso": "",
         }
         try:
-            present = candidate.is_file()
-        except OSError:
-            present = False
-        if not present:
+            stat = candidate.stat()
+        except FileNotFoundError:
             evidence.append(entry)
             continue
-        try:
-            stat = candidate.stat()
         except OSError:
             entry["status"] = "unreadable"
+            evidence.append(entry)
+            continue
+        if not stat_module.S_ISREG(stat.st_mode):
             evidence.append(entry)
             continue
         entry["mtime_ns"] = int(stat.st_mtime_ns)
@@ -984,10 +1651,52 @@ def execute_launch(
 def normalize_checklist(
     checked: Sequence[str] = (),
     notes: Mapping[str, str] | None = None,
+    waived_checks: Mapping[str, str] | None = None,
 ) -> list[dict[str, Any]]:
-    """Record checklist answers against the stable ordered M7.4 check ids."""
-    wanted = {str(item) for item in (checked or ()) if str(item)}
-    provided_notes = dict(notes or {})
+    """Record checked and explicitly waived answers against the required ids."""
+    known = set(contract.REQUIRED_CHECK_IDS)
+    raw_checked = (checked,) if isinstance(checked, (str, bytes)) else (checked or ())
+    wanted: set[str] = set()
+    for item in raw_checked:
+        check_id = str(item or "").strip()
+        if not check_id:
+            raise ValueError("Checklist check id cannot be empty.")
+        if check_id not in known:
+            raise ValueError("Unknown checklist check id: %s" % check_id)
+        if check_id in wanted:
+            raise ValueError("Checklist check id was provided more than once: %s" % check_id)
+        wanted.add(check_id)
+
+    def normalize_mapping(source: Mapping[str, Any] | None, label: str) -> dict[str, Any]:
+        if source is None:
+            return {}
+        if not isinstance(source, Mapping):
+            raise ValueError("Checklist %s must be a mapping keyed by check id." % label)
+        normalized: dict[str, Any] = {}
+        for raw_id, value in source.items():
+            check_id = str(raw_id or "").strip()
+            if not check_id:
+                raise ValueError("Checklist %s check id cannot be empty." % label)
+            if check_id not in known:
+                raise ValueError("Unknown checklist check id: %s" % check_id)
+            if check_id in normalized:
+                raise ValueError("Checklist check id was provided more than once: %s" % check_id)
+            normalized[check_id] = value
+        return normalized
+
+    provided_notes = normalize_mapping(notes, "notes")
+    provided_waivers = normalize_mapping(waived_checks, "waivers")
+    conflicts = sorted(wanted.intersection(provided_waivers))
+    if conflicts:
+        raise ValueError("A checklist check cannot be both checked and waived: %s" % ", ".join(conflicts))
+
+    waiver_reasons: dict[str, str] = {}
+    for check_id, raw_reason in provided_waivers.items():
+        reason = _bounded_text(raw_reason, MAX_NOTE_CHARS).strip()
+        if not reason:
+            raise ValueError("Checklist waiver reason cannot be empty: %s" % check_id)
+        waiver_reasons[check_id] = reason
+
     entries: list[dict[str, Any]] = []
     for check_id, title, detail in contract.REQUIRED_CHECKS:
         raw_note = provided_notes.get(check_id, "")
@@ -997,25 +1706,161 @@ def normalize_checklist(
             detail=detail,
             required=True,
             checked=check_id in wanted,
+            waived=check_id in waiver_reasons,
+            waiver_reason=waiver_reasons.get(check_id, ""),
             notes=_bounded_text(raw_note, MAX_NOTE_CHARS),
         ).to_dict())
     return entries
 
 
 def summarize_checklist(entries: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
-    """Summarize recorded checklist answers with the missing required ids."""
+    """Summarize checked, waived, and missing required checklist answers."""
     missing = contract.missing_required_checks(entries)
-    try:
-        total = len(list(entries or ()))
-    except TypeError:
-        total = 0
-    checked_count = max(0, total - len(missing))
+    by_id = {
+        str(entry.get("check_id", "")): entry
+        for entry in entries or ()
+        if isinstance(entry, Mapping)
+    }
+    checked_count = sum(bool(by_id.get(check_id, {}).get("checked", False)) for check_id in contract.REQUIRED_CHECK_IDS)
+    waived = [
+        {
+            "check_id": check_id,
+            "reason": str(by_id.get(check_id, {}).get("waiver_reason", "") or ""),
+        }
+        for check_id in contract.REQUIRED_CHECK_IDS
+        if bool(by_id.get(check_id, {}).get("waived", False))
+    ]
     return {
         "required": len(contract.REQUIRED_CHECKS),
         "checked": checked_count,
+        "waived": len(waived),
+        "waived_checks": waived,
         "missing": missing,
-        "all_checked": len(missing) == 0,
+        "all_checked": checked_count == len(contract.REQUIRED_CHECKS),
+        "all_complete": len(missing) == 0,
     }
+
+
+def _expected_captured_finding_classification(
+    finding: Mapping[str, Any],
+    active_dlc: Mapping[str, Any],
+) -> tuple[str, str]:
+    """Reclassify one stored finding using the same evidence-gated rules as collection."""
+    source = str(finding.get("source", "") or "")
+    text = str(finding.get("text", "") or "")
+    severity, category = contract.classify_line(text, source=source)
+    if severity == "error":
+        owner = _optional_dlc_owner_for_line(text, source)
+        if owner and _owner_dlc_proven_inactive(owner, active_dlc):
+            category = "dlc_unrelated"
+        elif (
+            _is_error_log_path(source)
+            and _DLC_CHECKSUM_ERROR_RE.search(text) is not None
+            and active_dlc.get("status") == "complete"
+        ):
+            category = "dlc_unrelated"
+    return severity, category
+
+
+def _validate_fresh_system_log_evidence(
+    evidence: Mapping[str, Any],
+    log_files: Sequence[Mapping[str, Any]],
+    label: str,
+) -> None:
+    """Require a complete proof record to match one captured fresh system.log."""
+    source = str(evidence.get("source", "") or "")
+    if not _is_system_log_path(source):
+        raise ValueError("Acceptance report %s evidence has no system.log source." % label)
+    try:
+        fresh_lines = int(evidence.get("fresh_lines", -1))
+    except (TypeError, ValueError):
+        raise ValueError("Acceptance report %s evidence has an invalid fresh-line count." % label) from None
+    if fresh_lines <= 0 or bool(evidence.get("truncated", False)):
+        raise ValueError("Acceptance report %s evidence is not complete fresh system.log evidence." % label)
+    system_logs = [
+        item
+        for item in log_files
+        if _is_system_log_path(str(item.get("path", "") or ""))
+    ]
+    if len(system_logs) != 1 or str(system_logs[0].get("path", "") or "") != source:
+        raise ValueError("Acceptance report %s evidence does not match one unambiguous captured system.log." % label)
+    captured = system_logs[0]
+    try:
+        captured_lines = int(captured.get("fresh_lines", -1))
+    except (TypeError, ValueError):
+        captured_lines = -1
+    if (
+        str(captured.get("status", "") or "") != "ok"
+        or not bool(captured.get("generated", False))
+        or bool(captured.get("truncated", False))
+        or captured_lines != fresh_lines
+    ):
+        raise ValueError("Acceptance report %s evidence conflicts with captured system.log metadata." % label)
+
+
+def _is_error_log_path(path: str | os.PathLike[str]) -> bool:
+    """Match error.log by basename across POSIX and Windows path separators."""
+    normalized = str(path or "").replace("\\", "/").rstrip("/").casefold()
+    return normalized.rsplit("/", 1)[-1] == "error.log"
+
+
+def _required_error_log_evidence(
+    files: Sequence[Mapping[str, Any]],
+    required: bool,
+    execute: bool,
+) -> dict[str, Any]:
+    """Summarize whether each configured error.log was freshly generated or touched."""
+    if not required:
+        return {"required": False, "status": "not_required", "paths": []}
+    if not execute:
+        return {"required": True, "status": "not_checked", "paths": []}
+    candidates: list[dict[str, Any]] = []
+    for record in files or ():
+        path = str(record.get("path", "") or "")
+        if not _is_error_log_path(path):
+            continue
+        file_status = str(record.get("status", "") or "unknown")
+        generated = bool(record.get("generated", False))
+        status = "generated" if file_status == "ok" and generated else file_status
+        if file_status == "ok" and not generated:
+            status = "stale"
+        candidates.append({
+            "path": path,
+            "status": status,
+            "fresh_bytes": int(record.get("fresh_bytes", 0) or 0),
+            "rewritten": bool(record.get("rewritten", False)),
+        })
+    if not candidates:
+        return {"required": True, "status": "not_configured", "paths": []}
+    overall = "generated"
+    for candidate in candidates:
+        if candidate["status"] != "generated":
+            overall = str(candidate["status"])
+            break
+    return {"required": True, "status": overall, "paths": candidates}
+
+
+def _required_active_mod_failure_reason(evidence: Mapping[str, Any]) -> str:
+    """Describe why fresh system.log evidence does not prove the staged mod."""
+    expected = str(evidence.get("expected_name", "") or "")
+    status = str(evidence.get("status", "") or "")
+    if status == "matched":
+        return ""
+    if status == "missing":
+        return (
+            "Managed activation could not be proven: fresh system.log lacks a complete "
+            "Active Mod Count/Active Mod record for expected mod %r." % expected
+        )
+    if status == "unreadable":
+        return "Managed activation could not verify expected mod %r because fresh system.log is unreadable or truncated." % expected
+    if status == "ambiguous":
+        return "Managed activation could not verify expected mod %r because multiple system.log paths were watched." % expected
+    if status == "not_configured":
+        return "Managed activation requires fresh system.log evidence for expected mod %r, but no system.log path was watched." % expected
+    return (
+        "Managed activation expected exactly one active mod named %r, but fresh system.log reported "
+        "count=%r and names=%r." % (expected, evidence.get("count"), evidence.get("observed_names", []))
+    )
 
 
 def run_harness(
@@ -1032,24 +1877,48 @@ def run_harness(
     execute: bool = False,
     checked: Sequence[str] = (),
     check_notes: Mapping[str, str] | None = None,
+    waived_checks: Mapping[str, str] | None = None,
     expected_identity_hash: str = "",
     expected_profile: str = "",
     snapshot_ns: int | None = None,
     created_at: str = "",
     capture_limit: int = MAX_OUTPUT_CHARS,
+    require_error_log: bool = True,
+    managed_activation: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Run the assisted acceptance workflow and return the result document.
 
     Execution of the configured game command happens only when execute is
-    explicitly True. Every other path records the dry-run plan.
+    explicitly True. Every other path records the dry-run plan. Executed runs
+    require a readable, observably generated or modified ``error.log`` by
+    default. Disabling that requirement needs a non-empty explicit log set
+    whose paths are not named ``error.log``.
     """
+    selected_log_paths = tuple(log_paths or ())
+    entries = normalize_checklist(
+        checked=checked,
+        notes=check_notes,
+        waived_checks=waived_checks,
+    )
+    checklist_summary = summarize_checklist(entries)
+    if managed_activation and not execute:
+        raise ValueError("managed activation requires an executed run")
+    expected_active_mod_name = ""
+    if managed_activation:
+        expected_active_mod_name = str(managed_activation.get("descriptor_name", "") or "")
+        if not expected_active_mod_name:
+            raise ValueError("managed activation requires the staged descriptor name")
+    if execute and not require_error_log:
+        explicit_paths = [str(item or "").strip() for item in selected_log_paths if str(item or "").strip()]
+        if not explicit_paths or any(_is_error_log_path(item) for item in explicit_paths):
+            raise ValueError("Disabling the error.log requirement needs an explicit non-error log set.")
     moment_ns = int(snapshot_ns) if snapshot_ns is not None else time.time_ns()
     artifact = verify_artifact(
         artifact_dir,
         expected_identity_hash=expected_identity_hash,
         expected_profile=expected_profile,
     )
-    snapshots = [snapshot_log_file(item, archive_dir=archive_dir, snapshot_ns=moment_ns) for item in (log_paths or ())]
+    snapshots = [snapshot_log_file(item, archive_dir=archive_dir, snapshot_ns=moment_ns) for item in selected_log_paths]
     if launch_config is None:
         if execute:
             launch_record: dict[str, Any] = {"mode": "not_configured", "executed": False, "argv": [], "status": "missing_command", "error": "Assisted execution was requested but no game command was configured.", "note": "No game command was configured."}
@@ -1065,13 +1934,36 @@ def run_harness(
     else:
         launch_record = describe_launch(launch_config)
         launch_identity = launch_config.identity()
-    fresh = collect_fresh_findings(snapshots)
+    launch_identity = dict(launch_identity)
+    launch_identity["require_error_log"] = bool(require_error_log)
+    activation_record: dict[str, Any] = {}
+    if managed_activation:
+        activation_record = {
+            "enabled": True,
+            "descriptor_name": str(managed_activation.get("descriptor_name", "") or ""),
+            "descriptor_reference": str(managed_activation.get("descriptor_reference", "") or ""),
+        }
+        launch_identity["managed_activation"] = dict(activation_record)
+        launch_record = dict(launch_record)
+        launch_record["managed_activation"] = dict(activation_record)
+    fresh = collect_fresh_findings(
+        snapshots,
+        expected_active_mod_name=expected_active_mod_name,
+        require_active_mod=bool(managed_activation),
+    )
     summary = summarize_findings(fresh["findings"])
-    entries = normalize_checklist(checked=checked, notes=check_notes)
-    checklist_summary = summarize_checklist(entries)
+    active_mod_evidence = fresh["active_mod"]
+    required_error_log = _required_error_log_evidence(
+        fresh["files"],
+        required=bool(require_error_log),
+        execute=bool(execute),
+    )
+    required_log_failure = contract.required_error_log_failure_reason(required_error_log, execute=bool(execute))
+    required_active_mod_failure = (
+        _required_active_mod_failure_reason(active_mod_evidence) if managed_activation else ""
+    )
     saves = detect_expected_saves(save_dir, save_names, snapshot_ns=moment_ns)
-    missing_saves = [str(item.get("name", "")) for item in saves if item.get("status") == "missing"]
-    stale_saves = [str(item.get("name", "")) for item in saves if item.get("status") == "stale"]
+    nonfresh_saves = [item for item in saves if item.get("status") != "fresh"]
     mode = "assisted" if execute else "dry_run"
     launch_reason = contract.launch_failure_reason(launch_record, execute=bool(execute))
     launch_ok = not bool(launch_reason)
@@ -1081,10 +1973,16 @@ def run_harness(
         artifact_mismatch=len(artifact.get("mismatch", [])) > 0,
         blocker_errors=int(summary.get("blocker_count", 0) or 0),
         unchecked_required=checklist_summary.get("missing", []),
-        missing_saves=missing_saves,
-        stale_saves=stale_saves,
         launch_ok=launch_ok,
         launch_reason=launch_reason,
+        required_log_failure=required_log_failure,
+        required_active_mod_failure=required_active_mod_failure,
+        save_evidence=nonfresh_saves,
+        waived_required=[
+            {"check_id": item["check_id"], "reason": item["waiver_reason"]}
+            for item in entries
+            if item.get("waived")
+        ],
     )
     identity_core = contract.build_identity_core(
         artifact_fingerprint=str(artifact.get("fingerprint", "") or ""),
@@ -1095,6 +1993,13 @@ def run_harness(
         game_version=str(game_version or ""),
         launch_identity=launch_identity,
         expected_identity_hash=str(expected_identity_hash or ""),
+        foundation_source_identity=str(
+            artifact.get("manifest", {})
+            .get("foundation_source_identity", {})
+            .get("identity_hash", "")
+            or ""
+        ),
+        checklist_entries=entries,
     )
     identity_hash = contract.compute_identity_hash(identity_core)
     run_id = contract.compute_run_id(identity_core)
@@ -1110,11 +2015,363 @@ def run_harness(
         target={"target": str(target or ""), "profile": str(profile or ""), "game_version": str(game_version or "")},
         artifact=artifact,
         launch=launch_record,
-        logs={"snapshots": snapshots, "findings": fresh["findings"], "summary": summary, "dropped_findings": int(fresh["dropped_findings"])},
+        logs={
+            "snapshots": snapshots,
+            "files": fresh["files"],
+            "findings": fresh["findings"],
+            "summary": summary,
+            "dropped_findings": int(fresh["dropped_findings"]),
+            "required_error_log": required_error_log,
+            "active_dlc": fresh["active_dlc"],
+            "active_mod": active_mod_evidence,
+        },
         saves=saves,
         checklist=entries,
         checklist_summary=checklist_summary,
     )
+
+
+def _canonicalize_existing_checklist(
+    raw_entries: Sequence[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    """Validate and order a saved report checklist without losing its notes."""
+    known = {check_id: (title, detail) for check_id, title, detail in contract.REQUIRED_CHECKS}
+    by_id: dict[str, dict[str, Any]] = {}
+    if isinstance(raw_entries, (str, bytes)) or not isinstance(raw_entries, Sequence):
+        raise ValueError("Existing acceptance report has no valid checklist.")
+    for raw in raw_entries:
+        if not isinstance(raw, Mapping):
+            raise ValueError("Existing acceptance report contains a malformed checklist entry.")
+        check_id = str(raw.get("check_id", "") or "").strip()
+        if not check_id or check_id not in known:
+            raise ValueError("Existing acceptance report contains an unknown checklist id: %s" % (check_id or "<empty>"))
+        if check_id in by_id:
+            raise ValueError("Existing acceptance report repeats checklist id: %s" % check_id)
+        for field in ("checked", "waived"):
+            if field in raw and not isinstance(raw[field], bool):
+                raise ValueError("Existing checklist %s value must be boolean: %s" % (field, check_id))
+        checked = raw.get("checked", False)
+        waived = raw.get("waived", False)
+        raw_reason = raw.get("waiver_reason", "")
+        if not isinstance(raw_reason, str):
+            raise ValueError("Existing checklist waiver reason must be text: %s" % check_id)
+        waiver_reason = raw_reason.strip()
+        if checked and waived:
+            raise ValueError("Existing checklist check cannot be both checked and waived: %s" % check_id)
+        if waived and not waiver_reason:
+            raise ValueError("Existing waived checklist check has no reason: %s" % check_id)
+        if not waived and waiver_reason:
+            raise ValueError("Existing unchecked checklist entry has a stray waiver reason: %s" % check_id)
+        raw_notes = raw.get("notes", "")
+        if not isinstance(raw_notes, str):
+            raise ValueError("Existing checklist note must be text: %s" % check_id)
+        entry = copy.deepcopy(dict(raw))
+        title, detail = known[check_id]
+        entry.update({
+            "check_id": check_id,
+            "title": str(raw.get("title", "") or title),
+            "detail": str(raw.get("detail", "") or detail),
+            "required": True,
+            "checked": checked,
+            "waived": waived,
+            "waiver_reason": waiver_reason,
+            "notes": raw_notes,
+        })
+        by_id[check_id] = entry
+    missing = [check_id for check_id in contract.REQUIRED_CHECK_IDS if check_id not in by_id]
+    if missing:
+        raise ValueError("Existing acceptance report is missing required checklist entries: %s" % ", ".join(missing))
+    entries: list[dict[str, Any]] = []
+    for check_id, title, detail in contract.REQUIRED_CHECKS:
+        entries.append(by_id[check_id])
+    return entries
+
+
+def _status_from_captured_result(
+    result: Mapping[str, Any],
+    entries: Sequence[Mapping[str, Any]],
+) -> tuple[str, list[str]]:
+    """Recompute status using only evidence already stored in a report."""
+    artifact = result["artifact"]
+    logs = result["logs"]
+    launch = result["launch"]
+    summary = logs["summary"]
+    required_error_log = logs["required_error_log"]
+    active_mod = logs.get("active_mod", {})
+    nonfresh_saves = [item for item in result["saves"] if item.get("status") != "fresh"]
+    try:
+        blocker_count = int(summary.get("blocker_count", 0) or 0)
+    except (TypeError, ValueError):
+        raise ValueError("Acceptance report has an invalid blocker count.") from None
+    if blocker_count < 0:
+        raise ValueError("Acceptance report blocker count cannot be negative.")
+    launch_reason = contract.launch_failure_reason(launch, execute=True)
+    required_active_mod_failure = (
+        _required_active_mod_failure_reason(active_mod)
+        if isinstance(active_mod, Mapping) and bool(active_mod.get("required"))
+        else ""
+    )
+    checklist_summary = summarize_checklist(entries)
+    return contract.decide_status(
+        mode="assisted",
+        artifact_ok=artifact_ok(artifact),
+        artifact_mismatch=bool(artifact.get("mismatch", [])),
+        blocker_errors=blocker_count,
+        unchecked_required=checklist_summary["missing"],
+        launch_ok=not bool(launch_reason),
+        launch_reason=launch_reason,
+        required_log_failure=contract.required_error_log_failure_reason(required_error_log, execute=True),
+        required_active_mod_failure=required_active_mod_failure,
+        save_evidence=nonfresh_saves,
+        waived_required=[
+            {"check_id": item["check_id"], "reason": item["waiver_reason"]}
+            for item in entries
+            if item.get("waived")
+        ],
+    )
+
+
+def validate_result_integrity(
+    source_result: Mapping[str, Any],
+) -> list[dict[str, Any]]:
+    """Validate the internal evidence links of a completed assisted report.
+
+    The JSON report is intentionally portable and is not a signed document,
+    but consumers must never trust a hand-edited top-level ``passed`` value.
+    This check recomputes every derived value that is available from the
+    captured evidence before a report may be amended or attached to a freeze.
+    The returned checklist is canonicalized in required-check order.
+    """
+    if not isinstance(source_result, Mapping):
+        raise ValueError("Acceptance report must be a JSON object.")
+    if str(source_result.get("schema", "")) != contract.ENGINE_ACCEPTANCE_SCHEMA:
+        raise ValueError("Acceptance report schema is unsupported.")
+    if str(source_result.get("mode", "")) != "assisted":
+        raise ValueError("Only a completed assisted acceptance report is valid evidence.")
+    if str(source_result.get("status", "")) not in contract.RESULT_STATUSES:
+        raise ValueError("Acceptance report has an invalid status.")
+
+    target = source_result.get("target")
+    artifact = source_result.get("artifact")
+    logs = source_result.get("logs")
+    saves = source_result.get("saves")
+    created_at = source_result.get("created_at")
+    if not isinstance(target, Mapping) or not isinstance(artifact, Mapping) or not isinstance(logs, Mapping):
+        raise ValueError("Acceptance report is missing structured target, artifact, or log evidence.")
+    if not isinstance(saves, Sequence) or isinstance(saves, (str, bytes)):
+        raise ValueError("Acceptance report has malformed save evidence.")
+    if any(not isinstance(item, Mapping) for item in saves):
+        raise ValueError("Acceptance report contains malformed save evidence.")
+    if not isinstance(created_at, str) or not created_at.strip():
+        raise ValueError("Acceptance report has no creation timestamp.")
+
+    manifest = artifact.get("manifest")
+    lock = artifact.get("lock", {})
+    if not isinstance(manifest, Mapping) or not isinstance(lock, Mapping):
+        raise ValueError("Acceptance report has malformed manifest or lock evidence.")
+    stored_log_summary = logs.get("summary")
+    required_error_log = logs.get("required_error_log")
+    findings = logs.get("findings")
+    log_files = logs.get("files")
+    if not isinstance(stored_log_summary, Mapping) or not isinstance(required_error_log, Mapping):
+        raise ValueError("Acceptance report has malformed log summary or error.log evidence.")
+    if not isinstance(findings, Sequence) or isinstance(findings, (str, bytes)):
+        raise ValueError("Acceptance report has malformed log findings.")
+    if any(not isinstance(item, Mapping) for item in findings):
+        raise ValueError("Acceptance report contains malformed log findings.")
+    if not isinstance(log_files, Sequence) or isinstance(log_files, (str, bytes)):
+        raise ValueError("Acceptance report has malformed log-file evidence.")
+    if any(not isinstance(item, Mapping) for item in log_files):
+        raise ValueError("Acceptance report contains malformed log-file evidence.")
+    active_dlc = logs.get("active_dlc", {})
+    if not isinstance(active_dlc, Mapping):
+        raise ValueError("Acceptance report has malformed active-DLC evidence.")
+    if str(active_dlc.get("status", "") or "") == "complete":
+        observed_dlc_names = active_dlc.get("observed_names")
+        if not isinstance(observed_dlc_names, list) or any(
+            not isinstance(name, str) or not name.strip()
+            for name in observed_dlc_names
+        ):
+            raise ValueError("Acceptance report has malformed active-DLC names.")
+        try:
+            observed_dlc_count = int(active_dlc.get("count", -1))
+        except (TypeError, ValueError):
+            raise ValueError("Acceptance report has an invalid active-DLC count.") from None
+        if observed_dlc_count != len(observed_dlc_names):
+            raise ValueError("Acceptance report active-DLC count conflicts with its observed names.")
+        normalized_dlc_names = [name.strip().casefold() for name in observed_dlc_names]
+        if len(set(normalized_dlc_names)) != len(normalized_dlc_names):
+            raise ValueError("Acceptance report active-DLC names contain duplicates.")
+        _validate_fresh_system_log_evidence(active_dlc, log_files, "active-DLC")
+    for finding in findings:
+        expected_severity, expected_category = _expected_captured_finding_classification(
+            finding,
+            active_dlc,
+        )
+        if str(finding.get("severity", "") or "") != expected_severity:
+            raise ValueError("Acceptance report finding severity conflicts with its captured text.")
+        if str(finding.get("category", "") or "") != expected_category:
+            raise ValueError("Acceptance report finding category conflicts with its captured text.")
+    derived_log_summary = summarize_findings(findings)
+    for key in (
+        "total", "errors", "warnings", "by_category", "blocker_count",
+        "blocker_categories", "verdict",
+    ):
+        if stored_log_summary.get(key) != derived_log_summary[key]:
+            raise ValueError("Acceptance report log summary conflicts with its findings (%s)." % key)
+    derived_error_log = _required_error_log_evidence(
+        log_files,
+        required=bool(required_error_log.get("required", True)),
+        execute=True,
+    )
+    if dict(required_error_log) != derived_error_log:
+        raise ValueError("Acceptance report error.log summary conflicts with its file evidence.")
+
+    active_mod = logs.get("active_mod", {})
+    if active_mod and not isinstance(active_mod, Mapping):
+        raise ValueError("Acceptance report has malformed active-mod evidence.")
+    if isinstance(active_mod, Mapping) and bool(active_mod.get("required")):
+        expected_name = str(active_mod.get("expected_name", "") or "")
+        observed_names = active_mod.get("observed_names", [])
+        try:
+            observed_count = int(active_mod.get("count", -1))
+        except (TypeError, ValueError):
+            raise ValueError("Acceptance report has an invalid active-mod count.") from None
+        if not isinstance(observed_names, list) or any(not isinstance(name, str) for name in observed_names):
+            raise ValueError("Acceptance report has malformed active-mod names.")
+        if str(active_mod.get("status", "") or "") == "matched" and (
+            not expected_name
+            or observed_count != 1
+            or observed_names != [expected_name]
+        ):
+            raise ValueError("Acceptance report active-mod match conflicts with its observed names.")
+        if str(active_mod.get("status", "") or "") == "matched":
+            _validate_fresh_system_log_evidence(active_mod, log_files, "active-mod")
+
+    if not isinstance(source_result.get("checklist_summary"), Mapping):
+        raise ValueError("Acceptance report has no valid checklist summary.")
+    launch = source_result.get("launch", {})
+    if not isinstance(launch, Mapping) or not bool(launch.get("executed")):
+        raise ValueError("Acceptance report does not contain an executed game launch.")
+    if str(launch.get("status", "")) != "exited":
+        raise ValueError("Acceptance report game process did not finish normally.")
+    try:
+        returncode = int(launch.get("returncode", 0))
+    except (TypeError, ValueError):
+        raise ValueError("Acceptance report has an invalid launch return code.") from None
+    if returncode != 0:
+        raise ValueError("Acceptance report game process exited with a non-zero return code.")
+
+    source_identity_core = source_result.get("identity_core")
+    if not isinstance(source_identity_core, Mapping):
+        raise ValueError("Acceptance report has no identity core to verify.")
+    identity_links = (
+        ("artifact_fingerprint", str(artifact.get("fingerprint", "") or "")),
+        ("manifest_identity", str(manifest.get("identity_hash", "") or "")),
+        ("lock_identity", str(lock.get("identity_hash", "") or "")),
+        ("target", str(target.get("target", "") or "")),
+        ("profile", str(target.get("profile", "") or "")),
+        ("game_version", str(target.get("game_version", "") or "")),
+    )
+    for identity_key, captured_value in identity_links:
+        if str(source_identity_core.get(identity_key, "") or "") != captured_value:
+            raise ValueError("Acceptance report identity core conflicts with captured %s evidence." % identity_key)
+    if "foundation_source_identity" in source_identity_core:
+        captured_source = manifest.get("foundation_source_identity", {})
+        captured_source_hash = (
+            str(captured_source.get("identity_hash", "") or "")
+            if isinstance(captured_source, Mapping)
+            else ""
+        )
+        if str(source_identity_core.get("foundation_source_identity", "") or "") != captured_source_hash:
+            raise ValueError(
+                "Acceptance report identity core conflicts with captured foundation_source_identity evidence."
+            )
+    original_identity_hash = contract.compute_identity_hash(source_identity_core)
+    original_run_id = contract.compute_run_id(source_identity_core)
+    if str(source_result.get("identity_hash", "")) != original_identity_hash:
+        raise ValueError("Acceptance report identity hash does not match its captured identity core.")
+    if str(source_result.get("run_id", "")) != original_run_id:
+        raise ValueError("Acceptance report run id does not match its captured identity core.")
+
+    entries = _canonicalize_existing_checklist(source_result.get("checklist", ()))
+    attestation = source_identity_core.get("checklist_attestation")
+    if attestation is not None and attestation != contract.canonical_checklist_attestation(entries):
+        raise ValueError("Acceptance report checklist conflicts with its identity attestation.")
+    stored_checklist_summary = source_result["checklist_summary"]
+    derived_checklist_summary = summarize_checklist(entries)
+    for summary_key in ("required", "checked", "missing"):
+        if stored_checklist_summary.get(summary_key) != derived_checklist_summary[summary_key]:
+            raise ValueError("Acceptance report checklist summary conflicts with its checklist (%s)." % summary_key)
+    for summary_key in ("all_checked", "waived", "all_complete"):
+        if summary_key in stored_checklist_summary and stored_checklist_summary[summary_key] != derived_checklist_summary[summary_key]:
+            raise ValueError("Acceptance report checklist summary conflicts with its checklist (%s)." % summary_key)
+    original_status, _original_reasons = _status_from_captured_result(source_result, entries)
+    if str(source_result.get("status", "")) != original_status:
+        raise ValueError("Acceptance report status conflicts with its captured evidence.")
+    return entries
+
+
+def amend_checklist_result(
+    source_result: Mapping[str, Any],
+    checked: Sequence[str] = (),
+    waived_checks: Mapping[str, str] | None = None,
+    check_notes: Mapping[str, str] | None = None,
+) -> dict[str, Any]:
+    """Amend only checklist attestations in a completed, internally consistent run.
+
+    Captured launch, artifact, log, save, and target evidence is copied verbatim.
+    Status/reasons and the deterministic run identity are recomputed from that
+    existing evidence plus the updated checklist; no game process is launched.
+    """
+    entries = validate_result_integrity(source_result)
+    source_identity_core = source_result["identity_core"]
+
+    normalized = normalize_checklist(
+        checked=checked,
+        notes=check_notes,
+        waived_checks=waived_checks,
+    )
+    selected = {item["check_id"]: item for item in normalized}
+    normalized_notes = {
+        str(check_id).strip(): _bounded_text(note, MAX_NOTE_CHARS)
+        for check_id, note in (check_notes or {}).items()
+    }
+    for entry in entries:
+        update = selected[entry["check_id"]]
+        if update["checked"]:
+            entry["checked"] = True
+            entry["waived"] = False
+            entry["waiver_reason"] = ""
+        elif update["waived"]:
+            entry["checked"] = False
+            entry["waived"] = True
+            entry["waiver_reason"] = update["waiver_reason"]
+            # A prior checked-note can contradict a later explicit waiver.
+            entry["notes"] = ""
+        if entry["check_id"] in normalized_notes:
+            entry["notes"] = normalized_notes[entry["check_id"]]
+
+    amended = copy.deepcopy(dict(source_result))
+    amended["checklist"] = entries
+    checklist_summary = summarize_checklist(entries)
+    amended["checklist_summary"] = checklist_summary
+
+    status, reasons = _status_from_captured_result(amended, entries)
+    identity_core = copy.deepcopy(dict(source_identity_core))
+    identity_core["checklist_attestation"] = contract.canonical_checklist_attestation(entries)
+    amended["identity_core"] = identity_core
+    amended["identity_hash"] = contract.compute_identity_hash(identity_core)
+    amended["run_id"] = contract.compute_run_id(identity_core)
+    amended["status"] = status
+    amended["reasons"] = reasons
+    return amended
+
+
+def amended_result_path(source_path: str | os.PathLike[str]) -> Path:
+    """Return a sibling path that cannot overwrite the source report by default."""
+    source = Path(source_path)
+    return source.with_name(source.stem + "-amended" + source.suffix)
 
 
 def write_result(output_path: str | os.PathLike[str], result: Mapping[str, Any]) -> str:
@@ -1123,6 +2380,16 @@ def write_result(output_path: str | os.PathLike[str], result: Mapping[str, Any])
     if destination.parent and str(destination.parent):
         destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_text(contract.result_to_json(dict(result)), encoding="utf-8")
+    return str(destination)
+
+
+def write_result_exclusive(output_path: str | os.PathLike[str], result: Mapping[str, Any]) -> str:
+    """Create a result file only if absent, never replacing existing evidence."""
+    destination = Path(output_path)
+    if destination.parent and str(destination.parent):
+        destination.parent.mkdir(parents=True, exist_ok=True)
+    with destination.open("x", encoding="utf-8", newline="\n") as handle:
+        handle.write(contract.result_to_json(dict(result)))
     return str(destination)
 
 

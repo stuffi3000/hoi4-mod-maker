@@ -29,7 +29,16 @@ RESULT_STATUSES = ("dry_run", "passed", "failed", "blocked", "incomplete")
 
 RUN_MODES = ("dry_run", "assisted")
 
-LOG_CATEGORIES = ("map", "asset", "script", "country_tag", "audio_unrelated", "unknown")
+LOG_CATEGORIES = (
+    "map",
+    "asset",
+    "script",
+    "country_tag",
+    "audio_unrelated",
+    "dlc_unrelated",
+    "environment_unrelated",
+    "unknown",
+)
 
 BLOCKER_CATEGORIES = ("map", "asset", "script", "country_tag", "unknown")
 
@@ -41,7 +50,11 @@ REQUIRED_CHECKS: tuple[tuple[str, str, str], ...] = (
     ("selection", "Select map objects", "Select provinces, states, countries, and strategic regions."),
     ("map_modes", "Inspect map modes", "Inspect terrain, political, supply, railway, air, and naval map modes."),
     ("land_movement", "Move a land unit", "Move a land unit across ordinary and special adjacencies."),
-    ("naval_route", "Test naval route", "Test a port and naval route where applicable."),
+    (
+        "naval_route",
+        "Test naval route",
+        "Create a convoy-backed naval-invasion route with the generated land division.",
+    ),
     ("air_weather", "Check air and weather", "Select air regions and verify weather positions."),
     ("tick_30_days", "Tick 30 days", "Tick at least 30 in-game days."),
     ("save_reload", "Save and reload", "Create a save, reload it, and tick again."),
@@ -91,6 +104,9 @@ _WARNING_PATTERN_TEXTS = (
 )
 
 _CATEGORY_PATTERN_TEXTS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    # Blocker-bearing categories must win over unrelated-noise signatures when
+    # a line contains evidence for both (for example, a map error mentioning
+    # a sound asset).
     ("country_tag", (
         r"invalid.*tag",
         r"unknown.*tag",
@@ -152,18 +168,37 @@ _CATEGORY_PATTERN_TEXTS: tuple[tuple[str, tuple[str, ...]], ...] = (
         r"unexpected token",
         r"localis",
         r"trigger",
-        r"\beffect\b",
+        r"(?<!sound )\beffect\b",
     )),
     ("audio_unrelated", (
-        r"\bsound\b",
-        r"\bmusic\b",
-        r"\baudio\b",
+        r"\bsound\s+effect\b",
+        r"\bsoundeffect\b",
+        r"\bpdx_audio(?:_|\b)",
+        r"\bassetfactory_audio\b",
+        r"(?:^|[\\/])audio(?:[\\/]|$)",
         r"fmod",
         r"wwise",
         r"\.bank\b",
         r"\.ogg\b",
         r"\.wav\b",
         r"\.mp3\b",
+    )),
+    ("dlc_unrelated", (
+        r"\b(?:missing|unavailable|not installed|not owned|not available)\s+(?:the\s+)?DLC\b",
+        r"\bDLC\b.{0,80}\b(?:missing|unavailable|not installed|not owned|not available)\b",
+        r"\bdownloadable content\b",
+        r"\bexpansion\b.{0,80}\b(?:not installed|not owned|unavailable|missing)\b",
+    )),
+    ("environment_unrelated", (
+        r"\boperating system\b",
+        r"\b(?:graphics?|video)\s+driver\b",
+        r"\b(?:graphics?|video)\s+card\b",
+        r"\bGPU\b",
+        r"\b(?:DirectX|OpenGL|Vulkan)\b",
+        r"\bSteam API\b",
+        r"\bParadox Launcher\b",
+        r"\bsystem locale\b",
+        r"\bdisplay resolution\b",
     )),
 )
 
@@ -199,8 +234,10 @@ def build_identity_core(
     game_version: str = "",
     launch_identity: Mapping[str, Any] | None = None,
     expected_identity_hash: str = "",
+    foundation_source_identity: str = "",
+    checklist_entries: Sequence[Mapping[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    """Build the timestamp-free identity core that identifies one acceptance run."""
+    """Build the timestamp-free identity core for run and checklist attestations."""
     return {
         "schema": ENGINE_ACCEPTANCE_SCHEMA,
         "artifact_fingerprint": str(artifact_fingerprint or ""),
@@ -211,6 +248,8 @@ def build_identity_core(
         "game_version": str(game_version or ""),
         "launch": dict(launch_identity or {}),
         "expected_identity_hash": str(expected_identity_hash or ""),
+        "foundation_source_identity": str(foundation_source_identity or ""),
+        "checklist_attestation": canonical_checklist_attestation(checklist_entries or ()),
     }
 
 
@@ -222,6 +261,28 @@ def compute_identity_hash(identity_core: Mapping[str, Any]) -> str:
 def compute_run_id(identity_core: Mapping[str, Any]) -> str:
     """Return the short deterministic run identifier for an identity core mapping."""
     return compute_identity_hash(identity_core)[:16]
+
+
+def canonical_checklist_attestation(
+    entries: Sequence[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    """Return checklist answers in required order for stable run identity."""
+    by_id: dict[str, Mapping[str, Any]] = {}
+    for entry in entries or ():
+        if isinstance(entry, Mapping):
+            check_id = str(entry.get("check_id", "") or "")
+            if check_id:
+                by_id[check_id] = entry
+    return [
+        {
+            "check_id": check_id,
+            "checked": bool(by_id.get(check_id, {}).get("checked", False)),
+            "waived": bool(by_id.get(check_id, {}).get("waived", False)),
+            "waiver_reason": str(by_id.get(check_id, {}).get("waiver_reason", "") or "").strip(),
+            "notes": str(by_id.get(check_id, {}).get("notes", "") or ""),
+        }
+        for check_id in REQUIRED_CHECK_IDS
+    ]
 
 
 def is_error_line(line: str) -> bool:
@@ -250,9 +311,17 @@ def classify_error_line(line: str) -> str:
     return "unknown"
 
 
-def classify_line(line: str) -> tuple[str, str]:
-    """Return the stable severity kind and category for one log line."""
+def _is_error_log_source(source: str) -> bool:
+    """Return whether a log source is named error.log on either path convention."""
+    normalized = str(source or "").replace("\\", "/").rstrip("/").casefold()
+    return normalized.rsplit("/", 1)[-1] == "error.log"
+
+
+def classify_line(line: str, source: str = "") -> tuple[str, str]:
+    """Classify one log line, treating every nonblank error.log line as error evidence."""
     if is_error_line(line):
+        return ("error", classify_error_line(line))
+    if _is_error_log_source(source) and str(line or "").strip():
         return ("error", classify_error_line(line))
     if is_warning_line(line):
         return ("warning", classify_error_line(line))
@@ -265,7 +334,7 @@ def is_blocker_finding(category: str, severity: str) -> bool:
 
 
 def missing_required_checks(entries: Sequence[Mapping[str, Any]]) -> list[str]:
-    """Return the ordered list of required check ids that are not checked."""
+    """Return the ordered required check ids that are neither checked nor waived."""
     missing: list[str] = []
     for check_id, _title, _detail in REQUIRED_CHECKS:
         matched = False
@@ -279,9 +348,11 @@ def missing_required_checks(entries: Sequence[Mapping[str, Any]]) -> list[str]:
             matched = True
             try:
                 checked = bool(entry.get("checked", False))
+                waived = bool(entry.get("waived", False))
             except AttributeError:
                 checked = False
-            if not checked:
+                waived = False
+            if not checked and not waived:
                 missing.append(check_id)
             break
         if not matched:
@@ -330,6 +401,71 @@ def launch_failure_reason(launch, execute=False):
     return ""
 
 
+def required_error_log_failure_reason(evidence, execute=False):
+    """Return a failure reason when an assisted run lacks fresh ``error.log`` evidence."""
+    if not execute:
+        return ""
+    if not isinstance(evidence, Mapping):
+        return "Required error.log evidence was not recorded."
+    if not bool(evidence.get("required", True)):
+        return ""
+    status = str(evidence.get("status", "") or "")
+    if status == "generated":
+        return ""
+    messages = {
+        "not_configured": "Required error.log was not configured; provide a log path named error.log.",
+        "missing": "Required error.log is missing after the assisted run.",
+        "unreadable": "Required error.log is unreadable after the assisted run.",
+        "stale": "Required error.log was not generated or modified after the pre-run snapshot.",
+    }
+    if status in messages:
+        return messages[status]
+    return "Required error.log could not be verified after the assisted run (status: %s)." % (status or "unknown")
+
+
+def _save_evidence_reasons(
+    save_evidence: Sequence[Mapping[str, Any]] | None,
+    missing_saves: Sequence[str] | None,
+    stale_saves: Sequence[str] | None,
+) -> list[str]:
+    """Describe every expected save whose evidence is not fresh."""
+    by_status: dict[str, list[str]] = {}
+
+    def add(status: str, name: str) -> None:
+        bucket = by_status.setdefault(status, [])
+        if name not in bucket:
+            bucket.append(name)
+
+    for name in missing_saves or ():
+        add("missing", str(name))
+    for name in stale_saves or ():
+        add("stale", str(name))
+    for record in save_evidence or ():
+        if not isinstance(record, Mapping):
+            continue
+        status = str(record.get("status", "unknown") or "unknown")
+        if status != "fresh":
+            add(status, str(record.get("name", "unnamed save") or "unnamed save"))
+
+    messages = {
+        "missing": "Expected save file(s) missing: %s.",
+        "stale": "Expected save file(s) predate the snapshot: %s.",
+        "unreadable": "Expected save file(s) are unreadable: %s.",
+        "not_configured": "Expected save file(s) were not checked because the save directory is not configured: %s.",
+    }
+    reasons: list[str] = []
+    for status in ("missing", "stale", "unreadable", "not_configured"):
+        names = by_status.pop(status, [])
+        if names:
+            reasons.append(messages[status] % ", ".join(names))
+    for status in sorted(by_status):
+        reasons.append(
+            "Expected save file(s) do not have fresh evidence (status %s): %s."
+            % (status, ", ".join(by_status[status]))
+        )
+    return reasons
+
+
 def decide_status(
     mode: str = "dry_run",
     artifact_ok: bool = False,
@@ -340,6 +476,10 @@ def decide_status(
     stale_saves: Sequence[str] | None = None,
     launch_ok: bool = True,
     launch_reason: str = "",
+    required_log_failure: str = "",
+    required_active_mod_failure: str = "",
+    save_evidence: Sequence[Mapping[str, Any]] | None = None,
+    waived_required: Sequence[Mapping[str, Any]] | None = None,
 ) -> tuple[str, list[str]]:
     """Decide the final acceptance status without inventing passing results.
 
@@ -347,8 +487,17 @@ def decide_status(
     an accepted or passing result. A failed assisted launch never passes.
     """
     unchecked = list(unchecked_required or [])
-    missing = list(missing_saves or [])
-    stale = list(stale_saves or [])
+    waiver_reasons = []
+    for entry in waived_required or ():
+        if not isinstance(entry, Mapping):
+            continue
+        check_id = str(entry.get("check_id", "") or "").strip()
+        reason = str(entry.get("reason", entry.get("waiver_reason", "")) or "").strip()
+        if check_id and reason:
+            waiver_reasons.append(
+                "Required checklist check %s was explicitly waived: %s." % (check_id, reason)
+            )
+    save_reasons = _save_evidence_reasons(save_evidence, missing_saves, stale_saves)
     try:
         blocker_count = int(blocker_errors or 0)
     except (TypeError, ValueError):
@@ -363,29 +512,46 @@ def decide_status(
             reasons.append("%d blocker-class log error(s) already observed in fresh ranges." % blocker_count)
         if unchecked:
             reasons.append("Required checklist checks remain unchecked: %s." % ", ".join(unchecked))
-        if missing:
-            reasons.append("Expected save file(s) missing: %s." % ", ".join(missing))
-        if stale:
-            reasons.append("Expected save file(s) predate the snapshot: %s." % ", ".join(stale))
+        reasons.extend(waiver_reasons)
+        reasons.extend(save_reasons)
         return ("dry_run", reasons)
     if not artifact_ok:
         return ("blocked", ["Artifact directory is missing or unreadable; no acceptance claim is possible."])
     if artifact_mismatch:
         return ("blocked", ["Artifact identity does not match the expected identity."])
+    failure_reasons: list[str] = []
     if str(mode) != "dry_run" and launch_ok is False:
         reason = str(launch_reason or "").strip()
         if not reason:
             reason = "Assisted execution did not complete successfully."
-        return ("failed", [reason])
+        failure_reasons.append(reason)
+    required_log_reason = str(required_log_failure or "").strip()
+    if str(mode) != "dry_run" and required_log_reason:
+        failure_reasons.append(required_log_reason)
+    required_active_mod_reason = str(required_active_mod_failure or "").strip()
+    if str(mode) != "dry_run" and required_active_mod_reason:
+        failure_reasons.append(required_active_mod_reason)
     if blocker_count > 0:
-        return ("failed", ["%d blocker-class log error(s) were found in fresh post-snapshot ranges." % blocker_count])
+        failure_reasons.append(
+            "%d blocker-class log error(s) were found in fresh post-snapshot ranges."
+            % blocker_count
+        )
+    incomplete_reasons: list[str] = []
     if unchecked:
-        return ("incomplete", ["Required checklist checks remain unchecked: %s." % ", ".join(unchecked)])
-    if missing:
-        return ("incomplete", ["Expected save file(s) missing: %s." % ", ".join(missing)])
-    if stale:
-        return ("incomplete", ["Expected save file(s) predate the snapshot: %s." % ", ".join(stale)])
-    return ("passed", ["Fresh logs show no blocker errors, saves are fresh, and every required check is recorded."])
+        incomplete_reasons.append(
+            "Required checklist checks remain unchecked: %s." % ", ".join(unchecked)
+        )
+    incomplete_reasons.extend(save_reasons)
+    if failure_reasons:
+        return ("failed", failure_reasons + incomplete_reasons + waiver_reasons)
+    if incomplete_reasons:
+        return ("incomplete", incomplete_reasons + waiver_reasons)
+    return (
+        "passed",
+        [
+            "Fresh logs show no blocker errors, saves are fresh, and every required check is checked or explicitly waived."
+        ] + waiver_reasons,
+    )
 
 
 @dataclass(frozen=True)
@@ -482,6 +648,8 @@ class ChecklistEntry:
     detail: str = ""
     required: bool = True
     checked: bool = False
+    waived: bool = False
+    waiver_reason: str = ""
     notes: str = ""
 
     def to_dict(self) -> dict[str, Any]:
@@ -492,6 +660,8 @@ class ChecklistEntry:
             "detail": str(self.detail),
             "required": bool(self.required),
             "checked": bool(self.checked),
+            "waived": bool(self.waived),
+            "waiver_reason": str(self.waiver_reason or ""),
             "notes": str(self.notes or ""),
         }
 
@@ -505,6 +675,8 @@ class ChecklistEntry:
             detail=str(source.get("detail", "") or ""),
             required=bool(source.get("required", True)),
             checked=bool(source.get("checked", False)),
+            waived=bool(source.get("waived", False)),
+            waiver_reason=str(source.get("waiver_reason", "") or ""),
             notes=str(source.get("notes", "") or ""),
         )
 

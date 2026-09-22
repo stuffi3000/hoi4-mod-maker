@@ -489,3 +489,63 @@ Manual art creation and detailed scenario content do not all need to be automate
 - [`docs/wiki/map-core.md`](wiki/map-core.md) and [`docs/wiki/map-visual-assets.md`](wiki/map-visual-assets.md) — structural map files and visual asset contracts.
 - [`docs/wiki/states-regions.md`](wiki/states-regions.md), [`docs/wiki/buildings-supply.md`](wiki/buildings-supply.md), and [`docs/wiki/logistics-and-adjacency.md`](wiki/logistics-and-adjacency.md) — state, position, building, railway, supply, and adjacency expectations.
 - [`docs/wiki/tool-export-contract.md`](wiki/tool-export-contract.md) — generated, preserved, inherited, omitted, and unsupported output policy.
+
+## M10 acceptance and freeze addendum (2026-09-21)
+
+This addendum supersedes the original audit's engine-acceptance and freeze
+status. The historical findings above remain useful as the record that drove
+the map-foundation work, but the Belgium artifact is no longer merely an
+unfrozen prototype.
+
+The exact isolated acceptance artifact loaded directly in HOI4 1.19.3 with
+one proven active mod, loaded all 12,522 province slots (IDs 0 through 12,521),
+started the generated bookmark, ticked for at least 30 in-game days, moved the
+generated land division without losing it, exercised the required map and
+selection views, wrote and reloaded a fresh 43.5 MB named save, ticked again,
+and exited normally. Fresh `error.log` evidence contained 554 classified
+messages: 544 known audio messages and 10 inactive-DLC-correlated messages,
+with no map, asset, script, country-tag, or unknown blocker.
+
+The naval-route check is not claimed as executed. The operator found no
+visible usable port and the isolated scenario had no legal wartime island
+target, so the final acceptance record preserves that requirement as an
+explicitly reasoned waiver. Its truthful checklist is nine checked, one
+waived, and zero missing.
+
+The foundation and acceptance profiles intentionally have different artifact
+manifest identities. They are now bound by a deterministic, profile-agnostic
+foundation source identity over the target, project, map size, and complete
+source inventory. The accepted source identity is
+`d0560555075c4d464c246a0d57c58b18ac82aed746d6690bcf9e2bffff177930`.
+The foundation is frozen at artifact identity
+`93f0105b7d6c1d7ee487cac77a3a53754115353a44a12f18268353f3474a4a60`;
+the post-freeze comparison is compatible with no differences, and the
+generated `FOUNDATION-HANDOFF.md` records the stable 1–12,521 province-ID
+range, dependencies, ownership boundaries, exceptions, and prohibited
+post-freeze operations.
+
+This is sufficient for Gate D and Gate E. It does not turn the waived naval
+scenario into proof of naval gameplay, and it does not remove the handoff's
+documented placement/art-polish work. Those are explicit content follow-ups,
+not hidden prerequisites for the accepted map foundation.
+
+## M10 freeze-integrity correction (2026-09-21)
+
+The final paragraph above is superseded for Gate E. Gate D remains supported
+by the real engine run, but the first Gate E lock was created by trusting the
+manifest's `draft_preview` gate. A follow-up code review showed that this did
+not apply the stricter freeze policy. The exact Belgium foundation currently
+has empty reviewed `map/positions.txt` and `map/weatherpositions.txt`; when its
+captured findings are correctly re-evaluated under the `freeze` context,
+`placement.completeness` and `placement.weather` block the freeze. The old
+manifest also contains a false warning for the successful river-validation
+message; regenerated exports no longer produce that warning.
+
+The freeze service now re-evaluates candidate and freeze contexts, validates
+the complete internal acceptance-report contract before attaching it, compares
+both the foundation source digest and algorithm, and preserves the exact
+report SHA-256 plus checklist waivers in the lock and handoff. The amended R3
+engine report passes these stronger checks (SHA-256
+`0de6704deacd5411bb395f50438f6f7d2c426c13e8783bd7cbadb47ff7578b82`),
+but Gate E stays open until the Belgium placement proposals are explicitly
+reviewed/accepted and a regenerated foundation passes the strict freeze gate.

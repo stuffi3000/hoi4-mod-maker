@@ -1,9 +1,64 @@
 # Changelog
 
-All notable changes to HOI4 Map Maker are documented here. Version 1.4.0
-covers the work after v1.3.4 through the published map-foundation release on
-19 September 2026. It is organized by what users can do, rather than by the
-internal implementation milestones.
+All notable changes to HOI4 Map Maker are documented here. Entries are
+organized by what users can do, rather than by internal implementation
+milestones.
+
+## [1.4.1] - 2026-09-22
+
+### Engine testing and safer launches
+
+**Real acceptance runs now prove that HOI4—not only its launcher—actually
+started with the intended export.**
+
+- Added a direct launcher-bypass path and clear failure reporting when Steam
+  leaves the Paradox launcher open without starting the game.
+- Managed activation temporarily enables exactly one exported mod, verifies
+  that exact name in fresh game logs, then restores the user's previous
+  launcher configuration.
+- A passing run now requires a newly generated `error.log`, exact active-DLC
+  evidence where relevant, every requested fresh save, and all independent
+  failure reasons instead of stopping at the first one.
+- Tightened log classification so audio-only and unavailable-DLC noise can be
+  reported without concealing map, asset, script, or country errors.
+
+### Playable acceptance scenario
+
+**The disposable test mod now reaches the bookmark and supports a meaningful
+map test in HOI4.**
+
+- Corrected bookmark, country-history, unit-order, naming, and current-game
+  syntax that previously prevented or weakened the real harness run.
+- Added a selectable land division, commander, manpower, technologies, and
+  convoys; assigned remaining states safely so moving the division no longer
+  makes it disappear.
+- Kept the naval-invasion check honest: unavailable scenario interactions can
+  be recorded as a named, reasoned waiver instead of being falsely checked.
+- Added safe amended checklist reports that preserve the original artifact,
+  launch, log, save, and timestamp evidence.
+
+### Foundation identity and freeze integrity
+
+**Foundation locks now reject draft-level or hand-edited evidence.**
+
+- Added a profile-independent source identity so the smaller foundation and
+  playable acceptance exports can be tied to the same project snapshot while
+  retaining their own artifact identities.
+- Freeze ingestion recomputes report identity, run ID, checklist/log
+  summaries, and final status before accepting a result.
+- Locks and handoffs retain the exact acceptance-report SHA-256, creation
+  time, waiver reason, and source-identity algorithm.
+- Candidate and freeze commands re-evaluate findings under their own strict
+  lifecycle contexts. This correctly leaves a foundation unfrozen when its
+  authored placement review is incomplete.
+- Corrected a successful river-validation message being emitted as a warning.
+
+### Compatibility note
+
+Older acceptance reports without embedded source identity can still use the
+documented manifest bridge, but the captured manifest bytes and the report's
+internal evidence must verify exactly. The Windows executable remains
+unsigned; verify the package with the release's `SHA256SUMS.txt`.
 
 ## [1.4.0] - 2026-09-19
 
@@ -193,5 +248,6 @@ diagnose when something needs attention.**
 - UTF-8 validation and language-setting reliability improvements.
 - World-normal regeneration and post-export strategic-region checks.
 
+[1.4.1]: https://github.com/stuffi3000/hoi4-mod-maker/releases/tag/v1.4.1
 [1.4.0]: https://github.com/stuffi3000/hoi4-mod-maker/releases/tag/v1.4.0
 [1.3.4]: https://github.com/stuffi3000/hoi4-mod-maker/commit/3dda2da6c90e6eec532f35d4a5e919cc135ecd29

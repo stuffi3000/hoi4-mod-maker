@@ -176,8 +176,10 @@ def test_ai_strategy_overrides_shadow_map_incompatible_vanilla_files(tmp_path):
     write_ai_strategy_overrides(str(tmp_path))
 
     hol = tmp_path / "common" / "ai_strategy" / "HOL.txt"
+    ins = tmp_path / "common" / "ai_strategy" / "INS.txt"
     sov = tmp_path / "common" / "ai_strategy" / "SOV.txt"
     assert hol.read_text(encoding="utf-8").startswith("# Empty - TC MOD")
+    assert ins.read_text(encoding="utf-8").startswith("# Empty - TC MOD")
     assert sov.read_text(encoding="utf-8").startswith("# Empty - TC MOD")
 
     theaters = tmp_path / "common" / "ai_faction_theaters" / "ai_faction_theaters.txt"

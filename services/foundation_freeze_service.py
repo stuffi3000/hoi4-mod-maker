@@ -61,6 +61,32 @@ def _manifest_identity(manifest: dict) -> str:
     except Exception:
         pass
     return ""
+
+
+def _manifest_foundation_source_identity(manifest: dict, source: str = "manifest") -> dict:
+    """Derive and, when present, verify a manifest's shared source identity."""
+    try:
+        from services.export_manifest import foundation_source_identity
+        derived = foundation_source_identity(manifest)
+    except Exception as exc:
+        raise FoundationFreezeError("cannot derive %s foundation source identity: %s" % (source, exc)) from exc
+    derived_hash = str(derived.get("identity_hash", "") or "").strip()
+    derived_algorithm = str(derived.get("algorithm", "") or "").strip()
+    if not derived_hash or not derived_algorithm:
+        raise FoundationFreezeError("%s has no derivable foundation source identity" % source)
+    stored = manifest.get("foundation_source_identity")
+    if stored is not None:
+        if not isinstance(stored, dict):
+            raise FoundationFreezeError("%s has a malformed foundation_source_identity" % source)
+        stored_hash = str(stored.get("identity_hash", "") or "").strip()
+        stored_algorithm = str(stored.get("algorithm", "") or "").strip()
+        if stored_hash != derived_hash or stored_algorithm != derived_algorithm:
+            raise FoundationFreezeError(
+                "%s foundation_source_identity does not match its canonical source payload" % source
+            )
+    return {"identity_hash": derived_hash, "algorithm": derived_algorithm}
+
+
 def _require_manifest(manifest: dict, source: str = "manifest") -> dict:
     if not isinstance(manifest, dict) or not manifest:
         raise FoundationFreezeError("malformed %s: expected a JSON object" % source)
@@ -73,6 +99,7 @@ def _require_manifest(manifest: dict, source: str = "manifest") -> dict:
     size = manifest.get("map_size")
     if not isinstance(size, dict):
         raise FoundationFreezeError("%s has no map_size section" % source)
+    _manifest_foundation_source_identity(manifest, source)
     return manifest
 def load_manifest(path) -> dict:
     return _require_manifest(_read_json_file(path), "foundation manifest")
@@ -177,7 +204,7 @@ def _filter_foundation_outputs(manifest: dict) -> list:
         kept.append({"rel_path": rel, "size": size, "sha256": str(entry.get("sha256", "") or ""), "stage": stage})
     kept.sort(key=lambda item: item["rel_path"])
     return kept
-def _validation_summary(manifest: dict) -> dict:
+def _validation_summary(manifest: dict, context: str | None = None) -> dict:
     node = manifest.get("validation")
     if not isinstance(node, dict):
         return {"context": "", "allowed": False, "blocking": [], "accepted_keys": [], "accepted_exceptions": []}
@@ -203,38 +230,228 @@ def _validation_summary(manifest: dict) -> dict:
         records = _sorted_list([dict(r) for r in records if isinstance(r, dict)])
     except Exception:
         records = []
+    selected_context = str(context or node.get("context", gate.get("context", "")) or "")
+    if context:
+        try:
+            from domain.validation import evaluate_gate
+            findings = node.get("findings")
+            if not isinstance(findings, list):
+                raise ValueError("validation findings must be a list")
+            decision = evaluate_gate(
+                findings,
+                selected_context,
+                accepted=records if records else keys,
+            )
+            gate = decision.to_dict()
+            codes = sorted(
+                str(item.get("code", item.get("exception_id", "?")) or "?")
+                for item in gate.get("blocking", [])
+                if isinstance(item, dict)
+            )
+        except Exception:
+            return {
+                "context": selected_context,
+                "allowed": False,
+                "blocking": ["validation.context_recheck_failed"],
+                "accepted_keys": keys,
+                "accepted_exceptions": records,
+            }
     try:
         allowed = bool(gate.get("allowed", False))
     except Exception:
         allowed = False
-    return {"context": str(node.get("context", gate.get("context", "")) or ""), "allowed": allowed, "blocking": codes, "accepted_keys": keys, "accepted_exceptions": records}
-def _normalize_acceptance_dict(data: dict) -> dict:
+    return {"context": selected_context, "allowed": allowed, "blocking": codes, "accepted_keys": keys, "accepted_exceptions": records}
+def _empty_acceptance() -> dict:
+    return {
+        "present": False,
+        "status": "not_run",
+        "identity_hash": "",
+        "run_id": "",
+        "manifest_identity": "",
+        "manifest_profile": "",
+        "lock_identity": "",
+        "foundation_source_identity": "",
+        "foundation_source_identity_algorithm": "",
+        "source_identity_conflict": False,
+        "acceptance_manifest_evidence": {},
+        "report_evidence": {},
+        "checklist_summary": {},
+    }
+
+
+def _normalize_acceptance_dict(
+    data: dict,
+    *,
+    report_evidence: dict | None = None,
+    checklist_summary: dict | None = None,
+) -> dict:
     if not isinstance(data, dict):
-        return {"present": False, "status": "not_run", "identity_hash": "", "run_id": "", "manifest_identity": ""}
+        return _empty_acceptance()
     if data.get("present") is False:
-        return {"present": False, "status": "not_run", "identity_hash": "", "run_id": "", "manifest_identity": ""}
+        return _empty_acceptance()
     status = str(data.get("status", "unknown") or "unknown")
     identity_hash = str(data.get("identity_hash", "") or "")
     run_id = str(data.get("run_id", "") or "")
-    manifest_identity = ""
-    lock_identity = ""
+    manifest_identity = str(data.get("manifest_identity", "") or "")
+    manifest_profile = str(data.get("manifest_profile", "") or "")
+    lock_identity = str(data.get("lock_identity", "") or "")
+    source_identity = str(data.get("foundation_source_identity", "") or "")
+    source_algorithm = str(data.get("foundation_source_identity_algorithm", "") or "")
+    source_conflict = bool(data.get("source_identity_conflict", False))
+    manifest_evidence = data.get("acceptance_manifest_evidence", {})
+    if not isinstance(manifest_evidence, dict):
+        manifest_evidence = {}
+    stored_report_evidence = data.get("report_evidence", {})
+    if not isinstance(stored_report_evidence, dict):
+        stored_report_evidence = {}
+    stored_checklist_summary = data.get("checklist_summary", {})
+    if not isinstance(stored_checklist_summary, dict):
+        stored_checklist_summary = {}
     core = data.get("identity_core")
     if isinstance(core, dict):
-        manifest_identity = str(core.get("manifest_identity", "") or "")
-        lock_identity = str(core.get("lock_identity", "") or "")
-    if not manifest_identity:
-        artifact = data.get("artifact")
-        if isinstance(artifact, dict):
-            inner = artifact.get("manifest")
-            if isinstance(inner, dict):
-                manifest_identity = str(inner.get("identity_hash", "") or "")
-            lock = artifact.get("lock")
-            if isinstance(lock, dict):
-                lock_identity = str(lock.get("identity_hash", "") or "")
-    return {"present": True, "status": status, "identity_hash": identity_hash, "run_id": run_id, "manifest_identity": manifest_identity, "lock_identity": lock_identity}
+        core_manifest = str(core.get("manifest_identity", "") or "")
+        core_lock = str(core.get("lock_identity", "") or "")
+        core_source = str(core.get("foundation_source_identity", "") or "")
+        if manifest_identity and core_manifest and manifest_identity != core_manifest:
+            source_conflict = True
+        if lock_identity and core_lock and lock_identity != core_lock:
+            source_conflict = True
+        if source_identity and core_source and source_identity != core_source:
+            source_conflict = True
+        manifest_identity = manifest_identity or core_manifest
+        lock_identity = lock_identity or core_lock
+        source_identity = source_identity or core_source
+    artifact = data.get("artifact")
+    if isinstance(artifact, dict):
+        inner = artifact.get("manifest")
+        if isinstance(inner, dict):
+            artifact_manifest = str(inner.get("identity_hash", "") or "")
+            artifact_profile = str(inner.get("profile", "") or "")
+            artifact_source = inner.get("foundation_source_identity", {})
+            artifact_source_hash = (
+                str(artifact_source.get("identity_hash", "") or "")
+                if isinstance(artifact_source, dict)
+                else ""
+            )
+            artifact_source_algorithm = (
+                str(artifact_source.get("algorithm", "") or "")
+                if isinstance(artifact_source, dict)
+                else ""
+            )
+            if manifest_identity and artifact_manifest and manifest_identity != artifact_manifest:
+                source_conflict = True
+            if source_identity and artifact_source_hash and source_identity != artifact_source_hash:
+                source_conflict = True
+            manifest_identity = manifest_identity or artifact_manifest
+            manifest_profile = manifest_profile or artifact_profile
+            source_identity = source_identity or artifact_source_hash
+            source_algorithm = source_algorithm or artifact_source_algorithm
+        lock = artifact.get("lock")
+        if isinstance(lock, dict):
+            artifact_lock = str(lock.get("identity_hash", "") or "")
+            if lock_identity and artifact_lock and lock_identity != artifact_lock:
+                source_conflict = True
+            lock_identity = lock_identity or artifact_lock
+    return {
+        "present": True,
+        "status": status,
+        "identity_hash": identity_hash,
+        "run_id": run_id,
+        "manifest_identity": manifest_identity,
+        "manifest_profile": manifest_profile,
+        "lock_identity": lock_identity,
+        "foundation_source_identity": source_identity,
+        "foundation_source_identity_algorithm": source_algorithm,
+        "source_identity_conflict": source_conflict,
+        "acceptance_manifest_evidence": _deepcopy(manifest_evidence),
+        "report_evidence": _deepcopy(report_evidence or stored_report_evidence),
+        "checklist_summary": _deepcopy(checklist_summary or stored_checklist_summary),
+    }
 
 
-def _acceptance_validation_reasons(info: dict, manifest_identity: str, lock_identity: str = "") -> list[str]:
+def _bridge_legacy_acceptance_source_identity(
+    data: dict,
+    info: dict,
+    acceptance_manifest_path,
+) -> dict:
+    """Bind a legacy report to its unchanged acceptance manifest inventory entry."""
+    if str(info.get("foundation_source_identity", "") or "").strip():
+        return info
+    if acceptance_manifest_path is None:
+        return info
+    candidate = Path(acceptance_manifest_path)
+    if not candidate.is_file():
+        raise FoundationFreezeError("acceptance manifest not found: %s" % candidate)
+    try:
+        raw = candidate.read_bytes()
+    except OSError as exc:
+        raise FoundationFreezeError("cannot read acceptance manifest %s: %s" % (candidate, exc)) from exc
+    actual_sha256 = hashlib.sha256(raw).hexdigest()
+    artifact = data.get("artifact") if isinstance(data, dict) else None
+    inventory = artifact.get("files") if isinstance(artifact, dict) else None
+    if not isinstance(inventory, list):
+        raise FoundationFreezeError(
+            "legacy acceptance report has no artifact inventory for foundation_manifest.json"
+        )
+    matches = [
+        entry
+        for entry in inventory
+        if isinstance(entry, dict)
+        and _normalize_rel(entry.get("rel_path")) == "foundation_manifest.json"
+    ]
+    if len(matches) != 1:
+        raise FoundationFreezeError(
+            "legacy acceptance report must capture exactly one foundation_manifest.json inventory entry"
+        )
+    captured = matches[0]
+    captured_sha256 = str(captured.get("sha256", "") or "").strip().lower()
+    if not captured_sha256 or captured_sha256 != actual_sha256:
+        raise FoundationFreezeError(
+            "acceptance manifest SHA-256 does not match the legacy report artifact inventory"
+        )
+    try:
+        captured_size = int(captured.get("size", -1))
+    except (TypeError, ValueError):
+        captured_size = -1
+    if captured_size != len(raw):
+        raise FoundationFreezeError(
+            "acceptance manifest size does not match the legacy report artifact inventory"
+        )
+    try:
+        parsed = json.loads(raw.decode("utf-8-sig"))
+    except (UnicodeDecodeError, ValueError) as exc:
+        raise FoundationFreezeError("malformed JSON in acceptance manifest %s" % candidate) from exc
+    acceptance_manifest = _require_manifest(parsed, "acceptance manifest")
+    if str(acceptance_manifest.get("profile", "") or "") != "acceptance":
+        raise FoundationFreezeError("acceptance manifest is not an acceptance export")
+    supplied_manifest_identity = _manifest_identity(acceptance_manifest)
+    recorded_manifest_identity = str(info.get("manifest_identity", "") or "")
+    if not recorded_manifest_identity or supplied_manifest_identity != recorded_manifest_identity:
+        raise FoundationFreezeError(
+            "acceptance manifest identity %s does not match the legacy report identity %s"
+            % (supplied_manifest_identity or "<missing>", recorded_manifest_identity or "<missing>")
+        )
+    source_identity = _manifest_foundation_source_identity(acceptance_manifest, "acceptance manifest")
+    bridged = dict(info)
+    bridged["manifest_profile"] = "acceptance"
+    bridged["foundation_source_identity"] = source_identity["identity_hash"]
+    bridged["foundation_source_identity_algorithm"] = source_identity["algorithm"]
+    bridged["acceptance_manifest_evidence"] = {
+        "rel_path": "foundation_manifest.json",
+        "sha256": actual_sha256,
+        "size": len(raw),
+        "manifest_identity": supplied_manifest_identity,
+        "profile": "acceptance",
+    }
+    return bridged
+
+
+def _acceptance_validation_reasons(
+    info: dict,
+    foundation_source_identity: dict,
+    lock_source_identity: dict | None = None,
+    lock_identity: str = "",
+) -> list[str]:
     """Validate an optional acceptance record when it is supplied for freeze."""
     if not isinstance(info, dict) or not info.get("present"):
         return []
@@ -244,31 +461,90 @@ def _acceptance_validation_reasons(info: dict, manifest_identity: str, lock_iden
         reasons.append("engine acceptance record is not successful (status=%r)" % status)
     if not str(info.get("identity_hash", "") or "").strip():
         reasons.append("engine acceptance record has no identity_hash")
+    if bool(info.get("source_identity_conflict", False)):
+        reasons.append("engine acceptance record has conflicting identity evidence")
     record_manifest = str(info.get("manifest_identity", "") or "").strip()
     if not record_manifest:
         reasons.append("engine acceptance record has no manifest identity")
-    elif record_manifest != str(manifest_identity or ""):
-        reasons.append("acceptance record identity %s does not match manifest %s" % (record_manifest, manifest_identity))
+    record_profile = str(info.get("manifest_profile", "") or "").strip()
+    if record_profile != "acceptance":
+        reasons.append("engine acceptance record is not tied to an acceptance-profile manifest")
+    expected_source = str(foundation_source_identity.get("identity_hash", "") or "").strip()
+    expected_algorithm = str(foundation_source_identity.get("algorithm", "") or "").strip()
+    lock_source_identity = lock_source_identity if isinstance(lock_source_identity, dict) else {}
+    lock_source = str(lock_source_identity.get("identity_hash", "") or "").strip()
+    lock_algorithm = str(lock_source_identity.get("algorithm", "") or "").strip()
+    record_source = str(info.get("foundation_source_identity", "") or "").strip()
+    record_algorithm = str(info.get("foundation_source_identity_algorithm", "") or "").strip()
+    if not record_source:
+        reasons.append(
+            "engine acceptance record has no foundation source identity; legacy reports require --acceptance-manifest"
+        )
+    elif record_source != expected_source:
+        reasons.append(
+            "acceptance foundation source identity %s does not match foundation manifest %s"
+            % (record_source, expected_source)
+        )
+    if not record_algorithm:
+        reasons.append("engine acceptance record has no foundation source identity algorithm")
+    elif record_algorithm != expected_algorithm:
+        reasons.append(
+            "acceptance foundation source identity algorithm %s does not match foundation manifest %s"
+            % (record_algorithm, expected_algorithm)
+        )
+    if lock_source and record_source and record_source != lock_source:
+        reasons.append(
+            "acceptance foundation source identity %s does not match frozen lock %s"
+            % (record_source, lock_source)
+        )
+    if lock_algorithm and record_algorithm and record_algorithm != lock_algorithm:
+        reasons.append(
+            "acceptance foundation source identity algorithm %s does not match frozen lock %s"
+            % (record_algorithm, lock_algorithm)
+        )
     record_lock = str(info.get("lock_identity", "") or "").strip()
     if record_lock and record_lock != str(lock_identity or ""):
         reasons.append("acceptance record lock identity %s does not match frozen lock %s" % (record_lock, lock_identity))
     return reasons
 def _acceptance_identity_from_manifest(manifest: dict) -> dict:
-    for key in ("engine_acceptance", "acceptance"):
-        node = manifest.get(key)
-        if isinstance(node, dict) and node.get("status") not in (None, "", "not_run"):
-            return _normalize_acceptance_dict(node)
-    return {"present": False, "status": "not_run", "identity_hash": "", "run_id": "", "manifest_identity": ""}
-def _acceptance_from_file(path) -> dict:
+    """Do not promote an unvalidated manifest summary into acceptance evidence."""
+    return _empty_acceptance()
+def _acceptance_from_file(path, acceptance_manifest_path=None) -> dict:
     if not path:
-        return {"present": False, "status": "not_run", "identity_hash": "", "run_id": "", "manifest_identity": ""}
+        return _empty_acceptance()
     candidate = Path(path)
     if candidate.is_dir():
         candidate = candidate / freeze_contract.ACCEPTANCE_FILENAME
     if not candidate.is_file():
-        return {"present": False, "status": "not_run", "identity_hash": "", "run_id": "", "manifest_identity": ""}
-    data = _read_json_file(candidate)
-    return _normalize_acceptance_dict(data)
+        return _empty_acceptance()
+    try:
+        raw = candidate.read_bytes()
+    except OSError as exc:
+        raise FoundationFreezeError("cannot read acceptance record %s: %s" % (candidate, exc)) from exc
+    try:
+        data = json.loads(raw.decode("utf-8-sig"))
+    except (UnicodeDecodeError, ValueError) as exc:
+        raise FoundationFreezeError("malformed JSON in acceptance record %s" % candidate) from exc
+    if not isinstance(data, dict):
+        raise FoundationFreezeError("malformed acceptance record: expected a JSON object")
+    try:
+        from services.engine_acceptance_service import summarize_checklist, validate_result_integrity
+        entries = validate_result_integrity(data)
+        checklist_summary = summarize_checklist(entries)
+    except (ImportError, ValueError, TypeError) as exc:
+        raise FoundationFreezeError("acceptance report integrity check failed: %s" % exc) from exc
+    report_evidence = {
+        "sha256": hashlib.sha256(raw).hexdigest(),
+        "size": len(raw),
+        "created_at": str(data.get("created_at", "") or ""),
+        "schema": str(data.get("schema", "") or ""),
+    }
+    info = _normalize_acceptance_dict(
+        data,
+        report_evidence=report_evidence,
+        checklist_summary=checklist_summary,
+    )
+    return _bridge_legacy_acceptance_source_identity(data, info, acceptance_manifest_path)
 def _geography_section(manifest: dict) -> dict:
     counts = manifest.get("counts") if isinstance(manifest.get("counts"), dict) else {}
     try:
@@ -341,6 +617,7 @@ def _foundation_counts(counts: dict) -> dict:
 
 def build_expanded_lock(manifest, artifact_dir=None, acceptance=None, acceptance_path=None, lifecycle="candidate", created_at=None, tool_version=None) -> dict:
     manifest = _require_manifest(dict(manifest), "foundation manifest")
+    source_identity = _manifest_foundation_source_identity(manifest, "foundation manifest")
     constants = _lock_constants()
     now = str(created_at or _utc_now_iso())
     tool = str(tool_version or _tool_version())
@@ -365,7 +642,11 @@ def build_expanded_lock(manifest, artifact_dir=None, acceptance=None, acceptance
             acceptance_info = _acceptance_identity_from_manifest(manifest)
     else:
         acceptance_info = _acceptance_identity_from_manifest(manifest)
-    lock = {"lock_schema": constants["lock_schema"], "lock_version": constants["lock_version"], "manifest_schema": constants["manifest_schema"], "manifest_version": constants["manifest_version"], "freeze_schema": freeze_contract.FREEZE_SCHEMA, "freeze_version": freeze_contract.FREEZE_VERSION, "metadata": {"tool_version": tool, "created_at": now, "generator": constants["generator"]}, "tool_version": tool, "lifecycle": lifecycle, "profile": str(manifest.get("profile", "")), "target": {"identity": _deepcopy(dict(target_identity))}, "project": _deepcopy(dict(project)), "game_profile": manifest.get("game_profile"), "game_profile_detail": _deepcopy(manifest.get("game_profile_detail")), "snapshot_fingerprint": str(manifest.get("snapshot_fingerprint", "") or ""), "map_size": _deepcopy(dict(size)), "identity": _deepcopy(dict(identity_node)), "sources": _foundation_source_sections(sources), "counts": _foundation_counts(counts), "geography": _geography_section(manifest), "assets": _filter_foundation_assets(manifest), "outputs": _filter_foundation_outputs(manifest), "validation": _validation_summary(manifest), "engine_acceptance": dict(acceptance_info), "history": []}
+    validation_context = {
+        "candidate": "foundation_candidate",
+        "frozen": "freeze",
+    }.get(lifecycle)
+    lock = {"lock_schema": constants["lock_schema"], "lock_version": constants["lock_version"], "manifest_schema": constants["manifest_schema"], "manifest_version": constants["manifest_version"], "freeze_schema": freeze_contract.FREEZE_SCHEMA, "freeze_version": freeze_contract.FREEZE_VERSION, "metadata": {"tool_version": tool, "created_at": now, "generator": constants["generator"]}, "tool_version": tool, "lifecycle": lifecycle, "profile": str(manifest.get("profile", "")), "target": {"identity": _deepcopy(dict(target_identity))}, "project": _deepcopy(dict(project)), "game_profile": manifest.get("game_profile"), "game_profile_detail": _deepcopy(manifest.get("game_profile_detail")), "snapshot_fingerprint": str(manifest.get("snapshot_fingerprint", "") or ""), "map_size": _deepcopy(dict(size)), "identity": _deepcopy(dict(identity_node)), "foundation_source_identity": _deepcopy(source_identity), "sources": _foundation_source_sections(sources), "counts": _foundation_counts(counts), "geography": _geography_section(manifest), "assets": _filter_foundation_assets(manifest), "outputs": _filter_foundation_outputs(manifest), "validation": _validation_summary(manifest, validation_context), "engine_acceptance": dict(acceptance_info), "history": []}
     return lock
 def freeze_canonical_dict(lock: dict) -> dict:
     if not isinstance(lock, dict):
@@ -395,8 +676,8 @@ def _write_json_atomic(path, payload: dict) -> str:
         except OSError:
             pass
     return str(destination)
-def _manifest_gate_blocked(manifest: dict):
-    summary = _validation_summary(manifest)
+def _manifest_gate_blocked(manifest: dict, context: str):
+    summary = _validation_summary(manifest, context)
     if summary.get("allowed") and not summary.get("blocking"):
         return False, []
     reasons = []
@@ -427,7 +708,7 @@ def create_candidate(manifest_path, lock_path, artifact_dir=None, created_at=Non
     manifest = load_manifest(manifest_path)
     if str(manifest.get("profile", "")) != "foundation":
         return {"ok": False, "reasons": ["artifact is not a foundation export (profile=%r)" % str(manifest.get("profile", ""))], "lock_path": str(lock_path), "identity_hash": _manifest_identity(manifest)}
-    blocked, reasons = _manifest_gate_blocked(manifest)
+    blocked, reasons = _manifest_gate_blocked(manifest, "foundation_candidate")
     if blocked:
         return {"ok": False, "reasons": reasons, "lock_path": str(lock_path), "identity_hash": _manifest_identity(manifest)}
     artifact_blocked, artifact_reasons = _check_artifact_manifest(artifact_dir, manifest)
@@ -438,7 +719,25 @@ def create_candidate(manifest_path, lock_path, artifact_dir=None, created_at=Non
     return {"ok": True, "reasons": [], "lock_path": written, "identity_hash": _manifest_identity(manifest)}
 def _load_candidate_lock(lock_path):
     return load_lock(lock_path)
-def freeze_foundation(manifest_path, lock_path, artifact_dir=None, acceptance_path=None, handoff_path=None, created_at=None) -> dict:
+def _lock_foundation_source_identity(lock: dict) -> dict:
+    node = lock.get("foundation_source_identity") if isinstance(lock, dict) else None
+    if not isinstance(node, dict):
+        return {"identity_hash": "", "algorithm": ""}
+    return {
+        "identity_hash": str(node.get("identity_hash", "") or "").strip(),
+        "algorithm": str(node.get("algorithm", "") or "").strip(),
+    }
+
+
+def freeze_foundation(
+    manifest_path,
+    lock_path,
+    artifact_dir=None,
+    acceptance_path=None,
+    acceptance_manifest_path=None,
+    handoff_path=None,
+    created_at=None,
+) -> dict:
     manifest = load_manifest(manifest_path)
     if str(manifest.get("profile", "")) != "foundation":
         return {"ok": False, "reasons": ["artifact is not a foundation export (profile=%r)" % str(manifest.get("profile", ""))], "lock_path": str(lock_path), "handoff_path": str(handoff_path or ""), "identity_hash": _manifest_identity(manifest)}
@@ -450,11 +749,20 @@ def freeze_foundation(manifest_path, lock_path, artifact_dir=None, acceptance_pa
         return {"ok": False, "reasons": ["candidate lock required before freeze (lifecycle=%r)" % str(candidate.get("lifecycle", ""))], "lock_path": str(lock_path), "handoff_path": str(handoff_path or ""), "identity_hash": _manifest_identity(manifest)}
     expected_identity = _manifest_identity(candidate)
     current_identity = _manifest_identity(manifest)
+    current_source_identity = _manifest_foundation_source_identity(
+        manifest, "foundation manifest"
+    )
+    candidate_source_identity = _lock_foundation_source_identity(candidate)
     if current_identity != expected_identity:
         return {"ok": False, "reasons": ["exact artifact identity mismatch: manifest %s != candidate %s" % (current_identity, expected_identity)], "lock_path": str(lock_path), "handoff_path": str(handoff_path or ""), "identity_hash": current_identity}
+    if (
+        not candidate_source_identity["identity_hash"]
+        or current_source_identity != candidate_source_identity
+    ):
+        return {"ok": False, "reasons": ["exact foundation source identity mismatch between manifest and candidate lock"], "lock_path": str(lock_path), "handoff_path": str(handoff_path or ""), "identity_hash": current_identity}
     if str(manifest.get("snapshot_fingerprint", "") or "") != str(candidate.get("snapshot_fingerprint", "") or ""):
         return {"ok": False, "reasons": ["exact artifact identity mismatch: snapshot fingerprint changed since candidate"], "lock_path": str(lock_path), "handoff_path": str(handoff_path or ""), "identity_hash": current_identity}
-    blocked, reasons = _manifest_gate_blocked(manifest)
+    blocked, reasons = _manifest_gate_blocked(manifest, "freeze")
     if blocked:
         return {"ok": False, "reasons": reasons, "lock_path": str(lock_path), "handoff_path": str(handoff_path or ""), "identity_hash": current_identity}
     artifact_blocked, artifact_reasons = _check_artifact_manifest(artifact_dir, manifest)
@@ -476,12 +784,20 @@ def freeze_foundation(manifest_path, lock_path, artifact_dir=None, acceptance_pa
             acceptance_source = str(disk_acceptance)
     if acceptance_source is not None:
         try:
-            acceptance_info = _normalize_acceptance_dict(_read_json_file(acceptance_source))
+            acceptance_info = _acceptance_from_file(
+                acceptance_source,
+                acceptance_manifest_path,
+            )
         except FoundationFreezeError as exc:
             return {"ok": False, "reasons": ["acceptance record unreadable: %s" % exc], "lock_path": str(lock_path), "handoff_path": str(handoff_path or ""), "identity_hash": current_identity}
     else:
         acceptance_info = _acceptance_identity_from_manifest(manifest)
-    acceptance_reasons = _acceptance_validation_reasons(acceptance_info, current_identity, expected_identity)
+    acceptance_reasons = _acceptance_validation_reasons(
+        acceptance_info,
+        current_source_identity,
+        candidate_source_identity,
+        expected_identity,
+    )
     if acceptance_reasons:
         return {"ok": False, "reasons": acceptance_reasons, "lock_path": str(lock_path), "handoff_path": str(handoff_path or ""), "identity_hash": current_identity}
     lock = build_expanded_lock(manifest, artifact_dir=artifact_dir, acceptance=acceptance_info, acceptance_path=acceptance_source, lifecycle="frozen", created_at=created_at)
@@ -505,7 +821,14 @@ def freeze_foundation(manifest_path, lock_path, artifact_dir=None, acceptance_pa
     return {"ok": True, "reasons": [], "lock_path": written, "handoff_path": str(destination), "identity_hash": current_identity}
 
 
-def record_engine_acceptance(lock_path, manifest_path, acceptance_path, handoff_path=None, created_at=None) -> dict:
+def record_engine_acceptance(
+    lock_path,
+    manifest_path,
+    acceptance_path,
+    acceptance_manifest_path=None,
+    handoff_path=None,
+    created_at=None,
+) -> dict:
     """Attach a successful acceptance run to an exact frozen lock."""
     frozen = load_lock(lock_path)
     manifest = load_manifest(manifest_path)
@@ -515,16 +838,37 @@ def record_engine_acceptance(lock_path, manifest_path, acceptance_path, handoff_
         return {"ok": False, "reasons": ["engine acceptance can only be recorded for a frozen lock"], "lock_path": str(lock_path), "handoff_path": str(handoff_path or ""), "identity_hash": _manifest_identity(manifest)}
     current_identity = _manifest_identity(manifest)
     lock_identity = _manifest_identity(frozen)
+    current_source_identity = _manifest_foundation_source_identity(
+        manifest, "foundation manifest"
+    )
+    lock_source_identity = _lock_foundation_source_identity(frozen)
     if current_identity != lock_identity:
         return {"ok": False, "reasons": ["exact artifact identity mismatch: manifest %s != frozen lock %s" % (current_identity, lock_identity)], "lock_path": str(lock_path), "handoff_path": str(handoff_path or ""), "identity_hash": current_identity}
+    if (
+        not lock_source_identity["identity_hash"]
+        or current_source_identity != lock_source_identity
+    ):
+        return {"ok": False, "reasons": ["exact foundation source identity mismatch between manifest and frozen lock"], "lock_path": str(lock_path), "handoff_path": str(handoff_path or ""), "identity_hash": current_identity}
     acceptance_file = Path(acceptance_path)
     if acceptance_file.is_dir():
         acceptance_file = acceptance_file / freeze_contract.ACCEPTANCE_FILENAME
+    if not acceptance_file.is_file():
+        return {"ok": False, "reasons": ["acceptance record not found: %s" % acceptance_file], "lock_path": str(lock_path), "handoff_path": str(handoff_path or ""), "identity_hash": current_identity}
     try:
-        acceptance = _normalize_acceptance_dict(_read_json_file(acceptance_file))
+        acceptance = _acceptance_from_file(
+            acceptance_file,
+            acceptance_manifest_path,
+        )
     except FoundationFreezeError as exc:
         return {"ok": False, "reasons": ["acceptance record unreadable: %s" % exc], "lock_path": str(lock_path), "handoff_path": str(handoff_path or ""), "identity_hash": current_identity}
-    reasons = _acceptance_validation_reasons(acceptance, current_identity, lock_identity)
+    if not acceptance.get("present"):
+        return {"ok": False, "reasons": ["acceptance record is absent"], "lock_path": str(lock_path), "handoff_path": str(handoff_path or ""), "identity_hash": current_identity}
+    reasons = _acceptance_validation_reasons(
+        acceptance,
+        current_source_identity,
+        lock_source_identity,
+        lock_identity,
+    )
     if reasons:
         return {"ok": False, "reasons": reasons, "lock_path": str(lock_path), "handoff_path": str(handoff_path or ""), "identity_hash": current_identity}
     updated = _deepcopy(frozen)
@@ -538,6 +882,7 @@ def record_engine_acceptance(lock_path, manifest_path, acceptance_path, handoff_
         "run_id": str(acceptance.get("run_id", "") or ""),
         "identity_hash": str(acceptance.get("identity_hash", "") or ""),
         "manifest_identity": current_identity,
+        "foundation_source_identity": current_source_identity["identity_hash"],
     })
     history.sort(key=lambda item: json.dumps(item, ensure_ascii=True, sort_keys=True, default=str))
     updated["history"] = history
@@ -571,7 +916,7 @@ def _flatten_dict(node, prefix: str, out: dict) -> None:
     out[prefix] = node
 def _lock_leaf_paths(lock: dict) -> dict:
     leaves = {}
-    for section in ("profile", "snapshot_fingerprint", "identity", "target", "project", "game_profile", "game_profile_detail", "map_size", "sources", "counts", "geography", "validation", "engine_acceptance", "lifecycle"):
+    for section in ("profile", "snapshot_fingerprint", "identity", "foundation_source_identity", "target", "project", "game_profile", "game_profile_detail", "map_size", "sources", "counts", "geography", "validation", "engine_acceptance", "lifecycle"):
         if section in lock:
             if section in ("profile", "snapshot_fingerprint", "lifecycle", "game_profile"):
                 leaves[section] = lock.get(section)
@@ -807,6 +1152,32 @@ def generate_handoff(lock: dict, manifest=None) -> str:
     lines.append("- blocking findings at freeze: %s" % _handoff_line_list(blocking))
     if isinstance(acceptance, dict) and acceptance.get("present"):
         lines.append("- engine acceptance: status=%s run=%s identity=%s manifest=%s" % (acceptance.get("status", "?"), acceptance.get("run_id", "?"), acceptance.get("identity_hash", "?"), acceptance.get("manifest_identity", "?")))
+        report_evidence = acceptance.get("report_evidence", {})
+        if isinstance(report_evidence, dict) and report_evidence.get("sha256"):
+            lines.append(
+                "- acceptance report evidence: sha256=%s size=%s created=%s"
+                % (
+                    report_evidence.get("sha256", "?"),
+                    report_evidence.get("size", "?"),
+                    report_evidence.get("created_at", "?"),
+                )
+            )
+        checklist = acceptance.get("checklist_summary", {})
+        if isinstance(checklist, dict):
+            lines.append(
+                "- acceptance checklist: checked=%s waived=%s missing=%s"
+                % (
+                    checklist.get("checked", 0),
+                    checklist.get("waived", 0),
+                    _handoff_line_list(checklist.get("missing", []) or []),
+                )
+            )
+            for waiver in checklist.get("waived_checks", []) or []:
+                if isinstance(waiver, dict):
+                    lines.append(
+                        "  - waived %s: %s"
+                        % (waiver.get("check_id", "?"), waiver.get("reason", ""))
+                    )
     else:
         lines.append("- engine acceptance: not recorded at freeze; record it only for the exact frozen identity")
     lines.append("")

@@ -27,6 +27,8 @@ from services.export_manifest import (
     canonical_manifest_dict,
     canonical_manifest_json,
     compare_with_lock,
+    foundation_source_identity,
+    foundation_source_identity_payload,
     manifest_identity_hash,
     write_lock_file,
 )
@@ -175,6 +177,26 @@ def test_source_hashes_present_and_sensitive():
     plan_aux_b = plan_export(t4, p4, te4, state_mgr=sb, country_mgr=cb, continent_mgr=cob, profile_name="foundation", provincial_terrain={1: "plains"}, dirty_assets=("map/terrain.bmp",))
     assert build_manifest_dict(plan_aux_a, [])["sources"]["auxiliary"]["provincial_terrain"] != build_manifest_dict(plan_aux_b, [])["sources"]["auxiliary"]["provincial_terrain"]
     assert build_manifest_dict(plan_aux_a, [])["sources"]["auxiliary"]["dirty_assets"] != build_manifest_dict(plan_aux_b, [])["sources"]["auxiliary"]["dirty_assets"]
+
+
+def test_foundation_source_identity_is_profile_agnostic_and_payload_bound():
+    foundation = build_manifest_dict(_base_plan(profile_name="foundation"), [])
+    acceptance = build_manifest_dict(_base_plan(profile_name="acceptance"), [])
+
+    assert foundation["identity"]["identity_hash"] != acceptance["identity"]["identity_hash"]
+    assert foundation_source_identity_payload(foundation) == {
+        "target": foundation["target"]["identity"],
+        "project": foundation["project"],
+        "map_size": foundation["map_size"],
+        "sources": foundation["sources"],
+    }
+    assert foundation["foundation_source_identity"] == foundation_source_identity(foundation)
+    assert acceptance["foundation_source_identity"] == foundation["foundation_source_identity"]
+    assert foundation["foundation_source_identity"]["algorithm"] == IDENTITY_HASH_ALGORITHM
+
+    changed = copy.deepcopy(acceptance)
+    changed["sources"]["arrays"]["tile"] = "0" * 64
+    assert foundation_source_identity(changed) != foundation["foundation_source_identity"]
 
 
 def test_identity_ignores_diagnostics_and_timestamp():

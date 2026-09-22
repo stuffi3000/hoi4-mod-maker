@@ -32,6 +32,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_freeze.add_argument("--lock", required=True, type=Path, help="Path to the candidate lock (overwritten as frozen).")
     p_freeze.add_argument("--artifact-dir", type=Path, default=None, help="Artifact directory holding the exported mod.")
     p_freeze.add_argument("--acceptance", type=Path, default=None, help="Path to engine_acceptance.json or its directory.")
+    p_freeze.add_argument("--acceptance-manifest", type=Path, default=None, help="Legacy bridge: unchanged acceptance foundation_manifest.json captured by the acceptance report.")
     p_freeze.add_argument("--handoff", type=Path, default=None, help="Path to write FOUNDATION-HANDOFF.md (default: next to the lock).")
     p_freeze.add_argument("--created-at", default=None, help="Override created_at timestamp (for deterministic output).")
     p_freeze.add_argument("--format", choices=("text", "json"), default=argparse.SUPPRESS, help="Output format (overrides global).")
@@ -39,6 +40,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_record.add_argument("--manifest", required=True, type=Path, help="Path to the exact foundation_manifest.json.")
     p_record.add_argument("--lock", required=True, type=Path, help="Path to the frozen foundation.lock.json.")
     p_record.add_argument("--acceptance", required=True, type=Path, help="Path to engine_acceptance.json or its artifact directory.")
+    p_record.add_argument("--acceptance-manifest", type=Path, default=None, help="Legacy bridge: unchanged acceptance foundation_manifest.json captured by the acceptance report.")
     p_record.add_argument("--handoff", type=Path, default=None, help="Path to refresh FOUNDATION-HANDOFF.md (default: next to the lock).")
     p_record.add_argument("--created-at", default=None, help="Override timestamp for the audit history entry.")
     p_record.add_argument("--format", choices=("text", "json"), default=argparse.SUPPRESS, help="Output format (overrides global).")
@@ -126,7 +128,7 @@ def cmd_candidate(args) -> int:
 def cmd_freeze(args) -> int:
     fmt = _fmt_of(args)
     try:
-        result = freeze_service.freeze_foundation(str(args.manifest), str(args.lock), artifact_dir=str(args.artifact_dir) if args.artifact_dir else None, acceptance_path=str(args.acceptance) if args.acceptance else None, handoff_path=str(args.handoff) if args.handoff else None, created_at=args.created_at)
+        result = freeze_service.freeze_foundation(str(args.manifest), str(args.lock), artifact_dir=str(args.artifact_dir) if args.artifact_dir else None, acceptance_path=str(args.acceptance) if args.acceptance else None, acceptance_manifest_path=str(args.acceptance_manifest) if args.acceptance_manifest else None, handoff_path=str(args.handoff) if args.handoff else None, created_at=args.created_at)
     except freeze_service.FoundationFreezeError as exc:
         _emit({"command": "freeze", "ok": False, "reasons": [str(exc)], "lock_path": str(args.lock), "handoff_path": str(args.handoff) if args.handoff else "", "identity_hash": ""}, fmt)
         return EXIT_USAGE
@@ -145,6 +147,7 @@ def cmd_record_acceptance(args) -> int:
             str(args.lock),
             str(args.manifest),
             str(args.acceptance),
+            acceptance_manifest_path=str(args.acceptance_manifest) if args.acceptance_manifest else None,
             handoff_path=str(args.handoff) if args.handoff else None,
             created_at=args.created_at,
         )

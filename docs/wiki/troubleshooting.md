@@ -112,8 +112,61 @@ selected executable, uses a unique run directory, captures fresh logs, and
 binds the result to the artifact manifest identity. A successful process exit
 without the required start/tick/save/reload evidence is not a pass. Use the
 M7 CLI tool to inspect or run the checklist, then use
-`tools/foundation_freeze.py record-acceptance` only for a successful exact
-identity record.
+`tools/foundation_freeze.py record-acceptance` only for a successful record
+whose foundation source identity matches the frozen foundation.
+
+For an executed run, `error.log` is required by default. It must be readable
+and observably created, rewritten, or extended after the pre-run snapshot;
+missing, stale, or unreadable evidence fails the run. Every nonblank fresh
+`error.log` line is classified as error evidence. Messages may be marked
+non-blocking only when their category is known, and optional-DLC messages are
+downgraded only when a complete fresh `system.log` active-DLC list proves the
+owning DLC is inactive. `--allow-non-error-log-set` is an explicit diagnostic
+escape hatch, not a release-acceptance path.
+
+Use `--activate-artifact --hoi4-user-dir <directory>` for an exact direct-run
+test. The harness temporarily stages the artifact descriptor, enables only
+that descriptor in `dlc_load.json`, requires fresh `system.log` proof that
+exactly one matching mod loaded, and restores the original files after the
+game exits. It refuses symbolic-link collisions, concurrent changes, and
+command-line `-mod` overrides instead of risking an ambiguous test.
+
+The expected save name is also evidence: every requested save must be fresh,
+and save/checklist failures are reported alongside launch or log blockers
+rather than being hidden by the first failure. For the naval check, create a
+convoy-backed naval-invasion route with the generated land division; merely
+opening the naval map mode is not sufficient.
+
+When a required interaction is genuinely unavailable in the isolated
+scenario, record it with `--waive-check ID=REASON`; do not mark it checked.
+Waivers are identity-attested, remain visible in the JSON and CLI summary, and
+need a non-empty reason. A completed assisted result can be corrected without
+changing captured launch/log/save evidence by using
+`--amend-checklist <engine_acceptance.json>`; the command writes a sibling
+`-amended.json` file and refuses to overwrite the original.
+
+Foundation and acceptance exports have distinct artifact identities because
+their profiles and file sets differ. Their shared source is bound separately
+through `foundation_source_identity`, derived from target identity, project,
+map size, and source hashes. Older acceptance results can be attached only
+with `--acceptance-manifest`; the freeze service verifies that manifest's
+exact size and SHA-256 against the inventory captured during the run before
+deriving the shared identity.
+
+Candidate and freeze commands do not trust the validation context embedded by
+an earlier draft export. They re-evaluate the manifest's captured findings as
+`foundation_candidate` and `freeze`; warnings that are visible but permitted
+for a candidate can therefore still stop the final freeze. In particular,
+missing or unreviewed province slots and weather positions must be completed
+through the placement review workflow rather than hidden by a draft gate.
+
+Before a successful acceptance report is attached, the freeze service
+recomputes its identity hash, run ID, checklist and log summaries, and final
+status from the captured evidence. The resulting lock and handoff retain the
+exact report SHA-256, creation time, checked/waived counts, every waiver
+reason, and both the shared source digest and algorithm. Editing a report's
+top-level status or checklist by hand is rejected; use `--amend-checklist` so
+the attestation and derived fields are rebuilt consistently.
 
 ### Steam and the Paradox launcher
 
@@ -141,7 +194,13 @@ selected a different Steam launch entry:
 python tools/run_engine_acceptance.py \
   --artifact-dir out/acceptance \
   --target "C:/Program Files (x86)/Steam/steamapps/common/Hearts of Iron IV" \
-  --launch-via steam --skip-launcher --execute
+  --launch-via steam --skip-launcher \
+  --activate-artifact \
+  --hoi4-user-dir "C:/Users/<you>/Documents/Paradox Interactive/Hearts of Iron IV" \
+  --log-dir "C:/Users/<you>/Documents/Paradox Interactive/Hearts of Iron IV/logs" \
+  --save-dir "C:/Users/<you>/Documents/Paradox Interactive/Hearts of Iron IV/save games" \
+  --save-name m10_acceptance.hoi4 \
+  --execute
 ```
 
 If the launcher is left open, the harness reports that state and the missing
@@ -159,6 +218,19 @@ Breaking identity, topology, foundation-visual, or placement differences
 require a candidate review and a new acceptance run. Non-foundation content
 changes may be handled independently when the comparison reports them as
 non-breaking.
+
+For a legacy successful acceptance result that predates embedded source
+identity, freeze only with the unchanged captured acceptance manifest:
+
+```text
+python tools/foundation_freeze.py freeze \
+  --manifest out/foundation/foundation_manifest.json \
+  --artifact-dir out/foundation \
+  --lock out/foundation/foundation.lock.json \
+  --acceptance out/engine_acceptance-amended.json \
+  --acceptance-manifest out/acceptance/foundation_manifest.json \
+  --handoff out/foundation/FOUNDATION-HANDOFF.md
+```
 
 ## Sources
 

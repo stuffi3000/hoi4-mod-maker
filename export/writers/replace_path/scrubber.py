@@ -110,6 +110,9 @@ _AI_STRATEGY_OVERRIDES = {
     "common/ai_strategy/HOL.txt": (
         "# Empty - TC MOD: vanilla HOL strategy targets states outside the exported map.\n"
     ),
+    "common/ai_strategy/INS.txt": (
+        "# Empty - TC MOD: vanilla INS strategy targets states/regions outside the exported map.\n"
+    ),
     "common/ai_strategy/ITA.txt": (
         "# Empty - TC MOD: vanilla ITA strategy targets states/regions outside the exported map.\n"
     ),

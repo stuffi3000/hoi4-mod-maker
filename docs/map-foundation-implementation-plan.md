@@ -1188,13 +1188,26 @@ Release a new 1.4.0 release on Github with an updated .exe file.
 3. Review the "final" exported project and address potential shortcomings (do not go overboard with new features).
 4. Potentially release a 1.4.1 hotfix.
 
-### M10 implementation checklist (2026-09-19)
+### M10 implementation checklist (updated 2026-09-22)
 
-- [x] **Independent code review and artifact checks:** the M10 artifact/acceptance contracts, console-safety checks, Belgium foundation/acceptance exports, static verifier, repeated inventory comparison, compilation, and focused regression suites pass. The existing byte-baseline mismatch remains the documented M6 compatibility exception.
+- [x] **Independent code review and artifact checks:** the M10 artifact/acceptance contracts, console-safety checks, Belgium foundation/acceptance exports, profile-aware verifier, repeated inventory comparison, compilation, and focused regression suites pass. The intentional M6 byte-baseline update is recorded in the fixture.
 - [x] **Steam/launcher transport diagnosis:** the harness now launches through Steam with `-applaunch 394360`, waits for a newly observed `hoi4.exe`, records `Paradox Launcher.exe`, and fails fast when the Codex sandbox cannot inspect the interactive desktop process list.
 - [x] **Unattended launch path:** `--skip-launcher` resolves and runs `hoi4.exe` directly and observes the game process by default. An elevated short probe observed a new HOI4 PID (`24928`); the probe was then stopped deliberately after process startup, before in-game checks.
-- [ ] **Real engine acceptance:** the ten M7 checks, fresh logs, at least 30 in-game days, save/reload, and clean map/asset findings still need to be completed in an interactive HOI4 session. Process startup alone does not claim Gate D.
-- [ ] **Final review and release decision:** review the accepted artifact, apply the M8 freeze/handoff workflow, and decide whether a 1.4.1 hotfix is warranted.
+- [x] **Exact artifact activation and evidence:** managed activation temporarily enabled only `BelgiumAcceptanceM10R3`, fresh `system.log` proved exactly one matching active mod and a complete 14-item DLC list, fresh `error.log` was mandatory, and the original `dlc_load.json` bytes and staged descriptor were restored after exit.
+- [x] **Real engine acceptance:** the acceptance bookmark started, the map and selections rendered, map modes/air/weather worked, the land unit remained active while moving, at least 30 in-game days elapsed, and the named 43.5 MB save reloaded and ticked before a clean exit. The final record reports zero blocker findings and a fresh save.
+- [x] **Truthful naval exception:** the generated scenario exposed no usable port and no legal wartime island target, so `naval_route` is explicitly waived with the operator's reason rather than falsely checked. The accepted record contains nine checked requirements, one waiver, and no missing requirements.
+- [x] **Acceptance/freeze integrity hardening:** freeze ingestion now recomputes report identity, run ID, checklist summaries, log summaries, and final status; records the exact report SHA-256, timestamp, checklist waiver details, and source-identity algorithm; and rejects internally altered reports. Candidate and freeze operations re-evaluate the manifest findings under `foundation_candidate` and `freeze` respectively instead of trusting a draft gate result.
+- [ ] **Source-bound freeze and handoff:** the profile-specific manifests correctly share foundation source identity `d0560555075c4d464c246a0d57c58b18ac82aed746d6690bcf9e2bffff177930`, and the acceptance report passes the strengthened integrity check. The earlier Belgium lock is not valid freeze evidence: review found it had trusted `draft_preview`, while the exact foundation has empty reviewed `positions.txt`/`weatherpositions.txt` and freeze blockers `placement.completeness` and `placement.weather`. Author/review those placements, regenerate the foundation under the strict lifecycle, and only then create the final lock/handoff.
+- [ ] **1.4.1 hotfix:** the acceptance-content, harness-evidence, waiver, and source-binding corrections warrant a hotfix; complete the full regression/build/package checks before publishing it.
+
+### M10 final engine/freeze checkpoint (2026-09-21)
+
+- **Accepted run:** `engine-acceptance-final-r3-amended.json` is `passed`; its checklist is 9 checked, 1 explicitly waived, 0 missing. Its captured target, artifact, launch, logs, saves, and creation time are deep-equal to the original R3 evidence.
+- **Log evidence:** fresh `error.log` produced 554 classified lines: 544 known audio messages and 10 evidence-correlated inactive-DLC messages, with 0 map, asset, script, tag, or unknown blockers. Fresh `system.log` proved the exact active mod and complete active-DLC list.
+- **Save/restore evidence:** `m10_acceptance_final_r3_20260920.hoi4` is fresh (43,501,995 bytes). Managed activation restored the prior `dlc_load.json` bytes and removed its temporary descriptor.
+- **Freeze correction:** acceptance artifact identity `317ee379855b0e21cfb5b59ef02158c0f4a37d6be05721d6e18baea39edb1752` and foundation artifact identity `93f0105b7d6c1d7ee487cac77a3a53754115353a44a12f18268353f3474a4a60` are correctly bound through their shared source identity, but the earlier freeze result was produced from a `draft_preview` gate and is superseded. A corrected candidate succeeds under `foundation_candidate`; freeze correctly stops on unreviewed province-slot and strategic-region weather placements. The old manifest also contains a spurious `river.legality` warning for “River validation passed”, which is fixed for regenerated exports.
+- **Review-driven fixes:** invalid acceptance bookmark/OOB syntax, missing name pools, unsafe inherited scripts, disappearing land units, unavailable convoys, launcher-only false positives, stale/missing `error.log`, ambiguous active mods/DLCs, hidden save/checklist failures, and impossible cross-profile freeze identity matching were corrected and regression-tested.
+- **Remaining Gate E step:** use the placement proposal/review workflow to author and explicitly accept all required province slots and strategic-region weather positions in the Belgium project, regenerate the foundation artifact, rerun strict freeze plus handoff, and then complete the repository-wide/package/release checks.
 
 ### M10 launch-debug checkpoint (2026-09-19)
 
@@ -1430,24 +1443,25 @@ Before compaction/repair, offer a dry-run mapping and scan known project/output 
 
 This project is the first release candidate and should exercise the complete workflow.
 
-- [ ] Store and confirm the HOI4 1.19.x target profile in project metadata.
-- [ ] Export from an immutable snapshot and prove no live manager/array mutation.
-- [ ] Review province `9706`; either repair the source project or approve the 14-pixel lake normalization explicitly.
-- [ ] Generate and inspect the old-to-new ID report; freeze the 1–12,521 range only after all repairs.
-- [ ] Mark special adjacencies as `none_intended` with a geographic review, or author required entries/rules.
+- [x] Store and confirm the HOI4 1.19.x target profile in project metadata.
+- [x] Export from an immutable snapshot and prove no live manager/array mutation.
+- [x] Review province `9706`; the 14-pixel classification synchronization is recorded and applied as the sole safe repair.
+- [x] Generate and inspect the old-to-new ID report; the 1–12,521 range is frozen after the approved repair.
+- [x] Mark special adjacencies as `none_intended` with a geographic review, or author required entries/rules.
 - [ ] Review all 327 railway components.
 - [ ] Connect, remove, or explain the 48 supply nodes absent from the railway graph.
 - [ ] Replace or review repeated centroid position slots.
-- [ ] Separate the 3,558 generated building records and randomized state values from foundation output.
-- [ ] Resolve terrain palette from the configured `C:` game installation.
-- [ ] Resolve and test the tree-map dimensions/index contract.
-- [ ] Generate or preserve profile-correct water/FOW DDS assets.
-- [ ] Inventory all remaining terrain assets as generated, preserved, inherited, omitted, or unsupported.
-- [ ] Preserve or explicitly omit `map/colors.txt` and remove unjustified empty legacy files.
-- [ ] Generate an isolated acceptance mod with non-colliding tags.
-- [ ] Pass fresh main-menu/start/30-day/save/reload and map-mode checks.
-- [ ] Produce `foundation_manifest.json`, `foundation_report.md`, `engine_acceptance.json`, and `foundation.lock.json`.
-- [ ] Generate the content-team handoff document and begin conventional content work only after lock acceptance.
+- [x] Separate generated building records and randomized state values from foundation output.
+- [x] Resolve terrain palette from the configured `C:` game installation.
+- [x] Resolve and test the tree-map dimensions/index contract.
+- [x] Generate or preserve profile-correct water/FOW DDS assets.
+- [x] Inventory all remaining terrain assets as generated, preserved, inherited, omitted, or unsupported.
+- [x] Preserve or explicitly omit `map/colors.txt` and remove unjustified empty legacy files.
+- [x] Generate an isolated acceptance mod with non-colliding tags.
+- [x] Pass fresh main-menu/start/30-day/save/reload and map-mode checks, with the unavailable naval route explicitly waived.
+- [x] Produce `foundation_manifest.json`, `foundation_report.md`, and the accepted `engine_acceptance.json` evidence.
+- [ ] Produce a valid `foundation.lock.json` after the required province-slot and weather-placement review.
+- [ ] Generate the final content-team handoff document and begin conventional content work only after that lock is accepted.
 
 ## 15. Release gates
 

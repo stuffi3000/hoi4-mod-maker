@@ -12,9 +12,9 @@ pytestmark = pytest.mark.unit
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_release_metadata_is_1_4_0():
-    assert VERSION == "1.4.0"
-    assert VERSION_DATE == "2026-09-19"
+def test_release_metadata_is_1_4_1():
+    assert VERSION == "1.4.1"
+    assert VERSION_DATE == "2026-09-22"
     assert (ROOT / "CHANGELOG.md").is_file()
 
 
@@ -28,7 +28,7 @@ def test_release_docs_describe_foundation_lifecycle_and_credits():
         assert "acceptance" in text.lower()
     assert "AmonStreeling" in readme
     assert "Stuffi3000" in readme
-    assert "1.4.0" in changelog
+    assert "1.4.1" in changelog
 
 
 def test_english_release_screenshots_are_present():

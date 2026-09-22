@@ -839,8 +839,11 @@ def collect_findings(
             from domain.managers.river import validate_rivers, VALID_RIVER_VALUES
             river_arr = np.asarray(river_map)
             if bool(np.isin(river_arr, list(VALID_RIVER_VALUES)).any()):
-                issues = [w for w in validate_rivers(river_arr)
-                          if w not in ("No river data", "River validation passed")]
+                issues = [
+                    w for w in validate_rivers(river_arr)
+                    if str(w).strip().rstrip(" ✓")
+                    not in ("No river data", "River validation passed")
+                ]
                 for issue in issues[:5]:
                     findings.append(ValidationNote("river.legality", "warning",
                                                    "River: %s" % issue, layer="rivers"))

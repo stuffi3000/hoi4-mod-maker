@@ -1,9 +1,20 @@
 """Application version and release history."""
 
-VERSION = "1.4.0"
-VERSION_DATE = "2026-09-19"
+VERSION = "1.4.1"
+VERSION_DATE = "2026-09-22"
 
 CHANGELOG = {
+    "1.4.1": {
+        "date": "2026-09-22",
+        "changes": [
+            "Made the HOI4 acceptance harness bypass launcher-only stalls and prove the exact active mod, DLC set, fresh error log, and fresh saves.",
+            "Fixed the generated acceptance scenario so bookmarks, units, names, convoys, map modes, saves, and land movement work in a real engine run.",
+            "Added explicit, reasoned checklist waivers and safe amended reports without rewriting captured launch, log, artifact, or save evidence.",
+            "Hardened foundation freeze against altered acceptance reports and draft-context validation, with exact report hashes and waiver details in the handoff.",
+            "Added profile-independent source binding between acceptance and foundation exports while retaining distinct artifact identities.",
+            "Corrected successful river validation being reported as a warning and made strict freeze expose unreviewed placement work instead of silently accepting it.",
+        ],
+    },
     "1.4.0": {
         "date": "2026-09-19",
         "changes": [

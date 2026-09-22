@@ -1154,6 +1154,30 @@ def _compute_identity_hash(profile_name, portable_target, portable_project, map_
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
+def foundation_source_identity_payload(manifest: dict) -> dict:
+    """Return the profile-agnostic source payload shared by related exports."""
+    source = manifest if isinstance(manifest, dict) else {}
+    target = source.get("target") if isinstance(source.get("target"), dict) else {}
+    target_identity = target.get("identity") if isinstance(target.get("identity"), dict) else {}
+    project = source.get("project") if isinstance(source.get("project"), dict) else {}
+    map_size = source.get("map_size") if isinstance(source.get("map_size"), dict) else {}
+    sources = source.get("sources") if isinstance(source.get("sources"), dict) else {}
+    return {
+        "target": copy.deepcopy(dict(target_identity)),
+        "project": copy.deepcopy(dict(project)),
+        "map_size": copy.deepcopy(dict(map_size)),
+        "sources": copy.deepcopy(dict(sources)),
+    }
+
+
+def foundation_source_identity(manifest: dict) -> dict:
+    """Derive the deterministic identity that binds exports to common sources."""
+    return {
+        "identity_hash": _digest_canonical(foundation_source_identity_payload(manifest)),
+        "algorithm": IDENTITY_HASH_ALGORITHM,
+    }
+
+
 
 def _validation_gate_contexts():
     """Return known gate contexts, preferring the shared contract."""
@@ -2070,7 +2094,7 @@ def build_manifest_dict(plan, written_files: list, stage_results: list | None = 
         lock_section = _build_lock_compat_section(plan, lock_compat)
     except Exception:
         lock_section = {"status": "not_run", "breaking": False, "differences": []}
-    return {
+    manifest = {
         "manifest_schema": MANIFEST_SCHEMA,
         "manifest_version": MANIFEST_VERSION,
         "metadata": {
@@ -2117,6 +2141,8 @@ def build_manifest_dict(plan, written_files: list, stage_results: list | None = 
         "engine_acceptance": engine_acceptance_section,
         "lock_compat": lock_section,
     }
+    manifest["foundation_source_identity"] = foundation_source_identity(manifest)
+    return manifest
 
 
 def write_manifest(output_dir: str, plan, written_files: list, stage_results: list | None = None,

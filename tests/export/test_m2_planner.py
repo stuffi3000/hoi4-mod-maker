@@ -98,6 +98,25 @@ def test_plan_returns_export_plan_without_writing_files(m2_tmp):
     assert not out.exists()
 
 
+def test_successful_river_validation_is_not_recorded_as_a_warning():
+    tile, prov, terrain = _fixture_maps()
+    states, countries, continents = _fixture_managers()
+    river = np.full(tile.shape, 255, dtype=np.uint8)
+    river[10:15, 10] = 3
+    river[10, 10] = 0
+    plan = plan_export(
+        tile,
+        prov,
+        terrain,
+        river_map=river,
+        state_mgr=states,
+        country_mgr=countries,
+        continent_mgr=continents,
+        profile_name="foundation",
+    )
+    assert not any(finding.code == "river.legality" for finding in plan.findings)
+
+
 def test_plan_does_not_mutate_live_project(m2_tmp):
     tile, prov, terrain = _fixture_maps()
     states, countries, continents = _fixture_managers()
