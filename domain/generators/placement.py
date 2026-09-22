@@ -59,6 +59,7 @@ from typing import Iterable as TypingIterable
 
 import numpy as np
 from scipy.ndimage import distance_transform_edt as edt_distance
+from scipy.ndimage import find_objects as find_label_objects
 
 from collections.abc import Mapping as CollectionsMapping
 from data.constants import TILE_LAND
@@ -413,12 +414,17 @@ def generate_placement_proposals(
             province_arr.shape, float(max(num_rows, num_cols)), dtype=np.float64
         )
 
-    land_mask_global = tile_arr == int(TILE_LAND)
+    province_slices = find_label_objects(province_arr)
     result_slots: list[ProvincePositionSlot] = []
     result_diagnostics: list[PlacementDiagnostic] = []
 
     for province_id in ordered_pids:
-        if province_id not in present_ids:
+        province_slice = (
+            province_slices[province_id - 1]
+            if 0 < province_id <= len(province_slices)
+            else None
+        )
+        if province_id not in present_ids or province_slice is None:
             result_diagnostics.append(
                 PlacementDiagnostic(
                     province_id=int(province_id),
@@ -430,9 +436,14 @@ def generate_placement_proposals(
                 )
             )
             continue
-        province_mask = province_arr == int(province_id)
-        candidate_mask = province_mask & land_mask_global
-        land_rows, land_cols = np.nonzero(candidate_mask)
+        province_rows_slice, province_cols_slice = province_slice
+        local_province_mask = province_arr[province_slice] == int(province_id)
+        local_land_mask = local_province_mask & (
+            tile_arr[province_slice] == int(TILE_LAND)
+        )
+        local_rows, local_cols = np.nonzero(local_land_mask)
+        land_rows = local_rows + int(province_rows_slice.start)
+        land_cols = local_cols + int(province_cols_slice.start)
         if land_rows.size == 0:
             result_diagnostics.append(
                 PlacementDiagnostic(
@@ -785,12 +796,17 @@ def generate_port_proposals(
             province_arr.shape, float(max(num_rows, num_cols)), dtype=np.float64
         )
 
-    land_mask_global = tile_arr == int(TILE_LAND)
+    province_slices = find_label_objects(province_arr)
     result_ports: list[PortPlacement] = []
     result_diagnostics: list[PlacementDiagnostic] = []
 
     for province_id in ordered_pids:
-        if province_id not in present_ids:
+        province_slice = (
+            province_slices[province_id - 1]
+            if 0 < province_id <= len(province_slices)
+            else None
+        )
+        if province_id not in present_ids or province_slice is None:
             result_diagnostics.append(
                 PlacementDiagnostic(
                     province_id=int(province_id),
@@ -868,10 +884,17 @@ def generate_port_proposals(
                 )
             )
             continue
-        sea_surface_mask = (province_arr == int(sea_id)) & (
-            tile_arr == int(TILE_SEA)
+        sea_slice = (
+            province_slices[sea_id - 1]
+            if 0 < sea_id <= len(province_slices)
+            else None
         )
-        if not bool(np.any(sea_surface_mask)):
+        if sea_slice is None or not bool(
+            np.any(
+                (province_arr[sea_slice] == int(sea_id))
+                & (tile_arr[sea_slice] == int(TILE_SEA))
+            )
+        ):
             result_diagnostics.append(
                 PlacementDiagnostic(
                     province_id=int(province_id),
@@ -884,9 +907,13 @@ def generate_port_proposals(
                 )
             )
             continue
-        province_mask = province_arr == int(province_id)
-        land_mask = province_mask & land_mask_global
-        if not bool(np.any(land_mask)):
+        province_rows_slice, province_cols_slice = province_slice
+        local_province_mask = province_arr[province_slice] == int(province_id)
+        local_land_mask = local_province_mask & (
+            tile_arr[province_slice] == int(TILE_LAND)
+        )
+        local_rows, local_cols = np.nonzero(local_land_mask)
+        if local_rows.size == 0:
             result_diagnostics.append(
                 PlacementDiagnostic(
                     province_id=int(province_id),
@@ -898,13 +925,31 @@ def generate_port_proposals(
                 )
             )
             continue
-        adjacent_to_sea = np.zeros(province_arr.shape, dtype=bool)
-        adjacent_to_sea[1:, :] |= sea_surface_mask[:-1, :]
-        adjacent_to_sea[:-1, :] |= sea_surface_mask[1:, :]
-        adjacent_to_sea[:, 1:] |= sea_surface_mask[:, :-1]
-        adjacent_to_sea[:, :-1] |= sea_surface_mask[:, 1:]
-        legal_mask = land_mask & adjacent_to_sea
-        legal_rows, legal_cols = np.nonzero(legal_mask)
+        land_rows = local_rows + int(province_rows_slice.start)
+        land_cols = local_cols + int(province_cols_slice.start)
+        adjacent_to_sea = np.zeros(land_rows.shape, dtype=bool)
+        valid = land_rows > 0
+        adjacent_to_sea[valid] |= (
+            (province_arr[land_rows[valid] - 1, land_cols[valid]] == int(sea_id))
+            & (tile_arr[land_rows[valid] - 1, land_cols[valid]] == int(TILE_SEA))
+        )
+        valid = land_rows + 1 < num_rows
+        adjacent_to_sea[valid] |= (
+            (province_arr[land_rows[valid] + 1, land_cols[valid]] == int(sea_id))
+            & (tile_arr[land_rows[valid] + 1, land_cols[valid]] == int(TILE_SEA))
+        )
+        valid = land_cols > 0
+        adjacent_to_sea[valid] |= (
+            (province_arr[land_rows[valid], land_cols[valid] - 1] == int(sea_id))
+            & (tile_arr[land_rows[valid], land_cols[valid] - 1] == int(TILE_SEA))
+        )
+        valid = land_cols + 1 < num_cols
+        adjacent_to_sea[valid] |= (
+            (province_arr[land_rows[valid], land_cols[valid] + 1] == int(sea_id))
+            & (tile_arr[land_rows[valid], land_cols[valid] + 1] == int(TILE_SEA))
+        )
+        legal_rows = land_rows[adjacent_to_sea]
+        legal_cols = land_cols[adjacent_to_sea]
         if legal_rows.size == 0:
             result_diagnostics.append(
                 PlacementDiagnostic(
@@ -919,11 +964,10 @@ def generate_port_proposals(
                 )
             )
             continue
-        prov_rows, prov_cols = np.nonzero(province_mask)
-        min_row = int(prov_rows.min())
-        max_row = int(prov_rows.max())
-        min_col = int(prov_cols.min())
-        max_col = int(prov_cols.max())
+        min_row = int(province_rows_slice.start)
+        max_row = int(province_rows_slice.stop) - 1
+        min_col = int(province_cols_slice.start)
+        max_col = int(province_cols_slice.stop) - 1
         box_top = max(0, min_row - 1)
         box_bottom = min(num_rows, max_row + 2)
         box_left = max(0, min_col - 1)
