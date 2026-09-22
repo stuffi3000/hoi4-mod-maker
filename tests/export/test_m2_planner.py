@@ -351,6 +351,18 @@ def test_transaction_promotion_backup_and_overwrite(m2_tmp):
     assert (m2_tmp / "mod" / "hello.txt").read_text(encoding="utf-8") == "v3"
 
 
+def test_transaction_accepts_precreated_empty_destination(m2_tmp):
+    dest = m2_tmp / "new-mod"
+    dest.mkdir()
+
+    def _write(staging_dir):
+        Path(staging_dir, "hello.txt").write_text("fresh", encoding="utf-8")
+
+    run_staged_export(str(dest), _write, StagingPolicy())
+
+    assert (dest / "hello.txt").read_text(encoding="utf-8") == "fresh"
+
+
 def test_transaction_failed_staging_cleanup_and_keep(m2_tmp):
     dest = m2_tmp / "mod"
 

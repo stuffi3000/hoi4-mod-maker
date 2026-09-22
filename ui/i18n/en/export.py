@@ -69,7 +69,7 @@ Missing data will cause HOI4 to crash on load. Are you sure you want to skip aut
     "export_log_tooltip": "Shows export progress and any planner repairs applied to the export snapshot.",
     "export_log_prefix": "Auto",
     "export_overwrite": "Overwrite existing output",
-    "export_overwrite_tooltip": "Allow files in the selected output directory to be replaced. Leave off to protect existing exports.",
+    "export_overwrite_tooltip": "Allow files in a non-empty selected output directory to be replaced. Empty folders are safe placeholders; leave this off to protect existing exports.",
     "export_pre_check_title": "Pre-Export Check",
     "export_pre_check_tooltip": "Review readiness before writing files. Hover any row for the editor or setting that can fix it.",
     "export_preflight_failed": "The pre-export check could not be completed:\n{error}",

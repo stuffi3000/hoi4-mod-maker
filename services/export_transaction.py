@@ -2,8 +2,9 @@
 
 Exports are written to a fresh staging directory below the destination
 parent, validated there, and only then promoted to the final destination.
-An existing destination is never deleted unless the caller explicitly
-chooses overwrite or backup.
+An existing non-empty destination is never deleted unless the caller
+explicitly chooses overwrite or backup. A pre-created empty directory is
+treated as a safe placeholder for the directory picker.
 """
 from __future__ import annotations
 
@@ -106,6 +107,7 @@ def promote_staging(staging: str, destination: str, policy: StagingPolicy | None
     if staging_abs == dest:
         raise ValueError("staging directory must differ from the destination")
     replaced = None
+    removed_empty_destination = False
     if os.path.exists(dest):
         if not os.path.isdir(dest):
             raise ValueError("destination exists as a file: %s" % dest)
@@ -116,9 +118,27 @@ def promote_staging(staging: str, destination: str, policy: StagingPolicy | None
             # subsequent promotion fails, instead of deleting a known-good mod.
             replaced = "%s.replaced-%s" % (dest, uuid.uuid4().hex[:12])
             os.replace(dest, replaced)
-        else:
+        elif os.path.islink(dest):
             raise FileExistsError(
-                "destination already exists: %s (choose overwrite or backup to replace it)" % dest)
+                "destination already exists as a symbolic link: %s "
+                "(choose overwrite or backup to replace it)" % dest)
+        else:
+            try:
+                is_empty = not os.listdir(dest)
+            except OSError as exc:
+                raise FileExistsError(
+                    "destination already exists and cannot be inspected: %s "
+                    "(choose overwrite or backup to replace it)" % dest) from exc
+            if not is_empty:
+                raise FileExistsError(
+                    "destination already exists and is not empty: %s "
+                    "(choose overwrite or backup to replace it)" % dest)
+            # QFileDialog.getExistingDirectory returns a path that already
+            # exists, even when the user just created a new empty folder.
+            # Removing only that empty placeholder lets the staged directory
+            # take its place without weakening protection for real exports.
+            os.rmdir(dest)
+            removed_empty_destination = True
     try:
         try:
             os.replace(staging_abs, dest)
@@ -127,6 +147,11 @@ def promote_staging(staging: str, destination: str, policy: StagingPolicy | None
     except Exception:
         if replaced is not None and os.path.exists(replaced) and not os.path.exists(dest):
             os.replace(replaced, dest)
+        elif removed_empty_destination and not os.path.exists(dest):
+            try:
+                os.makedirs(dest)
+            except OSError:
+                pass
         raise
     if replaced is not None:
         shutil.rmtree(replaced, ignore_errors=True)
