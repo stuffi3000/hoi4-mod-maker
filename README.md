@@ -8,7 +8,7 @@ The application interface and generated messages are English-only.
 
 HOI4 Map Maker is an open-source desktop map editor built with Python and PyQt5. It provides 12 editing modes covering the entire map creation workflow: draw continents, generate provinces, assign states and countries, and export 2000+ game files with one click. Launch HOI4 and play immediately.
 
-> **Current Version**: v1.4.2 &nbsp;|&nbsp; **Tech Stack**: Python 3.10+ · PyQt5 · NumPy &nbsp;|&nbsp; **Platform**: Windows
+> **Current Version**: v1.4.3 &nbsp;|&nbsp; **Tech Stack**: Python 3.10+ · PyQt5 · NumPy &nbsp;|&nbsp; **Platform**: Windows
 
 ![License](https://img.shields.io/badge/license-GPLv3-blue.svg)
 ![Python](https://img.shields.io/badge/python-3.10%2B-brightgreen.svg)
@@ -111,7 +111,7 @@ python main.py
 
 ### Packaged Release
 
-Download the `v1.4.2` package from [GitHub Releases](https://github.com/stuffi3000/hoi4-mod-maker/releases), extract it, and run `HOI4MapMaker.exe`.
+Download the `v1.4.3` package from [GitHub Releases](https://github.com/stuffi3000/hoi4-mod-maker/releases), extract it, and run `HOI4MapMaker.exe`.
 
 ### Requirements
 
@@ -200,7 +200,7 @@ hoi4_map_maker/          224 files, 26,000 lines
 - [Troubleshooting and acceptance harness](docs/wiki/troubleshooting.md)
 - [Map foundation readiness audit](docs/map-foundation-readiness-audit.md)
 - [Map foundation performance baseline](docs/map-foundation-performance-baseline.md)
-- [1.4.2 changelog](CHANGELOG.md)
+- [1.4.3 changelog](CHANGELOG.md)
 
 ---
 

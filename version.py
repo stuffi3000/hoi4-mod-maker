@@ -1,9 +1,21 @@
 """Application version and release history."""
 
-VERSION = "1.4.2"
+VERSION = "1.4.3"
 VERSION_DATE = "2026-09-22"
 
 CHANGELOG = {
+    "1.4.3": {
+        "date": "2026-09-22",
+        "changes": [
+            "Added shared logistics validation for railway, supply, adjacency, topology, port, duplicate-route, and exception-coverage findings.",
+            "Hardened export destinations so non-empty folders, files, and links are protected while pre-created empty folders remain usable.",
+            "Improved export preflight responsiveness with cached profile previews, non-blocking dialog closure, clearer warnings, and affected-province evidence.",
+            "Normalized mixed land/lake provinces and excluded lake-dominant provinces from land placement proposals.",
+            "Added searchable province, state, and strategic-region lookup with exact matches, substring search, and suggestions.",
+            "Clarified logistics and placement controls, map backgrounds, markers, victory-point selection, and placement-generation feedback.",
+            "Accelerated placement proposal generation, validation, and rendering, and refreshed continent data when entering the mode.",
+        ],
+    },
     "1.4.2": {
         "date": "2026-09-22",
         "changes": [

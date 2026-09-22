@@ -4,6 +4,43 @@ All notable changes to HOI4 Map Maker are documented here. Entries are
 organized by what users can do, rather than by internal implementation
 milestones.
 
+## [1.4.3] - 2026-09-22
+
+### Safer, more actionable export preflight
+
+**Export checks now catch more map and logistics problems before anything is
+written, and explain where the problem needs attention.**
+
+- Added shared logistics validation for railway and supply references,
+  adjacency endpoints and rules, graph topology, ports, duplicate routes, and
+  exception coverage.
+- Readiness and preflight findings now include affected province IDs and
+  logistics evidence, so topology problems can be located from the UI.
+- Protected non-empty export destinations, files, and symbolic links by
+  default; pre-created empty directories remain safe to use.
+- Made preflight previews reusable across profile switches, kept the dialog
+  closable without blocking the interface, and clarified readiness warnings
+  and dark-theme tooltips.
+- Enforced one coherent land/lake surface per province and skipped
+  lake-dominant provinces when generating land placement proposals.
+
+### Faster, clearer logistics and placement editing
+
+- Added a Find tool for provinces, states, and strategic regions with exact
+  matches, substring search, and conservative suggestions.
+- Clarified Logistics and Placements navigation, editing controls, map
+  backgrounds, map markers, and victory-point selection.
+- Added visible feedback during placement generation and accelerated proposal
+  generation, tab validation, and placement rendering through indexed province
+  data and cheaper large-map calculations.
+- Refreshed continent data when entering the mode so the editor reflects the
+  current project immediately.
+
+### Repository maintenance
+
+- Updated release/publication evidence and repository ignore rules alongside
+  the feature and stability work.
+
 ## [1.4.2] - 2026-09-22
 
 ### Faster large-project loading
@@ -262,6 +299,7 @@ diagnose when something needs attention.**
 - UTF-8 validation and language-setting reliability improvements.
 - World-normal regeneration and post-export strategic-region checks.
 
+[1.4.3]: https://github.com/stuffi3000/hoi4-mod-maker/releases/tag/v1.4.3
 [1.4.2]: https://github.com/stuffi3000/hoi4-mod-maker/releases/tag/v1.4.2
 [1.4.1]: https://github.com/stuffi3000/hoi4-mod-maker/releases/tag/v1.4.1
 [1.4.0]: https://github.com/stuffi3000/hoi4-mod-maker/releases/tag/v1.4.0
