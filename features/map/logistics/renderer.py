@@ -62,13 +62,20 @@ def highlight_logistics_findings(
         for key in supply_keys
         if is_supply_key(key)
     }
+    highlighted_provinces = []
     for component in tuple(getattr(graph, "components", ()) or ()):
-        if getattr(component, "component_id", None) not in component_ids:
-            continue
-        mask = np.isin(province_arr, tuple(getattr(component, "provinces", ()) or ()))
-        result[mask] = _DISCONNECTED_COLOR
-    for province_id in sorted(supply_ids):
-        result[province_arr == province_id] = _OFF_RAIL_SUPPLY_COLOR
+        if getattr(component, "component_id", None) in component_ids:
+            highlighted_provinces.extend(
+                getattr(component, "provinces", ()) or ()
+            )
+    if highlighted_provinces:
+        result[np.isin(province_arr, tuple(highlighted_provinces))] = (
+            _DISCONNECTED_COLOR
+        )
+    if supply_ids:
+        result[np.isin(province_arr, tuple(sorted(supply_ids)))] = (
+            _OFF_RAIL_SUPPLY_COLOR
+        )
     return result
 
 
@@ -93,12 +100,58 @@ def build_logistics_component_colors(
         result = base.copy()
 
     components = tuple(getattr(graph, "components", ()) or ())
-    for index, component in enumerate(components):
-        provinces = tuple(getattr(component, "provinces", ()) or ())
-        if provinces:
-            result[np.isin(province_arr, provinces)] = _component_color(
-                getattr(component, "component_id", ""), index
-            )
+    if components and province_arr.size:
+        # Components are disjoint province-ID sets. Build one province-ID
+        # lookup and index it once instead of scanning the full raster once
+        # per component. Belgium has hundreds of components, so the latter
+        # turns this refresh into billions of element comparisons.
+        max_pid = int(province_arr.max())
+        if max_pid >= 0 and max_pid <= 2_000_000:
+            component_lookup = np.full(max_pid + 1, -1, dtype=np.int32)
+            component_colors = []
+            for index, component in enumerate(components):
+                provinces = tuple(getattr(component, "provinces", ()) or ())
+                valid_provinces = tuple(
+                    int(pid)
+                    for pid in provinces
+                    if isinstance(pid, (int, np.integer))
+                    and 0 <= int(pid) <= max_pid
+                )
+                if not valid_provinces:
+                    continue
+                color_index = len(component_colors)
+                component_lookup[np.asarray(valid_provinces, dtype=np.int64)] = color_index
+                component_colors.append(
+                    _component_color(
+                        getattr(component, "component_id", ""), index
+                    )
+                )
+            if component_colors:
+                if np.issubdtype(province_arr.dtype, np.integer) and not np.any(
+                    province_arr < 0
+                ):
+                    component_indices = component_lookup[province_arr]
+                    matched = component_indices >= 0
+                else:
+                    valid = (province_arr >= 0) & (province_arr <= max_pid)
+                    component_indices = np.full(
+                        province_arr.shape, -1, dtype=np.int32
+                    )
+                    component_indices[valid] = component_lookup[
+                        province_arr[valid].astype(np.int64, copy=False)
+                    ]
+                    matched = component_indices >= 0
+                colors = np.asarray(component_colors, dtype=np.uint8)
+                result[matched] = colors[component_indices[matched]]
+        else:
+            # Keep the renderer correct for unusual projects with sparse,
+            # very large province IDs without allocating a huge lookup table.
+            for index, component in enumerate(components):
+                provinces = tuple(getattr(component, "provinces", ()) or ())
+                if provinces:
+                    result[np.isin(province_arr, provinces)] = _component_color(
+                        getattr(component, "component_id", ""), index
+                    )
 
     from domain.logistics_exceptions import evaluate_exception_coverage, relevant_exception_keys
 

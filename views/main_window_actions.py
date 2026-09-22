@@ -1760,14 +1760,24 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
         if hasattr(self, "_refresh_feature_statuses"):
             self._refresh_feature_statuses()
 
-    def _refresh_logistics_counts(self) -> None:
+    def _refresh_logistics_counts(self, *, rebuild_overlay: bool | None = None) -> None:
         self._tool_panel._logi_adj_status.setText(tr("logistics_adj_count", self._project.adjacency_mgr.count()))
         self._tool_panel._logi_rail_status.setText(tr("logistics_rail_count", self._project.railway_mgr.count()))
         self._tool_panel._logi_sup_status.setText(tr("logistics_supply_count", self._project.supply_mgr.count()))
         # Keep the canvas overlay bound to the current project managers after
-        # new/open/import operations and refresh the deterministic graph view.
+        # new/open/import operations. The graph colors are only useful while
+        # logistics mode is visible; building them during ordinary project
+        # loading needlessly scans the full raster.
         self._canvas._supply_mgr = self._project.supply_mgr
         self._canvas._railway_mgr = self._project.railway_mgr
+        if rebuild_overlay is None:
+            rebuild_overlay = self._canvas.display_mode == "logistics"
+        if not rebuild_overlay:
+            self._canvas._logistics_graph = None
+            self._canvas.set_logistics_component_colors(None)
+            if hasattr(self, "_refresh_feature_statuses"):
+                self._refresh_feature_statuses()
+            return
         try:
             from domain.logistics_graph import analyze_logistics_graph
             from features.map.logistics.renderer import build_logistics_component_colors

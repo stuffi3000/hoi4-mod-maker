@@ -244,7 +244,11 @@ class MainWindowFileOpsMixin:
         self._project.map_placement_mgr.clear()
         self._cmd_history.clear()
         self._refresh_sr_list()
-        self._refresh_placement_page()
+        self._refresh_placement_page(
+            update_overlay=bool(
+                getattr(self._canvas, "_placement_overlay_enabled", False)
+            )
+        )
         self._refresh_logistics_counts()
         self._update_province_count()
         self._canvas.refresh_display()
@@ -333,7 +337,11 @@ class MainWindowFileOpsMixin:
             self._app._refresh_country_list()
             self._app._refresh_vp_data()
             self._refresh_sr_list()
-            self._refresh_placement_page()
+            self._refresh_placement_page(
+                update_overlay=bool(
+                    getattr(self._canvas, "_placement_overlay_enabled", False)
+                )
+            )
             self._refresh_logistics_counts()
             if gap_count > 0:
                 self._status_info.setText(
@@ -569,7 +577,11 @@ class MainWindowFileOpsMixin:
         self._app._refresh_country_list()
         self._app._refresh_state_list()
         self._refresh_sr_list()
-        self._refresh_placement_page()
+        self._refresh_placement_page(
+            update_overlay=bool(
+                getattr(self._canvas, "_placement_overlay_enabled", False)
+            )
+        )
         self._refresh_logistics_counts()
         self._project.mark_dirty()
 

@@ -575,6 +575,12 @@ class MapCanvas(InputMixin, OverlayMixin, NameLabelsMixin, RefImageMixin, QGraph
             if (h, w) != (self._display_buffer.shape[0], self._display_buffer.shape[1]):
                 self._display_buffer = np.zeros((h, w, 4), dtype=np.uint8)
                 self._scene.setSceneRect(0, 0, w, h)
+        if attr == "province_map":
+            invalidate_centroids = getattr(
+                self._map_data, "invalidate_centroid_cache", None
+            )
+            if callable(invalidate_centroids):
+                invalidate_centroids()
 
     def _rebind_aliases(self) -> None:
         """Rebind the local alias to the current MapData property.

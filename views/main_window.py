@@ -712,6 +712,12 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
             centroid_fn = getattr(map_data, "get_province_centroid", None)
             if centroid_fn is None:
                 return []
+            # A cache-less centroid lookup scans the entire raster for every
+            # victory point. Build the cache once before walking the points.
+            if getattr(map_data, "_centroid_cache", None) is None:
+                build_cache = getattr(map_data, "build_centroid_cache", None)
+                if callable(build_cache):
+                    build_cache()
             import math as _math
             seen = set()
             points = []
@@ -765,6 +771,8 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
 
     def _build_placement_overlay_findings(self, placement_entries, building_entries, weather_entries) -> list:
         """Build read-only collision diagnostics for the placement overlay."""
+        if not placement_entries and not building_entries and not weather_entries:
+            return []
         try:
             from domain.validators.placement import validate_placement_references
         except Exception:
@@ -791,7 +799,7 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
         except Exception:
             return []
 
-    def _refresh_placement_page(self) -> None:
+    def _refresh_placement_page(self, *, update_overlay: bool = True) -> None:
         """Refresh the slot/port review list and the read-only canvas overlay."""
         page = getattr(self._tool_panel, "_placement_page", None)
         if page is None:
@@ -817,6 +825,11 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
         except Exception:
             weather = []
         page.set_records(list(slots) + list(ports))
+        # Project open/new/import calls this while the placement mode is
+        # hidden. Keep the review list current, but defer the expensive
+        # raster-backed VP/diagnostic overlay until placement mode is shown.
+        if not update_overlay:
+            return
         try:
             try:
                 self._sync_placement_transform_selection()
