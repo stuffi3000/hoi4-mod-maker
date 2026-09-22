@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import os
 import traceback
+from dataclasses import dataclass
 
 import numpy as np
 from PyQt5.QtCore import Qt, QThread, QTimer, pyqtSignal
@@ -55,6 +56,21 @@ _SCOPE_TOOLTIP_KEYS = {
 # large plan build.  Keep detached workers alive until QThread.finished so
 # closing the modal dialog cannot destroy a running QThread.
 _DETACHED_PREFLIGHT_WORKERS: set[QThread] = set()
+
+
+@dataclass(frozen=True)
+class _PlanPreviewCacheEntry:
+    """Small, dialog-local cache entry for a completed plan preview.
+
+    The planner's snapshot can contain large map arrays and manager graphs, so
+    retaining the full ``ExportPlan`` would trade a faster preview for a
+    sizeable memory spike.  The dialog only needs these values to render the
+    preview and enable its buttons; the export worker builds a fresh plan when
+    the user actually exports.
+    """
+
+    summary: str
+    blockers: tuple[str, ...] = ()
 
 
 def _detach_preflight_worker(worker: QThread) -> None:
@@ -285,7 +301,7 @@ class PreflightWorker(QThread):
 
     def __init__(
         self, project, canvas, profile_name: str, repair_policy: str,
-        scope: dict[str, bool], parent=None,
+        scope: dict[str, bool], parent=None, readiness_items=None,
     ) -> None:
         super().__init__(parent)
         self.project = project
@@ -293,6 +309,9 @@ class PreflightWorker(QThread):
         self.profile_name = profile_name or "legacy_full"
         self.repair_policy = repair_policy or "apply-safe"
         self.scope = dict(scope or {})
+        self.readiness_items = (
+            None if readiness_items is None else tuple(readiness_items)
+        )
 
     def run(self) -> None:
         try:
@@ -303,14 +322,20 @@ class PreflightWorker(QThread):
             profile = load_profile_for_target(game_target)
             map_height, map_width = self.canvas.province_map.shape[:2]
             dimensions = (int(map_width), int(map_height))
-            items = check_project_readiness(
-                self.project,
-                self.canvas,
-                profile=profile,
-                dimensions=dimensions,
-                profile_name=self.profile_name,
-            )
-            self.readiness_ready.emit(items)
+            if self.readiness_items is None:
+                items = check_project_readiness(
+                    self.project,
+                    self.canvas,
+                    profile=profile,
+                    dimensions=dimensions,
+                    profile_name=self.profile_name,
+                )
+                self.readiness_ready.emit(items)
+            else:
+                # Readiness is independent of repair policy and export scope;
+                # reuse the dialog-local result when only the plan options
+                # changed.
+                items = list(self.readiness_items)
             if self.isInterruptionRequested():
                 return
 
@@ -343,6 +368,13 @@ class ExportDialog(QDialog):
         self._closing = False
         self._items = []
         self._plan = None
+        # ExportDialog is modal, so the project/map cannot be edited while it
+        # is open.  Keep caches local to this dialog and discard them with it.
+        self._readiness_cache: dict[str, tuple] = {}
+        self._readiness_variant = None
+        self._preflight_cache: dict[tuple, _PlanPreviewCacheEntry] = {}
+        self._active_preflight_key = None
+        self._active_readiness_key = None
 
         self.setWindowTitle(tr("export_dlg_title"))
         self.setMinimumSize(520, 360)
@@ -512,6 +544,8 @@ class ExportDialog(QDialog):
             tr("export_profile_help_short")
         )
         profile_help.setWordWrap(True)
+        profile_help.setTextFormat(Qt.PlainText)
+        profile_help.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
         profile_help.setStyleSheet("color: #9aa0ab; font-size: 12px; padding: 2px 4px;")
         profile_help.setToolTip(tr("export_profile_help"))
         content_layout.addWidget(profile_help)
@@ -615,8 +649,13 @@ class ExportDialog(QDialog):
         self._warning_rows = []
         self._has_missing = False
         self._has_blocking = False
-        self._plan = None
+        self._readiness_variant = None
         self._readiness_notice.setVisible(False)
+        self._set_plan_loading()
+
+    def _set_plan_loading(self) -> None:
+        """Reset only the preview while retaining already-rendered readiness."""
+        self._plan = None
         self._plan_label.setPlainText(tr("export_plan_loading"))
         self._plan_label.setToolTip(tr("export_plan_tooltip"))
         self._btn_auto.setEnabled(False)
@@ -673,7 +712,7 @@ class ExportDialog(QDialog):
         self._readiness_notice.setText(text)
         self._readiness_notice.setVisible(True)
 
-    def _render_readiness(self, items) -> None:
+    def _render_readiness(self, items, readiness_key=None) -> None:
         self._clear_check_rows()
         # Keep warnings at the top while retaining the original order inside
         # each status group, so important rows are visible before the fold.
@@ -685,6 +724,8 @@ class ExportDialog(QDialog):
         self._warning_rows = []
         self._has_missing = False
         self._has_blocking = False
+        if readiness_key is not None:
+            self._readiness_variant = readiness_key
 
         for item in self._items:
             row = QHBoxLayout()
@@ -734,6 +775,38 @@ class ExportDialog(QDialog):
         self._update_warning_notice()
         QTimer.singleShot(0, self._update_warning_notice)
 
+    @staticmethod
+    def _readiness_cache_key(profile_name: str) -> str:
+        """Return the only profile distinction that affects readiness."""
+        return "foundation" if str(profile_name) == "foundation" else "general"
+
+    def _current_preflight_options(self) -> tuple[dict[str, bool], tuple, str, str]:
+        profile_name = str(self._profile_combo.currentText())
+        repair_policy = str(self._repair_combo.currentText())
+        scope = {key: cb.isChecked() for key, cb in self._scope_checks.items()}
+        scope_key = tuple(sorted((str(key), bool(value)) for key, value in scope.items()))
+        return scope, (profile_name, repair_policy, scope_key), profile_name, repair_policy
+
+    def _apply_plan_preview(
+        self, summary: str, blockers=(), plan=None
+    ) -> None:
+        """Render a plan preview from either a fresh plan or a cache entry."""
+        self._plan = plan
+        blocker_list = tuple(str(blocker) for blocker in (blockers or ()))
+        self._plan_label.setPlainText(summary)
+        self._plan_label.setToolTip(
+            tr("export_plan_tooltip")
+            + ("\n\n" + "\n".join(blocker_list) if blocker_list else "")
+        )
+
+        blocked = self._has_blocking or bool(blocker_list)
+        self._btn_auto.setText(
+            tr("export_btn_auto") if self._has_missing else tr("export_btn_export")
+        )
+        self._btn_export_direct.setVisible(self._has_missing)
+        self._btn_auto.setEnabled(not blocked)
+        self._btn_export_direct.setEnabled(not blocked and self._has_missing)
+
     def _start_preflight(self) -> None:
         """Start one coalesced readiness/plan request for current options."""
         self._preflight_request += 1
@@ -742,18 +815,45 @@ class ExportDialog(QDialog):
         if current is not None and current.isRunning():
             self._preflight_pending = True
             current.requestInterruption()
-            self._set_preflight_loading()
+            if self._items:
+                self._set_plan_loading()
+            else:
+                self._set_preflight_loading()
             return
 
         self._preflight_pending = False
-        self._set_preflight_loading()
-        scope = {key: cb.isChecked() for key, cb in self._scope_checks.items()}
+        scope, preflight_key, profile_name, repair_policy = self._current_preflight_options()
+        readiness_key = self._readiness_cache_key(profile_name)
+        self._active_preflight_key = preflight_key
+        self._active_readiness_key = readiness_key
+
+        cached_plan = self._preflight_cache.get(preflight_key)
+        if cached_plan is not None:
+            self._set_plan_loading()
+            cached_readiness = self._readiness_cache.get(readiness_key)
+            if cached_readiness is not None and self._readiness_variant != readiness_key:
+                self._render_readiness(cached_readiness, readiness_key)
+            self._apply_plan_preview(
+                cached_plan.summary,
+                cached_plan.blockers,
+            )
+            return
+
+        cached_readiness = self._readiness_cache.get(readiness_key)
+        if cached_readiness is None and not self._items:
+            self._set_preflight_loading()
+        else:
+            if cached_readiness is not None and self._readiness_variant != readiness_key:
+                self._render_readiness(cached_readiness, readiness_key)
+            self._set_plan_loading()
+
         worker = PreflightWorker(
             self.project,
             self.canvas,
-            profile_name=str(self._profile_combo.currentText()),
-            repair_policy=str(self._repair_combo.currentText()),
+            profile_name=profile_name,
+            repair_policy=repair_policy,
             scope=scope,
+            readiness_items=cached_readiness,
             parent=self,
         )
         self._preflight_worker = worker
@@ -777,39 +877,43 @@ class ExportDialog(QDialog):
     def _on_preflight_readiness(self, request_id: int, items) -> None:
         if request_id != self._preflight_request or self._closing:
             return
-        self._render_readiness(items)
+        readiness_key = self._active_readiness_key
+        if readiness_key is not None:
+            self._readiness_cache[readiness_key] = tuple(items or ())
+        self._render_readiness(items, readiness_key)
 
     def _on_preflight_completed(self, request_id: int, items, plan, summary: str) -> None:
         if request_id != self._preflight_request or self._closing:
             return
-        if not self._items:
-            self._render_readiness(items)
-        self._plan = plan
-        self._plan_label.setPlainText(summary)
-        self._plan_label.setToolTip(
-            tr("export_plan_tooltip")
-            + ("\n\n" + "\n".join(str(blocker) for blocker in plan.blockers)
-               if getattr(plan, "blockers", None) else "")
-        )
+        readiness_key = self._active_readiness_key
+        if readiness_key is not None:
+            self._readiness_cache[readiness_key] = tuple(items or ())
+        if not self._items or self._readiness_variant != readiness_key:
+            self._render_readiness(items, readiness_key)
 
-        blocked = self._has_blocking or bool(getattr(plan, "blocked", False))
-        self._btn_auto.setText(
-            tr("export_btn_auto") if self._has_missing else tr("export_btn_export")
+        blockers = tuple(
+            str(blocker) for blocker in (getattr(plan, "blockers", None) or ())
         )
-        self._btn_export_direct.setVisible(self._has_missing)
-        self._btn_auto.setEnabled(not blocked)
-        self._btn_export_direct.setEnabled(not blocked and self._has_missing)
+        preflight_key = self._active_preflight_key
+        if preflight_key is not None:
+            self._preflight_cache[preflight_key] = _PlanPreviewCacheEntry(
+                summary=str(summary),
+                blockers=blockers,
+            )
+        self._apply_plan_preview(summary, blockers, plan=plan)
 
     def _on_preflight_failed(self, request_id: int, error_msg: str) -> None:
         if request_id != self._preflight_request or self._closing:
             return
-        self._clear_check_rows()
-        error = QLabel(tr("export_preflight_failed").format(error=error_msg))
-        error.setWordWrap(True)
-        error.setStyleSheet("color: #ef4444; padding: 8px;")
-        error.setToolTip(error_msg)
-        self._check_layout.addWidget(error)
+        if not self._items:
+            self._clear_check_rows()
+            error = QLabel(tr("export_preflight_failed").format(error=error_msg))
+            error.setWordWrap(True)
+            error.setStyleSheet("color: #ef4444; padding: 8px;")
+            error.setToolTip(error_msg)
+            self._check_layout.addWidget(error)
         self._plan_label.setPlainText(tr("export_plan_unavailable"))
+        self._plan_label.setToolTip(error_msg)
         self._btn_auto.setEnabled(False)
         self._btn_export_direct.setEnabled(False)
 
@@ -866,6 +970,12 @@ class ExportDialog(QDialog):
 
     def _refresh_plan_summary(self) -> None:
         """Compatibility hook for callers that request a refreshed preview."""
+        # This is an explicit invalidation request, unlike normal profile,
+        # repair, and scope changes which are safe to serve from the dialog
+        # cache.
+        self._readiness_cache.clear()
+        self._preflight_cache.clear()
+        self._readiness_variant = None
         self._schedule_check()
 
 

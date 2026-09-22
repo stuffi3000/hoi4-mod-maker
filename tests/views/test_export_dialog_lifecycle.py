@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import time
+from types import SimpleNamespace
 
+import numpy as np
 from PyQt5.QtCore import QThread, QTimer, pyqtSignal
 from PyQt5.QtWidgets import QDialog
 
@@ -59,3 +61,56 @@ def test_reject_does_not_wait_for_running_preflight_worker(qtbot) -> None:
         lambda: worker not in export_dialog_module._DETACHED_PREFLIGHT_WORKERS,
         timeout=2000,
     )
+
+
+def test_preflight_worker_reuses_cached_readiness(qtbot, monkeypatch) -> None:
+    from services import export_planner, game_profile_service
+    from views import export_dialog as export_dialog_module
+
+    readiness_calls = []
+    readiness_item = object()
+    completed = []
+    readiness_emissions = []
+
+    monkeypatch.setattr(
+        export_dialog_module,
+        "check_project_readiness",
+        lambda *args, **kwargs: readiness_calls.append(True),
+    )
+    monkeypatch.setattr(
+        game_profile_service,
+        "load_profile_for_target",
+        lambda _target: object(),
+    )
+    monkeypatch.setattr(
+        export_planner,
+        "plan_export_from_project",
+        lambda *args, **kwargs: SimpleNamespace(blockers=["cached blocker"]),
+    )
+    monkeypatch.setattr(
+        export_planner,
+        "format_plan_summary",
+        lambda _plan: "cached plan summary",
+    )
+
+    project = SimpleNamespace(resolve_game_target=lambda: "target")
+    canvas = SimpleNamespace(province_map=np.zeros((2, 3), dtype=np.uint8))
+    worker = export_dialog_module.PreflightWorker(
+        project,
+        canvas,
+        profile_name="scaffold",
+        repair_policy="apply-safe",
+        scope={},
+        readiness_items=[readiness_item],
+    )
+    worker.readiness_ready.connect(readiness_emissions.append)
+    worker.completed.connect(
+        lambda items, plan, summary: completed.append((items, plan, summary))
+    )
+
+    worker.run()
+
+    assert readiness_calls == []
+    assert readiness_emissions == []
+    assert completed[0][0] == [readiness_item]
+    assert completed[0][2] == "cached plan summary"
