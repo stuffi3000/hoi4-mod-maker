@@ -363,8 +363,12 @@ class MapCanvas(InputMixin, OverlayMixin, NameLabelsMixin, RefImageMixin, QGraph
         self._placement_overlay_enabled = False
         self._placement_records = ()
         self._placement_vp_points = ()
+        self._placement_vp_names = {}
         self._placement_findings = ()
         self._placement_overlay_model = None
+        self._placement_selection_filter = "all"
+        self._placement_urban_overlay_visible = False
+        self._placement_vp_names_visible = False
         self._placement_selected = None
         self._placement_drag_state = None
         self._placement_preview_position = None
@@ -419,6 +423,7 @@ class MapCanvas(InputMixin, OverlayMixin, NameLabelsMixin, RefImageMixin, QGraph
         self._terrain_map = map_data.terrain_map
         self._height_map = map_data.height_map
         self._river_map = map_data.river_map
+        self._placement_vp_names = {}
         self._has_provinces = int(self._province_map.max()) > 0
         self._selected_province_id = 0
         self._selected_province_ids.clear()
@@ -637,6 +642,11 @@ class MapCanvas(InputMixin, OverlayMixin, NameLabelsMixin, RefImageMixin, QGraph
         self._set_layer("terrain_map", data, np.uint8)
         if self._display_mode == "terrain":
             self._full_render()
+        if (
+            getattr(self, "_placement_overlay_enabled", False)
+            and getattr(self, "_placement_urban_overlay_visible", False)
+        ):
+            self._render_placement_context_overlay()
 
     @property
     def height_map(self) -> np.ndarray:

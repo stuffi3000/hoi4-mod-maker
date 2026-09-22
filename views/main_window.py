@@ -556,6 +556,15 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
             self._on_placement_transform_reset
         )
         tp.placement_refresh_requested.connect(self._refresh_placement_page)
+        tp.placement_selection_filter_changed.connect(
+            self._canvas.set_placement_selection_filter
+        )
+        tp.placement_urban_overlay_toggled.connect(
+            self._canvas.set_placement_urban_overlay_visible
+        )
+        tp.placement_vp_names_toggled.connect(
+            self._canvas.set_placement_vp_names_visible
+        )
 
         # Colormap signal → controller
         tp.colormap_color_changed.connect(
@@ -791,6 +800,43 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
         except Exception:
             return []
 
+    def _build_placement_overlay_vp_names(self) -> dict[int, str]:
+        """Build the optional labels for the read-only placement VP overlay."""
+        try:
+            project = getattr(self, "_project", None)
+            state_mgr = getattr(project, "state_mgr", None)
+            if state_mgr is None:
+                return {}
+            states = getattr(state_mgr, "states", None)
+            if states is None:
+                states = getattr(state_mgr, "_states", None)
+            if states is None:
+                return {}
+            state_values = list(states.values())
+            names: dict[int, str] = {}
+            for state in state_values:
+                try:
+                    vp_map = getattr(state, "victory_points", None) or {}
+                    vp_ids = {int(raw_pid) for raw_pid, value in vp_map.items()
+                              if float(value) > 0}
+                except Exception:
+                    continue
+                if not vp_ids:
+                    continue
+                localized = getattr(state, "vp_names", None) or {}
+                english = getattr(state, "vp_names_en", None) or {}
+                for raw_pid in sorted(vp_ids):
+                    if raw_pid in names:
+                        continue
+                    raw_name = english.get(raw_pid) or english.get(str(raw_pid))
+                    if not raw_name:
+                        raw_name = localized.get(raw_pid) or localized.get(str(raw_pid))
+                    if isinstance(raw_name, str) and raw_name.strip():
+                        names[raw_pid] = raw_name.strip()
+            return names
+        except Exception:
+            return {}
+
     def _build_placement_overlay_findings(self, placement_entries, building_entries, weather_entries) -> list:
         """Build read-only collision diagnostics for the placement overlay."""
         if not placement_entries and not building_entries and not weather_entries:
@@ -872,6 +918,13 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
             vp_points = []
         try:
             try:
+                vp_names = self._build_placement_overlay_vp_names()
+            except AttributeError:
+                vp_names = MainWindow._build_placement_overlay_vp_names(self)
+        except Exception:
+            vp_names = {}
+        try:
+            try:
                 findings = self._build_placement_overlay_findings(
                     list(slots) + list(ports), list(buildings), list(weather)
                 )
@@ -884,12 +937,33 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
         canvas = getattr(self, "_canvas", None)
         if canvas is None:
             return
+        overlay_data_applied = False
         try:
             canvas.set_placement_overlay_data(
-                overlay_records, vp_points=vp_points, findings=findings
+                overlay_records,
+                vp_points=vp_points,
+                findings=findings,
+                vp_names=vp_names,
             )
+            overlay_data_applied = True
+        except TypeError:
+            # Keep the wiring compatible with lightweight/future canvas
+            # adapters that still implement the original three-argument API.
+            try:
+                canvas.set_placement_overlay_data(
+                    overlay_records, vp_points=vp_points, findings=findings
+                )
+            except Exception:
+                pass
         except Exception:
             pass
+        if not overlay_data_applied:
+            try:
+                set_vp_names = getattr(canvas, "set_placement_vp_names", None)
+                if callable(set_vp_names):
+                    set_vp_names(vp_names)
+            except Exception:
+                pass
 
     @staticmethod
     def _placement_replace_generated(page) -> bool:
@@ -1153,6 +1227,11 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
                 pass
 
         if not kind or key is None:
+            _clear_selection()
+            return
+        if kind == "vp":
+            # Victory points are state data rather than placement records. Keep
+            # the map selection visible, but do not show an editable transform.
             _clear_selection()
             return
         project = getattr(self, "_project", None)

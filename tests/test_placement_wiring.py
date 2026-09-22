@@ -4,6 +4,7 @@ from types import SimpleNamespace
 import inspect
 
 from PyQt5.QtCore import Qt
+from PyQt5.QtWidgets import QLabel
 
 from controllers.app_controller import ApplicationController
 from controllers.placement import PlacementController
@@ -36,19 +37,51 @@ def test_tool_panel_registers_placement_page_and_forwards_signals(qtbot):
     panel.placement_refresh_requested.connect(
         lambda: forwarded.append(("refresh",))
     )
+    panel.placement_selection_filter_changed.connect(
+        lambda value: forwarded.append(("filter", value))
+    )
+    panel.placement_urban_overlay_toggled.connect(
+        lambda value: forwarded.append(("urban", value))
+    )
+    panel.placement_vp_names_toggled.connect(
+        lambda value: forwarded.append(("vp_names", value))
+    )
 
     page = panel._placement_page
     page.generate_slots_requested.emit()
     page.generate_ports_requested.emit({1: 2})
     page.accept_selected_requested.emit([(1, 0)], [1], "reviewed")
     page.refresh_requested.emit()
+    page._selection_filter_combo.setCurrentIndex(1)
+    page._urban_overlay_chk.setChecked(True)
+    page._vp_names_chk.setChecked(True)
 
     assert forwarded == [
         ("slots",),
         ("ports", {1: 2}),
         ("accept", [(1, 0)], [1], "reviewed"),
         ("refresh",),
+        ("filter", "building"),
+        ("urban", True),
+        ("vp_names", True),
     ]
+
+
+def test_placement_page_explains_marker_types_and_exposes_map_controls(qtbot):
+    panel = ToolPanel()
+    qtbot.addWidget(panel)
+    page = panel._placement_page
+
+    labels = [label.text() for label in page.findChildren(QLabel)]
+    guide = " ".join(labels)
+    assert "map coordinates, not the buildings themselves" in guide
+    assert "Green square/triangle" in guide
+    assert "Blue circle" in guide
+    assert "Gold diamond" in guide
+    assert page._selection_filter_combo.count() == 4
+    assert page._selection_filter_combo.itemData(1) == "building"
+    assert page._selection_filter_combo.itemData(2) == "port"
+    assert page._selection_filter_combo.itemData(3) == "vp"
 
 
 def test_tool_panel_forwards_placement_transform_signals(qtbot):

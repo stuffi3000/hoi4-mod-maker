@@ -131,6 +131,38 @@ def test_enabled_renders_markers_with_dimensions(small_canvas):
         assert _neighborhood_has_paint(image, marker.x, marker.y)
 
 
+def test_marker_colours_follow_placement_type_not_review_status(small_canvas):
+    from views.canvas.overlays import _placement_marker_color
+
+    assert _placement_marker_color("slot", "generated").getRgb()[:3] == (46, 204, 113)
+    assert _placement_marker_color("building", "authored").getRgb()[:3] == (46, 204, 113)
+    assert _placement_marker_color("port", "reviewed").getRgb()[:3] == (52, 152, 219)
+    assert _placement_marker_color("vp", "vp").getRgb()[:3] == (245, 176, 65)
+
+
+def test_urban_backdrop_and_vp_names_are_optional(small_canvas):
+    canvas = small_canvas
+    terrain = np.zeros((32, 48), dtype=np.uint8)
+    terrain[10:14, 10:14] = 13
+    canvas._terrain_map = terrain
+    canvas.set_placement_overlay_data([], vp_points=[(3, 25.5, 10.5)])
+    canvas.set_placement_overlay_visible(True)
+
+    context_without_urban = canvas._placement_context_item.pixmap().toImage()
+    canvas.set_placement_urban_overlay_visible(True)
+    context_with_urban = canvas._placement_context_item.pixmap().toImage()
+    urban_color = context_with_urban.pixelColor(11, 11)
+    assert context_without_urban.pixelColor(11, 11).alpha() == 0
+    assert urban_color.alpha() > 0
+    assert urban_color.red() > urban_color.blue()
+
+    canvas.set_placement_vp_names({3: "Brussels"})
+    canvas.set_placement_vp_names_visible(True)
+    assert canvas._placement_vp_names_visible is True
+    assert canvas._placement_vp_names == {3: "Brussels"}
+    assert not canvas._placement_overlay_item.pixmap().isNull()
+
+
 def test_invalid_data_does_not_crash(small_canvas):
     """Malformed and out-of-bounds inputs are ignored safely."""
     canvas = small_canvas

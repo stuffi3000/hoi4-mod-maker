@@ -102,6 +102,7 @@ class _FakeCanvas:
     def __init__(self):
         self.overlay_records = None
         self.overlay_vp = None
+        self.overlay_vp_names = None
         self.overlay_findings = None
         self.visible_calls = []
 
@@ -110,14 +111,19 @@ class _FakeCanvas:
         self.overlay_vp = list(vp_points)
         self.overlay_findings = list(findings)
 
+    def set_placement_vp_names(self, names):
+        self.overlay_vp_names = dict(names)
+
     def set_placement_overlay_visible(self, visible):
         self.visible_calls.append(bool(visible))
 
 
 def _make_project(slot_list, port_list, building_list, weather_list,
-                  centroids=None, vps=None):
+                  centroids=None, vps=None, vp_names=None, vp_names_en=None):
     centroids = dict(centroids or {})
     vps = dict(vps or {})
+    vp_names = dict(vp_names or {})
+    vp_names_en = dict(vp_names_en or {})
 
     class _Mgr:
         def list_province_slots(self):
@@ -164,7 +170,9 @@ def _make_project(slot_list, port_list, building_list, weather_list,
         tile_map=np.zeros((8, 8), dtype=np.int32),
         get_province_centroid=_centroid,
     )
-    state = SimpleNamespace(victory_points=dict(vps))
+    state = SimpleNamespace(
+        victory_points=dict(vps), vp_names=vp_names, vp_names_en=vp_names_en
+    )
     fake_state_mgr = SimpleNamespace(states={1: state})
     fake_sr_mgr = SimpleNamespace(regions={})
     project = SimpleNamespace(
@@ -228,6 +236,7 @@ def test_refresh_page_keeps_slots_ports_only_and_feeds_overlay(monkeypatch):
     assert weather in canvas.overlay_records
 
     assert canvas.overlay_vp == [(5, 2.0, 3.0)]
+    assert canvas.overlay_vp_names == {}
 
     assert canvas.overlay_findings is not None
     assert len(canvas.overlay_findings) == 1
@@ -273,6 +282,23 @@ def test_vp_points_deterministic_order():
     second = MainWindow._build_placement_overlay_vp_points(fake_self)
     assert first == second
     assert first == [(5, 2.0, 3.0), (7, 1.0, 1.0), (9, 9.0, 9.0)]
+
+
+def test_vp_names_prefer_english_and_feed_canvas():
+    project = _make_project(
+        [], [], [], [],
+        centroids={5: (2.0, 3.0), 7: (4.0, 5.0)},
+        vps={5: 10, 7: 4},
+        vp_names={5: "Bruxelles", 7: "Antwerp"},
+        vp_names_en={5: "Brussels"},
+    )
+    page = _FakePage()
+    canvas = _FakeCanvas()
+    fake_self = _make_self(project, page, canvas)
+
+    MainWindow._refresh_placement_page(fake_self)
+
+    assert canvas.overlay_vp_names == {5: "Brussels", 7: "Antwerp"}
 
 
 def test_validator_failure_keeps_page_refresh(monkeypatch):

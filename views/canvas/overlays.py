@@ -6,6 +6,7 @@ import numpy as np
 from PyQt5.QtCore import Qt, QPointF, QRectF
 from PyQt5.QtGui import (
     QImage, QPixmap, QPainter, QColor, QPen, QPainterPath, QBrush, QPolygonF,
+    QFont,
 )
 
 # Modes that are allowed to be displayed by the country/state attribution overlay (those in which the base view itself is not colored by country/state).
@@ -24,6 +25,18 @@ _PLACEMENT_ROLE_COLORS = {
     "authored": (52, 152, 219),
     "unreviewed": (149, 165, 166),
     "vp": (230, 30, 150),
+    "collision": (255, 70, 0),
+}
+
+# Placement type is deliberately more stable and more useful to the mapper
+# than review status.  Slots and authored building coordinates share green;
+# ports are always blue; victory points are always amber/gold.
+_PLACEMENT_KIND_COLORS = {
+    "slot": (46, 204, 113),
+    "building": (46, 204, 113),
+    "port": (52, 152, 219),
+    "vp": (245, 176, 65),
+    "weather": (149, 165, 166),
     "collision": (255, 70, 0),
 }
 
@@ -64,12 +77,12 @@ def _placement_stamp_offsets(kind, *, inner=False):
             if abs(dx) + abs(dy) <= radius
         )
     if kind == "vp":
-        radius_squared = 2 if inner else 30
+        radius = 2 if inner else 6
         return tuple(
             (dx, dy)
             for dy in range(-5, 6)
             for dx in range(-5, 6)
-            if dx * dx + dy * dy <= radius_squared
+            if abs(dx) + abs(dy) <= radius
         )
     if kind == "collision":
         width = 1 if inner else 2
@@ -134,10 +147,11 @@ def _render_placement_markers_fast(width, height, markers):
     groups = {}
     for marker in markers:
         kind = str(getattr(marker, "kind", ""))
-        role = str(getattr(marker, "role", "unreviewed")).strip().lower()
-        groups.setdefault((kind, role), []).append(marker)
-    for (kind, role), group in groups.items():
-        rgb = _PLACEMENT_ROLE_COLORS.get(role, _PLACEMENT_ROLE_COLORS["unreviewed"])
+        groups.setdefault(kind, []).append(marker)
+    for kind, group in groups.items():
+        rgb = _PLACEMENT_KIND_COLORS.get(
+            kind, _PLACEMENT_ROLE_COLORS["unreviewed"]
+        )
         _stamp_placement_group(rgba, group, kind, (*rgb, 255))
     image = QImage(
         rgba.data,
@@ -157,6 +171,24 @@ def _placement_role_color(role):
     except Exception:
         key = ""
     rgb = _PLACEMENT_ROLE_COLORS.get(key, _PLACEMENT_ROLE_COLORS["unreviewed"])
+    return QColor(rgb[0], rgb[1], rgb[2], 255)
+
+
+def _placement_marker_color(kind, role="unreviewed"):
+    """Return the stable type colour, with a role fallback for unknown kinds."""
+    try:
+        marker_kind = str(kind).strip().lower()
+    except Exception:
+        marker_kind = ""
+    rgb = _PLACEMENT_KIND_COLORS.get(marker_kind)
+    if rgb is None:
+        try:
+            marker_role = str(role).strip().lower()
+        except Exception:
+            marker_role = "unreviewed"
+        rgb = _PLACEMENT_ROLE_COLORS.get(
+            marker_role, _PLACEMENT_ROLE_COLORS["unreviewed"]
+        )
     return QColor(rgb[0], rgb[1], rgb[2], 255)
 
 
@@ -193,7 +225,12 @@ def _draw_placement_marker(painter, kind, x, y, color):
     elif kind == "vp":
         painter.setPen(QPen(white, 2))
         painter.setBrush(QBrush(color))
-        painter.drawEllipse(QRectF(fx - 5.5, fy - 5.5, 11.0, 11.0))
+        painter.drawPolygon(QPolygonF([
+            QPointF(fx, fy - 6.0),
+            QPointF(fx + 6.0, fy),
+            QPointF(fx, fy + 6.0),
+            QPointF(fx - 6.0, fy),
+        ]))
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(QBrush(QColor(255, 255, 255, 255)))
         painter.drawEllipse(QRectF(fx - 1.5, fy - 1.5, 3.0, 3.0))
@@ -701,12 +738,58 @@ class OverlayMixin:
             if overlay_item:
                 overlay_item.setVisible(False)
 
-    def set_placement_overlay_data(self, records=(), vp_points=(), findings=()):
+    @staticmethod
+    def _normalize_placement_vp_names(names):
+        normalized = {}
+        for raw_pid, raw_name in dict(names or {}).items():
+            try:
+                pid = int(raw_pid)
+            except (TypeError, ValueError):
+                continue
+            if pid <= 0 or not isinstance(raw_name, str) or not raw_name.strip():
+                continue
+            normalized[pid] = raw_name.strip()
+        return normalized
+
+    def set_placement_overlay_data(
+        self, records=(), vp_points=(), findings=(), vp_names=None
+    ):
         """Provide placement records, VP points, and validation findings."""
         self._placement_records = () if records is None else records
         self._placement_vp_points = () if vp_points is None else vp_points
         self._placement_findings = () if findings is None else findings
+        if vp_names is not None:
+            self._placement_vp_names = self._normalize_placement_vp_names(vp_names)
         self._placement_overlay_model = None
+        self._render_placement_overlay()
+
+    def set_placement_vp_names(self, names=None):
+        """Set optional province-id to victory-point-name labels."""
+        normalized = self._normalize_placement_vp_names(names)
+        if normalized == getattr(self, "_placement_vp_names", {}):
+            return
+        self._placement_vp_names = normalized
+        self._render_placement_overlay()
+
+    def set_placement_selection_filter(self, filter_name: str) -> None:
+        """Limit map hit-testing to one placement marker type."""
+        value = str(filter_name or "all").strip().lower()
+        if value not in {"all", "building", "port", "vp"}:
+            value = "all"
+        if value == getattr(self, "_placement_selection_filter", "all"):
+            return
+        self._placement_selection_filter = value
+        self._clear_placement_selection()
+        self._render_placement_overlay()
+
+    def set_placement_urban_overlay_visible(self, visible: bool) -> None:
+        """Show the graphical urban-terrain pixels in placement mode."""
+        self._placement_urban_overlay_visible = bool(visible)
+        self._render_placement_context_overlay()
+
+    def set_placement_vp_names_visible(self, visible: bool) -> None:
+        """Toggle victory-point name labels in the placement overlay."""
+        self._placement_vp_names_visible = bool(visible)
         self._render_placement_overlay()
 
     def set_placement_overlay_visible(self, visible):
@@ -799,7 +882,10 @@ class OverlayMixin:
                     painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
                     for marker in markers:
                         try:
-                            color = _placement_role_color(getattr(marker, "role", "unreviewed"))
+                            color = _placement_marker_color(
+                                getattr(marker, "kind", ""),
+                                getattr(marker, "role", "unreviewed"),
+                            )
                             _draw_placement_marker(
                                 painter,
                                 getattr(marker, "kind", ""),
@@ -811,6 +897,7 @@ class OverlayMixin:
                             continue
                 finally:
                     painter.end()
+            self._draw_placement_vp_names(image, markers)
             item.setPixmap(QPixmap.fromImage(image))
             item.setVisible(True)
             self._update_placement_selection_visual()
@@ -820,6 +907,38 @@ class OverlayMixin:
             except Exception:
                 pass
         self._render_placement_context_overlay()
+
+    def _draw_placement_vp_names(self, image, markers) -> None:
+        """Paint optional VP labels after marker rasterization."""
+        if not bool(getattr(self, "_placement_vp_names_visible", False)):
+            return
+        names = getattr(self, "_placement_vp_names", {}) or {}
+        if not names:
+            return
+        painter = QPainter(image)
+        try:
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+            font = QFont("Segoe UI")
+            font.setPixelSize(12)
+            font.setBold(True)
+            painter.setFont(font)
+            for marker in markers:
+                if str(getattr(marker, "kind", "")) != "vp":
+                    continue
+                key = self._placement_key_from_marker(marker)
+                name = names.get(key)
+                if not name:
+                    continue
+                marker_x, marker_y = self._placement_marker_position(marker)
+                label_x = int(round(marker_x)) + 8
+                label_y = int(round(marker_y)) + 4
+                painter.setPen(QColor(20, 20, 20, 220))
+                for dx, dy in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+                    painter.drawText(label_x + dx, label_y + dy, name)
+                painter.setPen(QColor(255, 255, 255, 240))
+                painter.drawText(label_x, label_y, name)
+        finally:
+            painter.end()
 
     def _render_placement_context_overlay(self) -> None:
         """Render province borders and land/sea coastlines for placement mode."""
@@ -851,6 +970,17 @@ class OverlayMixin:
             coastlines[:, :-1] |= land[:, :-1] != land[:, 1:]
 
             rgba = np.zeros((height, width, 4), dtype=np.uint8)
+            terrain_map = np.asarray(getattr(self, "_terrain_map", ()))
+            if (
+                bool(getattr(self, "_placement_urban_overlay_visible", False))
+                and terrain_map.shape == province_map.shape
+            ):
+                from data.terrain_types import TERRAIN_PALETTE_INDEX
+
+                urban = terrain_map == TERRAIN_PALETTE_INDEX["urban"]
+                # BGRA: translucent purple marks the graphical urban terrain
+                # while leaving the underlying map visible.
+                rgba[urban] = (180, 90, 210, 120)
             # QImage.Format_ARGB32 uses BGRA byte order here; neutral white
             # borders and a warm cyan coastline remain legible over regions.
             rgba[province_borders] = (225, 225, 225, 145)
@@ -887,6 +1017,8 @@ class OverlayMixin:
                 return int(parts[1])
             if kind == "weather" and len(parts) == 2 and parts[0] == "weather":
                 return int(parts[1])
+            if kind == "vp" and len(parts) == 2 and parts[0] == "vp":
+                return int(parts[1])
         except (TypeError, ValueError):
             return None
         return None
@@ -911,8 +1043,20 @@ class OverlayMixin:
             return (float(preview[0]), float(preview[1]))
         return (float(marker.x), float(marker.y))
 
+    @staticmethod
+    def _placement_marker_matches_filter(marker, filter_name: str) -> bool:
+        kind = str(getattr(marker, "kind", ""))
+        value = str(filter_name or "all").strip().lower()
+        if value == "building":
+            return kind in {"slot", "building"}
+        if value == "port":
+            return kind == "port"
+        if value == "vp":
+            return kind == "vp"
+        return kind in {"slot", "port", "building", "weather", "vp"}
+
     def placement_marker_at(self, x: float, y: float):
-        """Return ``(kind, key, x, y)`` for the nearest editable marker."""
+        """Return ``(kind, key, x, y)`` for the nearest selectable marker."""
         if not bool(getattr(self, "_placement_overlay_enabled", False)):
             return None
         model = getattr(self, "_placement_overlay_model", None)
@@ -927,8 +1071,9 @@ class OverlayMixin:
         radius = max(6.0, 10.0 / zoom)
         best = None
         best_distance = radius * radius
+        filter_name = getattr(self, "_placement_selection_filter", "all")
         for marker in getattr(model, "markers", ()):
-            if not self._placement_marker_is_editable(marker):
+            if not self._placement_marker_matches_filter(marker, filter_name):
                 continue
             key = self._placement_key_from_marker(marker)
             if key is None:
@@ -994,6 +1139,12 @@ class OverlayMixin:
             return True
         kind, key, marker_x, marker_y = hit
         self._set_placement_selection(kind, key)
+        if kind == "vp":
+            # VPs are state data, so they can be selected for identification
+            # but are not dragged through the placement controller.
+            self._placement_drag_state = None
+            self._placement_preview_position = None
+            return True
         self._placement_drag_state = (kind, key, marker_x, marker_y)
         self._placement_preview_position = (marker_x, marker_y)
         return True

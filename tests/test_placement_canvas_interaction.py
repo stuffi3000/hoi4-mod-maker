@@ -29,7 +29,7 @@ def placement_canvas(qapp, qtbot):
         {"id": 11, "region_id": 4, "x": 35.5, "y": 5.5},
     ]
     vp_points = [(20, 45.5, 30.5)]
-    findings = [{"code": "placement.collision", "coordinates": [(50.5, 30.5)]}]
+    findings = [{"code": "placement.collision", "coordinates": [(2.5, 30.5)]}]
     canvas.set_placement_overlay_data(records, vp_points=vp_points, findings=findings)
     canvas.set_placement_overlay_visible(True)
     canvas._display_mode = "strategic_region"
@@ -37,15 +37,15 @@ def placement_canvas(qapp, qtbot):
     canvas.set_placement_overlay_visible(False)
 
 
-def test_hit_testing_returns_typed_editable_keys_and_skips_noneditable(placement_canvas):
+def test_hit_testing_returns_typed_selectable_keys_and_skips_diagnostics(placement_canvas):
     canvas, _records = placement_canvas
 
     assert canvas.placement_marker_at(5.5, 5.5)[:2] == ("slot", (1, 0))
     assert canvas.placement_marker_at(15.5, 5.5)[:2] == ("port", 2)
     assert canvas.placement_marker_at(25.5, 5.5)[:2] == ("building", 7)
     assert canvas.placement_marker_at(35.5, 5.5)[:2] == ("weather", 11)
-    assert canvas.placement_marker_at(45.5, 30.5) is None
-    assert canvas.placement_marker_at(50.5, 30.5) is None
+    assert canvas.placement_marker_at(45.5, 30.5)[:2] == ("vp", 20)
+    assert canvas.placement_marker_at(2.5, 30.5) is None
     assert canvas.placement_marker_at(0.0, 39.0) is None
 
 
@@ -125,7 +125,35 @@ def test_existing_vp_overlay_can_coexist(placement_canvas):
 
     assert canvas._vp_overlay_item.isVisible()
     assert canvas._placement_overlay_item.isVisible()
-    assert canvas.placement_marker_at(45.5, 30.5) is None
+    assert canvas.placement_marker_at(45.5, 30.5)[:2] == ("vp", 20)
+
+
+def test_selection_filter_isolates_overlapping_marker_types(placement_canvas):
+    canvas, _records = placement_canvas
+    point = (12.5, 12.5)
+    canvas.set_placement_overlay_data(
+        [
+            {"province_id": 1, "slot": 0, "x": point[0], "y": point[1]},
+            {"province_id": 2, "sea_province": 9, "x": point[0], "y": point[1]},
+            {"id": 7, "province_id": 3, "building_type": "arms_factory", "x": point[0], "y": point[1]},
+        ],
+        vp_points=[(20, point[0], point[1])],
+    )
+
+    canvas.set_placement_selection_filter("building")
+    assert canvas.placement_marker_at(*point)[:2] in {("slot", (1, 0)), ("building", 7)}
+    canvas.set_placement_selection_filter("port")
+    assert canvas.placement_marker_at(*point)[:2] == ("port", 2)
+    canvas.set_placement_selection_filter("vp")
+    assert canvas.placement_marker_at(*point)[:2] == ("vp", 20)
+
+
+def test_victory_point_selection_does_not_start_a_drag(placement_canvas):
+    canvas, _records = placement_canvas
+    assert canvas._begin_placement_drag(45.5, 30.5) is True
+    assert canvas._placement_selected == ("vp", 20)
+    assert canvas._placement_drag_state is None
+    assert canvas._finish_placement_drag() is True
 
 
 def test_input_router_emits_drag_intent_only_on_release(placement_canvas):

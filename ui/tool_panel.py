@@ -392,6 +392,9 @@ class ToolPanel(QWidget):
     placement_generate_ports_requested = pyqtSignal(object)
     placement_accept_selected_requested = pyqtSignal(object, object, str)
     placement_refresh_requested = pyqtSignal()
+    placement_selection_filter_changed = pyqtSignal(str)
+    placement_urban_overlay_toggled = pyqtSignal(bool)
+    placement_vp_names_toggled = pyqtSignal(bool)
     placement_transform_update_requested = pyqtSignal(str, object, float, float, float, float)
     placement_transform_reset_requested = pyqtSignal(str, object)
 
@@ -722,6 +725,13 @@ class ToolPanel(QWidget):
         p.generate_ports_requested.connect(self.placement_generate_ports_requested)
         p.accept_selected_requested.connect(self.placement_accept_selected_requested)
         p.refresh_requested.connect(self.placement_refresh_requested)
+        p.placement_selection_filter_changed.connect(
+            self.placement_selection_filter_changed
+        )
+        p.placement_urban_overlay_toggled.connect(
+            self.placement_urban_overlay_toggled
+        )
+        p.placement_vp_names_toggled.connect(self.placement_vp_names_toggled)
         p.transform_update_requested.connect(self.placement_transform_update_requested)
         p.transform_reset_requested.connect(self.placement_transform_reset_requested)
 

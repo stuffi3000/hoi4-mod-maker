@@ -6,9 +6,8 @@ victory-point locations and ``placement.collision`` finding coordinates
 into sorted, stable markers without importing PyQt, touching the
 filesystem, using global map state, or mutating its inputs.
 
-Only ``features/map/placement/overlay.py`` and its dedicated test module
-belong to this slice; Qt canvas files, MainWindow, services, and
-controllers are intentionally untouched.
+The model remains independent of Qt and project services; the canvas and
+MainWindow consume it for interactive display and selection.
 """
 
 from __future__ import annotations

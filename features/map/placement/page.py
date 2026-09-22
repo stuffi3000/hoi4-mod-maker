@@ -189,6 +189,9 @@ class PlacementPage(QWidget):
     generate_ports_requested = pyqtSignal(object)
     accept_selected_requested = pyqtSignal(object, object, str)
     refresh_requested = pyqtSignal()
+    placement_selection_filter_changed = pyqtSignal(str)
+    placement_urban_overlay_toggled = pyqtSignal(bool)
+    placement_vp_names_toggled = pyqtSignal(bool)
     transform_update_requested = pyqtSignal(str, object, float, float, float, float)
     transform_reset_requested = pyqtSignal(str, object)
 
@@ -212,6 +215,64 @@ class PlacementPage(QWidget):
         tip.setWordWrap(True)
         tip.setStyleSheet(_DIM_LABEL_STYLE)
         lay.addWidget(tip)
+
+        map_box = _make_section(tr("placement_map_section"))
+        map_layout = map_box.layout()
+
+        map_guide = QLabel(tr("placement_map_guide"))
+        map_guide.setWordWrap(True)
+        map_guide.setTextFormat(Qt.RichText)
+        map_guide.setStyleSheet(_DIM_LABEL_STYLE)
+        map_layout.addWidget(map_guide)
+
+        selection_row = QHBoxLayout()
+        selection_label = QLabel(tr("placement_selection_label"))
+        selection_label.setStyleSheet(_LABEL_STYLE)
+        selection_row.addWidget(selection_label)
+        self._selection_filter_combo = QComboBox()
+        self._selection_filter_combo.setStyleSheet(_COMBOBOX_STYLE)
+        self._selection_filter_combo.addItem(
+            tr("placement_selection_all"), "all"
+        )
+        self._selection_filter_combo.addItem(
+            tr("placement_selection_buildings"), "building"
+        )
+        self._selection_filter_combo.addItem(
+            tr("placement_selection_ports"), "port"
+        )
+        self._selection_filter_combo.addItem(
+            tr("placement_selection_victory_points"), "vp"
+        )
+        self._selection_filter_combo.currentIndexChanged.connect(
+            self._on_selection_filter_changed
+        )
+        selection_row.addWidget(self._selection_filter_combo, 1)
+        map_layout.addLayout(selection_row)
+
+        selection_help = QLabel(tr("placement_selection_help"))
+        selection_help.setWordWrap(True)
+        selection_help.setStyleSheet(_DIM_LABEL_STYLE)
+        map_layout.addWidget(selection_help)
+
+        self._urban_overlay_chk = QCheckBox(tr("placement_show_urban"))
+        self._urban_overlay_chk.setToolTip(tr("placement_show_urban_tip"))
+        self._urban_overlay_chk.toggled.connect(
+            self.placement_urban_overlay_toggled.emit
+        )
+        map_layout.addWidget(self._urban_overlay_chk)
+
+        self._vp_names_chk = QCheckBox(tr("placement_show_vp_names"))
+        self._vp_names_chk.setToolTip(tr("placement_show_vp_names_tip"))
+        self._vp_names_chk.toggled.connect(
+            self.placement_vp_names_toggled.emit
+        )
+        map_layout.addWidget(self._vp_names_chk)
+
+        urban_help = QLabel(tr("placement_map_backdrop_help"))
+        urban_help.setWordWrap(True)
+        urban_help.setStyleSheet(_DIM_LABEL_STYLE)
+        map_layout.addWidget(urban_help)
+        lay.addWidget(map_box)
 
         generate_box = _make_section(tr("placement_generate_section"))
         gl = generate_box.layout()
@@ -377,6 +438,28 @@ class PlacementPage(QWidget):
 
     def set_replace_generated(self, on):
         self._replace_generated_check.setChecked(bool(on))
+
+    def placement_selection_filter(self):
+        return self._selection_filter_combo.currentData() or "all"
+
+    def set_placement_selection_filter(self, value):
+        target = str(value or "all")
+        for index in range(self._selection_filter_combo.count()):
+            if self._selection_filter_combo.itemData(index) == target:
+                self._selection_filter_combo.setCurrentIndex(index)
+                return
+
+    def show_urban_overlay(self):
+        return bool(self._urban_overlay_chk.isChecked())
+
+    def set_show_urban_overlay(self, on):
+        self._urban_overlay_chk.setChecked(bool(on))
+
+    def show_victory_point_names(self):
+        return bool(self._vp_names_chk.isChecked())
+
+    def set_show_victory_point_names(self, on):
+        self._vp_names_chk.setChecked(bool(on))
 
     def set_generation_busy(self, busy):
         """Disable generation inputs while the main window runs a proposal."""
@@ -591,6 +674,10 @@ class PlacementPage(QWidget):
 
     def _on_refresh(self):
         self.refresh_requested.emit()
+
+    def _on_selection_filter_changed(self, index):
+        value = self._selection_filter_combo.itemData(index) or "all"
+        self.placement_selection_filter_changed.emit(str(value))
 
     def _on_transform_apply(self):
         selection = self.selected_transform()
