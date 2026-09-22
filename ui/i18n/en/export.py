@@ -61,6 +61,8 @@ Missing data will cause HOI4 to crash on load. Are you sure you want to skip aut
     "export_dlg_title": "Export MOD",
     "export_done_all_pass": "Export succeeded, all checks passed!",
     "export_done_has_errors": "Export succeeded, but verification found issues (may crash in game)",
+    "export_destination_conflict": "The export was not started because the selected destination cannot be replaced safely.\n\n{error}\n\nChoose an empty folder, enable \"Overwrite existing output\", or enable \"Backup existing output\".",
+    "export_destination_conflict_title": "Export Blocked",
     "export_direct_tooltip": "Skip auto-completion and export the current data. Missing required data can make HOI4 crash.",
     "export_exporting": "Exporting...",
     "export_failed": "Export failed: {}",

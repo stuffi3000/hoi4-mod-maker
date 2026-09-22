@@ -363,6 +363,24 @@ def test_transaction_accepts_precreated_empty_destination(m2_tmp):
     assert (dest / "hello.txt").read_text(encoding="utf-8") == "fresh"
 
 
+def test_transaction_rejects_nonempty_destination_before_worker(m2_tmp):
+    dest = m2_tmp / "existing-mod"
+    dest.mkdir()
+    (dest / "keep.txt").write_text("do not replace", encoding="utf-8")
+    called = []
+
+    with pytest.raises(FileExistsError, match="not empty"):
+        run_staged_export(
+            str(dest),
+            lambda staging_dir: called.append(staging_dir),
+            StagingPolicy(),
+        )
+
+    assert called == []
+    assert (dest / "keep.txt").read_text(encoding="utf-8") == "do not replace"
+    assert not list(m2_tmp.glob("existing-mod.staging-*"))
+
+
 def test_transaction_failed_staging_cleanup_and_keep(m2_tmp):
     dest = m2_tmp / "mod"
 

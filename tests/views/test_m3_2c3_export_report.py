@@ -170,3 +170,36 @@ def test_export_worker_empty_findings_yields_empty_report(qapp, monkeypatch):
     assert isinstance(report.validation_report, ValidationReport)
     assert report.validation_report.total == 0
     assert report.warnings == []
+
+
+def test_export_dialog_blocks_nonempty_destination_without_replacement_policy(
+    qapp, monkeypatch, tmp_path
+):
+    from views import export_dialog as export_dialog_mod
+
+    destination = tmp_path / "existing-mod"
+    destination.mkdir()
+    (destination / "keep.txt").write_text("keep", encoding="utf-8")
+
+    dialog = export_dialog_mod.ExportDialog.__new__(export_dialog_mod.ExportDialog)
+    dialog._scope_checks = {"compact_ids": SimpleNamespace(isChecked=lambda: True)}
+    dialog._overwrite_check = SimpleNamespace(isChecked=lambda: False)
+    dialog._backup_check = SimpleNamespace(isChecked=lambda: False)
+    warning = {}
+
+    monkeypatch.setattr(
+        export_dialog_mod.QFileDialog,
+        "getExistingDirectory",
+        lambda *args, **kwargs: str(destination),
+    )
+    monkeypatch.setattr(
+        export_dialog_mod.QMessageBox,
+        "warning",
+        lambda *args, **kwargs: warning.update(title=args[1], text=args[2]),
+    )
+
+    dialog._do_export()
+
+    assert warning["title"] == "Export Blocked"
+    assert "not empty" in warning["text"]
+    assert "_worker" not in vars(dialog)

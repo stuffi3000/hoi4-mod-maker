@@ -377,7 +377,7 @@ State resources, buildings, manpower, owners, and victory points are never found
 
 ### M2.3 Implement transactional staging
 
-Write to a newly created staging directory in the destination's parent. Run all artifact validators there. Publish only after success. A pre-created empty destination directory is treated as a safe picker placeholder; preserve any non-empty destination unless the user explicitly chooses an overwrite/backup policy.
+Write to a newly created staging directory in the destination's parent. Run all artifact validators there. Publish only after success. A pre-created empty destination directory is treated as a safe picker placeholder; preflight blocks a non-empty destination before export work starts unless the user explicitly chooses an overwrite/backup policy.
 
 The output transaction should:
 

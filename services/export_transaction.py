@@ -52,6 +52,51 @@ def validate_destination(destination: str) -> list:
     return errors
 
 
+def _destination_conflict(destination: str, policy: StagingPolicy) -> str | None:
+    """Return a promotion conflict for a validated destination, if any."""
+    dest = os.path.abspath(os.path.normpath(str(destination)))
+    if not os.path.lexists(dest):
+        return None
+    if not os.path.isdir(dest):
+        return "destination exists as a file: %s" % dest
+    if policy.overwrite or policy.backup:
+        return None
+    if os.path.islink(dest):
+        return (
+            "destination already exists as a symbolic link: %s "
+            "(choose overwrite or backup to replace it)" % dest
+        )
+    try:
+        is_empty = not os.listdir(dest)
+    except OSError:
+        return (
+            "destination already exists and cannot be inspected: %s "
+            "(choose overwrite or backup to replace it)" % dest
+        )
+    if not is_empty:
+        return (
+            "destination already exists and is not empty: %s "
+            "(choose overwrite or backup to replace it)" % dest
+        )
+    return None
+
+
+def destination_conflict(
+    destination: str, policy: StagingPolicy | None = None
+) -> str | None:
+    """Return a user-facing destination error without starting an export.
+
+    This is used by the GUI and other callers for an early preflight. It does
+    not modify the destination; validation may create a missing parent, just
+    as :func:`prepare_staging` does.
+    """
+    policy = policy or StagingPolicy()
+    errors = validate_destination(destination)
+    if errors:
+        return "; ".join(errors)
+    return _destination_conflict(destination, policy)
+
+
 def prepare_staging(destination: str) -> str:
     errors = validate_destination(destination)
     if errors:
@@ -108,7 +153,7 @@ def promote_staging(staging: str, destination: str, policy: StagingPolicy | None
         raise ValueError("staging directory must differ from the destination")
     replaced = None
     removed_empty_destination = False
-    if os.path.exists(dest):
+    if os.path.lexists(dest):
         if not os.path.isdir(dest):
             raise ValueError("destination exists as a file: %s" % dest)
         if policy.backup:
@@ -118,21 +163,10 @@ def promote_staging(staging: str, destination: str, policy: StagingPolicy | None
             # subsequent promotion fails, instead of deleting a known-good mod.
             replaced = "%s.replaced-%s" % (dest, uuid.uuid4().hex[:12])
             os.replace(dest, replaced)
-        elif os.path.islink(dest):
-            raise FileExistsError(
-                "destination already exists as a symbolic link: %s "
-                "(choose overwrite or backup to replace it)" % dest)
         else:
-            try:
-                is_empty = not os.listdir(dest)
-            except OSError as exc:
-                raise FileExistsError(
-                    "destination already exists and cannot be inspected: %s "
-                    "(choose overwrite or backup to replace it)" % dest) from exc
-            if not is_empty:
-                raise FileExistsError(
-                    "destination already exists and is not empty: %s "
-                    "(choose overwrite or backup to replace it)" % dest)
+            conflict = _destination_conflict(dest, policy)
+            if conflict:
+                raise FileExistsError(conflict)
             # QFileDialog.getExistingDirectory returns a path that already
             # exists, even when the user just created a new empty folder.
             # Removing only that empty placeholder lets the staged directory
@@ -171,6 +205,9 @@ def discard_staging(staging: str, keep_failed: bool = False) -> str | None:
 
 def run_staged_export(destination: str, worker, policy: StagingPolicy | None = None) -> str:
     policy = policy or StagingPolicy()
+    conflict = destination_conflict(destination, policy)
+    if conflict:
+        raise FileExistsError(conflict)
     staging = prepare_staging(destination)
     try:
         worker(staging)

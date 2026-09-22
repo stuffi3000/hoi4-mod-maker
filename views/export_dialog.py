@@ -243,8 +243,17 @@ class ExportWorker(QThread):
             self.progress.emit(tr("export_worker_pre_check"))
             from services.export_planner import format_plan_summary, plan_export_from_project
             from services.export_service import ExportReport, export_planned_mod
+            from services.export_transaction import StagingPolicy, destination_conflict
             from services.game_profile_service import load_profile_for_target
             from services.validation_service import report_from_findings
+
+            policy = StagingPolicy.from_options(
+                overwrite=self.overwrite,
+                backup=self.backup,
+            )
+            conflict = destination_conflict(self.output_dir, policy)
+            if conflict:
+                raise FileExistsError(conflict)
 
             self.game_target = self.project.resolve_game_target()
             self.profile = load_profile_for_target(self.game_target)
@@ -1027,6 +1036,20 @@ class ExportDialog(QDialog):
         output_dir = QFileDialog.getExistingDirectory(
             self, tr("export_choose_dir"), DEFAULT_MOD_OUTPUT_PATH)
         if not output_dir:
+            return
+
+        from services.export_transaction import StagingPolicy, destination_conflict
+        policy = StagingPolicy.from_options(
+            overwrite=self._overwrite_check.isChecked(),
+            backup=self._backup_check.isChecked(),
+        )
+        conflict = destination_conflict(output_dir, policy)
+        if conflict:
+            QMessageBox.warning(
+                self,
+                tr("export_destination_conflict_title"),
+                tr("export_destination_conflict").format(error=conflict),
+            )
             return
 
         # Disable button, show progress
