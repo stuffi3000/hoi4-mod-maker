@@ -449,6 +449,18 @@ def _province_id_set(province_map: Any) -> set[int] | None:
         return None
     if arr.ndim == 0:
         return None
+    # Imported raster maps use integer NumPy dtypes. Keep this hot path in
+    # NumPy; converting every pixel to a Python object made validation scan
+    # millions of values before it even reached the placement records.
+    try:
+        if np.issubdtype(arr.dtype, np.integer):
+            return {
+                int(value)
+                for value in np.unique(arr)
+                if int(value) > 0
+            }
+    except (TypeError, ValueError, OverflowError):
+        pass
     try:
         values = arr.ravel().tolist()
     except Exception:
@@ -915,6 +927,90 @@ def _quant_key(pos_x: float, pos_y: float) -> tuple[float, float]:
 
 def _exact_key(pos_x: float, pos_y: float) -> tuple[float, float]:
     return (float(pos_x), float(pos_y))
+
+
+def _near_collision_pairs(
+    valid_points: list[tuple[int, float, float, int | None, str, int]],
+    tolerance: float,
+    wrap_horizontal: bool,
+    width: int | None,
+) -> list[
+    tuple[
+        int,
+        int,
+        float,
+        tuple[int, float, float, int | None, str, int],
+        tuple[int, float, float, int | None, str, int],
+    ]
+]:
+    """Return near-collision pairs using a tolerance-sized spatial index.
+
+    The previous implementation compared every point with every later point.
+    Placement-heavy projects can contain tens of thousands of records, making
+    that O(n²) pass dominate validation even when almost all points are far
+    apart. A point within ``tolerance`` can only be in the same or an adjacent
+    grid cell, so the indexed pass keeps the exact distance check while
+    reducing the candidate set to nearby points.
+    """
+    if len(valid_points) < 2 or tolerance <= 0.0:
+        return []
+
+    cell_size = float(tolerance)
+    bucket_count: int | None = None
+    if wrap_horizontal and width is not None and width > 0:
+        bucket_count = max(1, int(math.ceil(float(width) / cell_size)))
+
+    buckets: dict[tuple[int, int], list[int]] = {}
+    for position, entry in enumerate(valid_points):
+        x_cell = int(math.floor(float(entry[1]) / cell_size))
+        if bucket_count is not None:
+            x_cell %= bucket_count
+        y_cell = int(math.floor(float(entry[2]) / cell_size))
+        buckets.setdefault((x_cell, y_cell), []).append(position)
+
+    near_pairs: list[
+        tuple[
+            int,
+            int,
+            float,
+            tuple[int, float, float, int | None, str, int],
+            tuple[int, float, float, int | None, str, int],
+        ]
+    ] = []
+    for position_a, entry_a in enumerate(valid_points):
+        x_cell = int(math.floor(float(entry_a[1]) / cell_size))
+        if bucket_count is not None:
+            x_cell %= bucket_count
+        y_cell = int(math.floor(float(entry_a[2]) / cell_size))
+        candidate_keys: set[tuple[int, int]] = set()
+        for x_offset in (-1, 0, 1):
+            candidate_x = x_cell + x_offset
+            if bucket_count is not None:
+                candidate_x %= bucket_count
+            for y_offset in (-1, 0, 1):
+                candidate_keys.add((candidate_x, y_cell + y_offset))
+
+        key_a = _exact_key(entry_a[1], entry_a[2])
+        for candidate_key in candidate_keys:
+            for position_b in buckets.get(candidate_key, ()):
+                if position_b <= position_a:
+                    continue
+                entry_b = valid_points[position_b]
+                key_b = _exact_key(entry_b[1], entry_b[2])
+                if key_a == key_b:
+                    continue
+                dx = abs(float(entry_a[1]) - float(entry_b[1]))
+                if bucket_count is not None:
+                    dx = min(dx, float(width) - dx)
+                dy = abs(float(entry_a[2]) - float(entry_b[2]))
+                dist = math.hypot(dx, dy)
+                if dist < tolerance and dist > 0:
+                    near_pairs.append((entry_a[0], entry_b[0], float(dist), entry_a, entry_b))
+
+    near_pairs.sort(key=lambda item: (item[0], item[1]))
+    return near_pairs
+
+
 def validate_placement_references(
     province_map: Any,
     tile_map: Any | None = None,
@@ -1290,29 +1386,7 @@ def validate_placement_references(
             point = _pixel_point(key[0], key[1])
             if point is not None:
                 collision_points.add(point)
-        near_pairs: list[tuple[int, int, float, tuple[int, float, float, int | None, str, int], tuple[int, float, float, int | None, str, int]]] = []
-        for pos_a in range(len(valid_points)):
-            entry_a = valid_points[pos_a]
-            key_a = _exact_key(entry_a[1], entry_a[2])
-            for pos_b in range(pos_a + 1, len(valid_points)):
-                entry_b = valid_points[pos_b]
-                key_b = _exact_key(entry_b[1], entry_b[2])
-                if key_a == key_b:
-                    continue
-                dx = abs(float(entry_a[1]) - float(entry_b[1]))
-                if wrap and width is not None and width > 0:
-                    try:
-                        dx = min(dx, float(width) - dx)
-                    except (TypeError, ValueError):
-                        pass
-                dy = abs(float(entry_a[2]) - float(entry_b[2]))
-                try:
-                    dist = math.hypot(dx, dy)
-                except (TypeError, ValueError):
-                    continue
-                if dist < tolerance and dist > 0:
-                    near_pairs.append((entry_a[0], entry_b[0], float(dist), entry_a, entry_b))
-        near_pairs.sort(key=lambda t: (t[0], t[1]))
+        near_pairs = _near_collision_pairs(valid_points, tolerance, wrap, width)
         for _ga, _gb, dist, entry_a, entry_b in near_pairs:
             label_a = "%s#%d" % (entry_a[4], entry_a[5])
             label_b = "%s#%d" % (entry_b[4], entry_b[5])

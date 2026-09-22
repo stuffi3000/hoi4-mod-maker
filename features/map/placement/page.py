@@ -269,6 +269,7 @@ class PlacementPage(QWidget):
 
         self._records_list = QListWidget()
         self._records_list.setStyleSheet(_LIST_STYLE)
+        self._records_list.setUniformItemSizes(True)
         self._records_list.setMinimumHeight(180)
         rl.addWidget(self._records_list)
         lay.addWidget(records_box)
@@ -389,7 +390,6 @@ class PlacementPage(QWidget):
             widget.setEnabled(enabled)
 
     def set_records(self, records):
-        self._records_list.clear()
         slots = []
         ports = []
         for record in records or []:
@@ -412,16 +412,57 @@ class PlacementPage(QWidget):
                 continue
         slots.sort(key=lambda entry: (entry[0], entry[1]))
         ports.sort(key=lambda entry: entry[0])
-        for province_id, slot_index, record in slots:
-            item = QListWidgetItem(_slot_text(province_id, slot_index, record))
-            item.setData(Qt.UserRole, ("slot", (province_id, slot_index)))
-            self._track_checkable(item)
-            self._records_list.addItem(item)
-        for province_id, record in ports:
-            item = QListWidgetItem(_port_text(province_id, record))
-            item.setData(Qt.UserRole, ("port", province_id))
-            self._track_checkable(item)
-            self._records_list.addItem(item)
+
+        # Refresh calls are also made when the placement mode becomes visible.
+        # Keep the already-built list when the displayed fields are unchanged;
+        # rebuilding tens of thousands of QListWidgetItems is needlessly costly.
+        signature = tuple(
+            [
+                (
+                    "slot",
+                    province_id,
+                    slot_index,
+                    _field(record, "meaning"),
+                    _field(record, "x"),
+                    _field(record, "y"),
+                    _field(record, "provenance"),
+                    _field(record, "review_status"),
+                )
+                for province_id, slot_index, record in slots
+            ]
+            + [
+                (
+                    "port",
+                    province_id,
+                    _field(record, "sea_province"),
+                    _field(record, "x"),
+                    _field(record, "y"),
+                    _field(record, "provenance"),
+                    _field(record, "review_status"),
+                )
+                for province_id, record in ports
+            ]
+        )
+        if signature == getattr(self, "_records_signature", None):
+            return
+        self._records_signature = signature
+
+        self._records_list.setUpdatesEnabled(False)
+        try:
+            self._records_list.clear()
+            for province_id, slot_index, record in slots:
+                item = QListWidgetItem(_slot_text(province_id, slot_index, record))
+                item.setData(Qt.UserRole, ("slot", (province_id, slot_index)))
+                self._track_checkable(item)
+                self._records_list.addItem(item)
+            for province_id, record in ports:
+                item = QListWidgetItem(_port_text(province_id, record))
+                item.setData(Qt.UserRole, ("port", province_id))
+                self._track_checkable(item)
+                self._records_list.addItem(item)
+        finally:
+            self._records_list.setUpdatesEnabled(True)
+            self._records_list.viewport().update()
         if self._records_list.count() == 0:
             self._records_summary.setText(tr("placement_records_empty"))
         else:

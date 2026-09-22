@@ -1,5 +1,7 @@
 """Overlay Mixin — Province border/VP marker/Transform box/Lasso/Brush cursor
 Split from canvas_widget.py"""
+import math
+
 import numpy as np
 from PyQt5.QtCore import Qt, QPointF, QRectF
 from PyQt5.QtGui import (
@@ -24,6 +26,128 @@ _PLACEMENT_ROLE_COLORS = {
     "vp": (230, 30, 150),
     "collision": (255, 70, 0),
 }
+
+_PLACEMENT_FAST_MARKER_THRESHOLD = 512
+
+
+def _placement_stamp_offsets(kind, *, inner=False):
+    """Return a small raster template for a batched placement marker."""
+    if kind == "slot":
+        radius = 2 if inner else 3
+        return tuple(
+            (dx, dy)
+            for dy in range(-radius, radius + 1)
+            for dx in range(-radius, radius + 1)
+            if inner or max(abs(dx), abs(dy)) == radius
+        )
+    if kind == "port":
+        radius_squared = 9 if inner else 20
+        return tuple(
+            (dx, dy)
+            for dy in range(-4, 5)
+            for dx in range(-4, 5)
+            if dx * dx + dy * dy <= radius_squared
+        )
+    if kind == "building":
+        return tuple(
+            (dx, dy)
+            for dy in range(-5, 4)
+            for dx in range(-4, 5)
+            if abs(dx) <= (dy + 5) * 4 // 8
+        )
+    if kind == "weather":
+        radius = 3 if inner else 5
+        return tuple(
+            (dx, dy)
+            for dy in range(-radius, radius + 1)
+            for dx in range(-radius, radius + 1)
+            if abs(dx) + abs(dy) <= radius
+        )
+    if kind == "vp":
+        radius_squared = 2 if inner else 30
+        return tuple(
+            (dx, dy)
+            for dy in range(-5, 6)
+            for dx in range(-5, 6)
+            if dx * dx + dy * dy <= radius_squared
+        )
+    if kind == "collision":
+        width = 1 if inner else 2
+        return tuple(
+            (dx, dy)
+            for dy in range(-5, 6)
+            for dx in range(-5, 6)
+            if abs(dx - dy) <= width or abs(dx + dy) <= width
+        )
+    radius_squared = 4 if inner else 9
+    return tuple(
+        (dx, dy)
+        for dy in range(-3, 4)
+        for dx in range(-3, 4)
+        if dx * dx + dy * dy <= radius_squared
+    )
+
+
+def _stamp_placement_group(rgba, markers, kind, color):
+    """Stamp one marker kind/role group into an RGBA raster."""
+    if not markers:
+        return
+    centers = np.asarray(
+        [
+            (
+                int(math.floor(float(marker.x))),
+                int(math.floor(float(marker.y))),
+            )
+            for marker in markers
+        ],
+        dtype=np.int32,
+    )
+    xs = centers[:, 0]
+    ys = centers[:, 1]
+    height, width = rgba.shape[:2]
+
+    def stamp(offsets, stamp_color):
+        for dx, dy in offsets:
+            target_x = xs + dx
+            target_y = ys + dy
+            valid = (
+                (target_x >= 0)
+                & (target_x < width)
+                & (target_y >= 0)
+                & (target_y < height)
+            )
+            if np.any(valid):
+                rgba[target_y[valid], target_x[valid]] = stamp_color
+
+    white = (255, 255, 255, 230)
+    stamp(_placement_stamp_offsets(kind), white)
+    if kind == "vp":
+        stamp(_placement_stamp_offsets(kind, inner=True), color)
+        stamp(((0, 0),), white)
+    else:
+        stamp(_placement_stamp_offsets(kind, inner=True), color)
+
+
+def _render_placement_markers_fast(width, height, markers):
+    """Render a large marker set without one QPainter call per marker."""
+    rgba = np.zeros((height, width, 4), dtype=np.uint8)
+    groups = {}
+    for marker in markers:
+        kind = str(getattr(marker, "kind", ""))
+        role = str(getattr(marker, "role", "unreviewed")).strip().lower()
+        groups.setdefault((kind, role), []).append(marker)
+    for (kind, role), group in groups.items():
+        rgb = _PLACEMENT_ROLE_COLORS.get(role, _PLACEMENT_ROLE_COLORS["unreviewed"])
+        _stamp_placement_group(rgba, group, kind, (*rgb, 255))
+    image = QImage(
+        rgba.data,
+        width,
+        height,
+        width * 4,
+        QImage.Format.Format_RGBA8888,
+    )
+    image._ref = rgba
+    return image.copy()
 
 
 def _placement_role_color(role):
@@ -603,7 +727,9 @@ class OverlayMixin:
                 except Exception:
                     pass
             return
-        self._render_placement_context_overlay()
+        # _render_placement_overlay() refreshes the context after the marker
+        # layer. Rendering it here as well would rebuild the full map-sized
+        # border/coastline image twice for every mode entry.
         self._render_placement_overlay()
 
     def _render_placement_overlay(self):
@@ -662,25 +788,29 @@ class OverlayMixin:
             return
         self._placement_overlay_model = model
         try:
-            image = QImage(width, height, QImage.Format.Format_ARGB32)
-            image.fill(QColor(0, 0, 0, 0))
-            painter = QPainter(image)
-            try:
-                painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-                for marker in getattr(model, "markers", ()):
-                    try:
-                        color = _placement_role_color(getattr(marker, "role", "unreviewed"))
-                        _draw_placement_marker(
-                            painter,
-                            getattr(marker, "kind", ""),
-                            marker.x,
-                            marker.y,
-                            color,
-                        )
-                    except Exception:
-                        continue
-            finally:
-                painter.end()
+            markers = tuple(getattr(model, "markers", ()))
+            if len(markers) >= _PLACEMENT_FAST_MARKER_THRESHOLD:
+                image = _render_placement_markers_fast(width, height, markers)
+            else:
+                image = QImage(width, height, QImage.Format.Format_ARGB32)
+                image.fill(QColor(0, 0, 0, 0))
+                painter = QPainter(image)
+                try:
+                    painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+                    for marker in markers:
+                        try:
+                            color = _placement_role_color(getattr(marker, "role", "unreviewed"))
+                            _draw_placement_marker(
+                                painter,
+                                getattr(marker, "kind", ""),
+                                marker.x,
+                                marker.y,
+                                color,
+                            )
+                        except Exception:
+                            continue
+                finally:
+                    painter.end()
             item.setPixmap(QPixmap.fromImage(image))
             item.setVisible(True)
             self._update_placement_selection_visual()
