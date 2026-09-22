@@ -19,7 +19,7 @@ STRINGS: dict[str, str] = {
     "mode_state": "State",
     "mode_strategic_region": "Strategic Region",
     "mode_terrain": "Terrain",
-    "nav_logistics": "Logistics",
+    "nav_logistics": "Logistics and Placements",
     "nav_map_draw": "Draw Map",
     "nav_province": "Provinces",
     "nav_region": "Countries",

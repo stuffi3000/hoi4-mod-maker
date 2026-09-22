@@ -9,6 +9,10 @@ from ui.i18n import tr
 from ui.tool_panel import _SubModeTabBar
 
 
+def test_logistics_navigation_menu_includes_placements():
+    assert tr("nav_logistics") == "Logistics and Placements"
+
+
 def test_strategic_region_refresh_populates_and_preserves_selection(qtbot):
     page = StrategicRegionPage()
     qtbot.addWidget(page)
