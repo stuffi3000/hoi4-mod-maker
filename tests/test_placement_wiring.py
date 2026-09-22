@@ -9,6 +9,7 @@ from controllers.app_controller import ApplicationController
 from controllers.placement import PlacementController
 from features.map.placement import PlacementPage
 from ui.tool_panel import ToolPanel
+from ui.i18n import tr
 from views.main_window import MainWindow
 
 
@@ -140,6 +141,35 @@ class _FakeReplacePage:
         self.status_calls.append(text)
 
 
+class _FakeBusyPage(_FakeReplacePage):
+    def __init__(self, replace_value=False):
+        super().__init__(replace_value=replace_value)
+        self.busy_calls = []
+
+    def set_generation_busy(self, busy):
+        self.busy_calls.append(bool(busy))
+
+
+class _FakeProgressBar:
+    def __init__(self):
+        self.range_calls = []
+        self.visible_calls = []
+
+    def setRange(self, minimum, maximum):
+        self.range_calls.append((minimum, maximum))
+
+    def setVisible(self, visible):
+        self.visible_calls.append(bool(visible))
+
+
+class _FakeStatusLabel:
+    def __init__(self):
+        self.texts = []
+
+    def setText(self, text):
+        self.texts.append(text)
+
+
 class _FakeLegacyPage:
     def __init__(self):
         self.diagnostics_calls = []
@@ -212,6 +242,37 @@ def test_main_window_forwards_replace_to_propose_ports():
         assert controller.port_args == {12: 34}
         assert controller.port_kwargs == {"replace_generated": flag}
         assert refresh_calls == [True]
+
+
+def test_placement_generation_shows_and_clears_footer_feedback():
+    cases = (
+        (
+            MainWindow._on_placement_generate_slots,
+            (),
+            "placement_slots_generating",
+        ),
+        (
+            MainWindow._on_placement_generate_ports,
+            ({12: 34},),
+            "placement_ports_generating",
+        ),
+    )
+    for handler, args, message_key in cases:
+        page = _FakeBusyPage()
+        controller = _FakeProposalController()
+        fake_self, refresh_calls = _make_generate_self(page, controller)
+        progress = _FakeProgressBar()
+        status = _FakeStatusLabel()
+        fake_self._placement_progress_bar = progress
+        fake_self._status_info = status
+
+        handler(fake_self, *args)
+
+        assert refresh_calls == [True]
+        assert page.busy_calls == [True, False]
+        assert progress.visible_calls == [True, False]
+        assert progress.range_calls == [(0, 0)]
+        assert status.texts == [tr(message_key), tr("status_ready")]
 
 
 def test_main_window_preserves_legacy_page_without_replace_method():

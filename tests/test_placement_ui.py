@@ -266,6 +266,23 @@ def test_set_status(qtbot):
     assert page._status_label.text() == ""
 
 
+def test_generation_busy_disables_generation_inputs(qtbot):
+    page = PlacementPage()
+    qtbot.addWidget(page)
+
+    page.set_generation_busy(True)
+    assert not page._generate_slots_btn.isEnabled()
+    assert not page._generate_ports_btn.isEnabled()
+    assert not page._mapping_edit.isEnabled()
+    assert not page._replace_generated_check.isEnabled()
+
+    page.set_generation_busy(False)
+    assert page._generate_slots_btn.isEnabled()
+    assert page._generate_ports_btn.isEnabled()
+    assert page._mapping_edit.isEnabled()
+    assert page._replace_generated_check.isEnabled()
+
+
 def test_transform_editor_constructs_disabled(qtbot):
     page = PlacementPage()
     qtbot.addWidget(page)

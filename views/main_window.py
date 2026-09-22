@@ -9,7 +9,7 @@ from __future__ import annotations
 from PyQt5.QtWidgets import (
     QMainWindow, QAction, QFileDialog, QMessageBox, QWidget,
     QLabel, QApplication, QStackedWidget, QHBoxLayout,
-    QWidgetAction, QSlider,
+    QWidgetAction, QSlider, QProgressBar,
 )
 from PyQt5.QtCore import Qt, QTimer, QPoint
 from PyQt5.QtGui import QKeySequence
@@ -62,6 +62,7 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
         self._batch_state_pids: list[int] = []
         self._sr_from_states_mode = False
         self._sr_selected_states: list[int] = []
+        self._placement_generation_cursor_active = False
 
         # Old version of undo manager (canvas stroke is still in use, deleted after unification in stage 4)
         from domain.undo_manager import UndoManager
@@ -284,9 +285,16 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
         self._status_provinces = QLabel(tr("status_provinces", 0))
         self._status_mode = QLabel(tr("status_mode").format(mode=tr("mode_continent")))
         self._status_info = QLabel(tr("status_ready"))
+        self._placement_progress_bar = QProgressBar()
+        self._placement_progress_bar.setRange(0, 0)
+        self._placement_progress_bar.setTextVisible(False)
+        self._placement_progress_bar.setFixedWidth(150)
+        self._placement_progress_bar.setToolTip(tr("placement_generation_progress_tip"))
+        self._placement_progress_bar.setVisible(False)
 
         sb = self.statusBar()
         sb.addWidget(self._status_info, stretch=1)
+        sb.addPermanentWidget(self._placement_progress_bar)
         sb.addPermanentWidget(self._status_mode)
         sb.addPermanentWidget(self._status_provinces)
         sb.addPermanentWidget(self._status_pos)
@@ -881,43 +889,93 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
                 return False
         return False
 
+    def _set_placement_generation_busy(self, busy: bool, message: str = "") -> None:
+        """Show footer feedback while synchronous placement generation runs."""
+        page = getattr(getattr(self, "_tool_panel", None), "_placement_page", None)
+        set_busy = getattr(page, "set_generation_busy", None)
+        progress = getattr(self, "_placement_progress_bar", None)
+        status = getattr(self, "_status_info", None)
+        has_feedback = progress is not None or callable(set_busy) or status is not None
+        if not has_feedback:
+            return
+
+        if callable(set_busy):
+            set_busy(bool(busy))
+        if progress is not None:
+            if busy:
+                progress.setRange(0, 0)
+            progress.setVisible(bool(busy))
+        if status is not None:
+            status.setText(message if busy and message else tr("status_ready"))
+
+        app = QApplication.instance()
+        if busy:
+            if app is not None and not getattr(
+                self, "_placement_generation_cursor_active", False
+            ):
+                QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+                self._placement_generation_cursor_active = True
+            if app is not None:
+                app.processEvents()
+        else:
+            if app is not None and getattr(
+                self, "_placement_generation_cursor_active", False
+            ):
+                QApplication.restoreOverrideCursor()
+                self._placement_generation_cursor_active = False
+                app.processEvents()
+            else:
+                self._placement_generation_cursor_active = False
+
     def _on_placement_generate_slots(self) -> None:
         """Generate explicit land-slot proposals through the controller."""
         page = self._tool_panel._placement_page
         replace_generated = MainWindow._placement_replace_generated(page)
-        try:
-            result = self._controllers["placement"].propose_slots(
-                replace_generated=replace_generated
-            )
-        except (TypeError, ValueError) as exc:
-            page.set_status(f"Placement generation failed: {exc}")
-            return
-        self._refresh_placement_page()
-        page.set_diagnostics(result.diagnostics)
-        report = result.store_report
-        page.set_status(
-            f"Stored {report.stored_count} slot proposal(s); "
-            f"skipped {report.skipped_count}."
+        MainWindow._set_placement_generation_busy(
+            self, True, tr("placement_slots_generating")
         )
+        try:
+            try:
+                result = self._controllers["placement"].propose_slots(
+                    replace_generated=replace_generated
+                )
+            except (TypeError, ValueError) as exc:
+                page.set_status(f"Placement generation failed: {exc}")
+                return
+            self._refresh_placement_page()
+            page.set_diagnostics(result.diagnostics)
+            report = result.store_report
+            page.set_status(
+                f"Stored {report.stored_count} slot proposal(s); "
+                f"skipped {report.skipped_count}."
+            )
+        finally:
+            MainWindow._set_placement_generation_busy(self, False)
 
     def _on_placement_generate_ports(self, sea_mapping: object) -> None:
         """Generate port proposals using only the page's explicit mapping."""
         page = self._tool_panel._placement_page
         replace_generated = MainWindow._placement_replace_generated(page)
-        try:
-            result = self._controllers["placement"].propose_ports(
-                sea_mapping, replace_generated=replace_generated
-            )
-        except (TypeError, ValueError) as exc:
-            page.set_status(f"Port generation failed: {exc}")
-            return
-        self._refresh_placement_page()
-        page.set_diagnostics(result.diagnostics)
-        report = result.store_report
-        page.set_status(
-            f"Stored {report.stored_count} port proposal(s); "
-            f"skipped {report.skipped_count}."
+        MainWindow._set_placement_generation_busy(
+            self, True, tr("placement_ports_generating")
         )
+        try:
+            try:
+                result = self._controllers["placement"].propose_ports(
+                    sea_mapping, replace_generated=replace_generated
+                )
+            except (TypeError, ValueError) as exc:
+                page.set_status(f"Port generation failed: {exc}")
+                return
+            self._refresh_placement_page()
+            page.set_diagnostics(result.diagnostics)
+            report = result.store_report
+            page.set_status(
+                f"Stored {report.stored_count} port proposal(s); "
+                f"skipped {report.skipped_count}."
+            )
+        finally:
+            MainWindow._set_placement_generation_busy(self, False)
 
     def _on_placement_accept_selected(
         self,

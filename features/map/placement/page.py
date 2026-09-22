@@ -377,6 +377,17 @@ class PlacementPage(QWidget):
     def set_replace_generated(self, on):
         self._replace_generated_check.setChecked(bool(on))
 
+    def set_generation_busy(self, busy):
+        """Disable generation inputs while the main window runs a proposal."""
+        enabled = not bool(busy)
+        for widget in (
+            self._generate_slots_btn,
+            self._generate_ports_btn,
+            self._mapping_edit,
+            self._replace_generated_check,
+        ):
+            widget.setEnabled(enabled)
+
     def set_records(self, records):
         self._records_list.clear()
         slots = []
