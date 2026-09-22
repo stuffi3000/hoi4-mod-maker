@@ -669,6 +669,8 @@ class MainWindow(MainWindowActionsMixin, QMainWindow):
         self._status_mode.setText(tr("status_mode").format(mode=mode_name))
         if mode == "strategic_region":
             self._refresh_sr_list()
+        elif mode == "continent":
+            self._refresh_continent_list()
         elif mode == "placement":
             self._refresh_placement_page()
         elif mode == "logistics":
