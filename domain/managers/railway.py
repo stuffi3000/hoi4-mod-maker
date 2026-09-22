@@ -26,11 +26,56 @@ class RailwayEntry:
     """a railway."""
     level: int  # 1-5
     province_ids: list[int] = field(default_factory=list)
+    # Province clicks are stored as a temporary, single-province selection
+    # until an adjacent clicked province completes a link.  Keep this marker
+    # separate from the province IDs so validators can distinguish that editor
+    # state from an authored self-loop, which is invalid in HOI4 data.
+    brush_placeholder: bool = False
 
     def to_line(self) -> str:
         """Serialized to railways.txt one line."""
         ids_str = " ".join(str(p) for p in self.province_ids)
         return f"{self.level} {len(self.province_ids)} {ids_str}"
+
+
+def adjacent_railway_segments(
+    levels: dict[int, int],
+    province_map: np.ndarray,
+) -> list[tuple[int, int, int]]:
+    """Return deterministic ``(level, first_pid, second_pid)`` map links.
+
+    The province brush represents a railway as a level on each selected
+    province.  This helper turns touching selected provinces into the same
+    pairwise links used by the export writer and the live logistics overlay.
+    It intentionally uses raster adjacency only; special sea adjacencies are
+    edited separately.
+    """
+    if not levels:
+        return []
+    try:
+        pm = np.asarray(province_map)
+    except Exception:
+        return []
+    if pm.ndim != 2 or pm.size == 0:
+        return []
+
+    pairs: set[tuple[int, int]] = set()
+    for first_array, second_array in (
+        (pm[:-1, :], pm[1:, :]),
+        (pm[:, :-1], pm[:, 1:]),
+    ):
+        mask = (first_array != second_array) & (first_array > 0) & (second_array > 0)
+        ys, xs = np.where(mask)
+        for y, x in zip(ys.tolist(), xs.tolist()):
+            first = int(first_array[y, x])
+            second = int(second_array[y, x])
+            if first in levels and second in levels:
+                pairs.add((min(first, second), max(first, second)))
+
+    return [
+        (min(int(levels[first]), int(levels[second])), first, second)
+        for first, second in sorted(pairs)
+    ]
 
 
 class RailwayManager:
@@ -102,7 +147,11 @@ class RailwayManager:
                     break
                 new_ids.append(new_p)
             if not broken and len(new_ids) >= 2:
-                new_entries.append(RailwayEntry(level=e.level, province_ids=new_ids))
+                new_entries.append(RailwayEntry(
+                    level=e.level,
+                    province_ids=new_ids,
+                    brush_placeholder=bool(e.brush_placeholder),
+                ))
         self._entries = new_entries
 
     # ─────────── Province level query/coloring ───────────
@@ -132,7 +181,13 @@ class RailwayManager:
                     found = True
             if not found:
                 # Create a new single province placeholder (will be merged with neighbors when exported)
-                self._entries.append(RailwayEntry(level=level, province_ids=[pid, pid]))
+                self._entries.append(
+                    RailwayEntry(
+                        level=level,
+                        province_ids=[pid, pid],
+                        brush_placeholder=True,
+                    )
+                )
 
     def build_railway_color_map(self, province_map: np.ndarray) -> np.ndarray:
         """Generates a railway shading map (H, W, 3). Level 0=grey, 1=light gray, 5=red."""
@@ -162,7 +217,11 @@ class RailwayManager:
     def to_dict(self) -> dict:
         return {
             "entries": [
-                {"level": e.level, "province_ids": list(e.province_ids)}
+                {
+                    "level": e.level,
+                    "province_ids": list(e.province_ids),
+                    **({"brush_placeholder": True} if e.brush_placeholder else {}),
+                }
                 for e in self._entries
             ]
         }
@@ -170,9 +229,21 @@ class RailwayManager:
     def from_dict(self, data: dict) -> None:
         self._entries = []
         for d in data.get("entries", []):
+            province_ids = [int(p) for p in d.get("province_ids", [])]
             self._entries.append(
                 RailwayEntry(
                     level=int(d["level"]),
-                    province_ids=[int(p) for p in d.get("province_ids", [])],
+                    province_ids=province_ids,
+                    # Projects saved before the marker was introduced used
+                    # [pid, pid] for the same brush state.  Migrate that
+                    # representation while leaving manually-authored entries
+                    # created in memory distinguishable for validation.
+                    brush_placeholder=bool(
+                        d.get(
+                            "brush_placeholder",
+                            len(province_ids) == 2
+                            and province_ids[0] == province_ids[1],
+                        )
+                    ),
                 )
             )

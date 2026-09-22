@@ -993,7 +993,31 @@ class MapCanvas(InputMixin, OverlayMixin, NameLabelsMixin, RefImageMixin, QGraph
         # Railway lines: only draw line segments between land provinces and skip maritime provinces (to avoid flying lines across the sea)
         if railway_mgr is not None:
             from data.constants import TILE_LAND
-            for entry in railway_mgr._entries:
+            from domain.managers.railway import adjacent_railway_segments
+
+            entries = list(getattr(railway_mgr, "_entries", ()) or ())
+            explicit_pairs = {
+                tuple(sorted((first, second)))
+                for entry in entries
+                for first, second in zip(
+                    getattr(entry, "province_ids", ()),
+                    getattr(entry, "province_ids", ())[1:],
+                )
+                if first != second
+            }
+            brush_placeholder_ids = {
+                int(entry.province_ids[0])
+                for entry in entries
+                if getattr(entry, "province_ids", None)
+                and len(set(entry.province_ids)) == 1
+                and bool(getattr(entry, "brush_placeholder", False))
+            }
+
+            # Explicit routes are authored sequences and are drawn exactly as
+            # stored.  Province clicks create marked placeholders instead;
+            # their touching links are inferred below from the same helper the
+            # export writer uses, so the yellow line appears immediately.
+            for entry in entries:
                 lvl = entry.level
                 color = RAIL_COLORS.get(lvl, RAIL_COLORS[1])
                 pen = QPen(color, 1 + lvl)
@@ -1021,6 +1045,39 @@ class MapCanvas(InputMixin, OverlayMixin, NameLabelsMixin, RefImageMixin, QGraph
                     # Skipping too long line segments (cross-ocean connection > 200px)
                     if abs(x1 - x2) > 200 or abs(y1 - y2) > 200:
                         continue
+                    painter.drawLine(int(x1), int(y1), int(x2), int(y2))
+
+            if brush_placeholder_ids:
+                levels = railway_mgr.province_levels()
+                for lvl, first, second in adjacent_railway_segments(levels, pm):
+                    pair = (first, second)
+                    if pair in explicit_pairs:
+                        continue
+                    if not (first in brush_placeholder_ids or second in brush_placeholder_ids):
+                        continue
+                    points = []
+                    for pid in (first, second):
+                        if not (0 < pid <= max_pid and pid_count[pid] > 0):
+                            points = []
+                            break
+                        cy_idx = int(sum_y[pid] / pid_count[pid])
+                        cx_idx = int(sum_x[pid] / pid_count[pid])
+                        cy_idx = min(cy_idx, h - 1)
+                        cx_idx = min(cx_idx, w - 1)
+                        if tm is not None and int(tm[cy_idx, cx_idx]) != TILE_LAND:
+                            points = []
+                            break
+                        points.append((sum_x[pid] / pid_count[pid], sum_y[pid] / pid_count[pid]))
+                    if len(points) != 2:
+                        continue
+                    x1, y1 = points[0]
+                    x2, y2 = points[1]
+                    if abs(x1 - x2) > 200 or abs(y1 - y2) > 200:
+                        continue
+                    color = RAIL_COLORS.get(lvl, RAIL_COLORS[1])
+                    pen = QPen(color, 1 + lvl)
+                    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+                    painter.setPen(pen)
                     painter.drawLine(int(x1), int(y1), int(x2), int(y2))
 
         # Straits/adjacencies — not drawn in the logistic overlay (too many would be cluttered), only managed in the adjacencies dialog

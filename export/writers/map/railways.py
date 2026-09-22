@@ -13,6 +13,8 @@ from __future__ import annotations
 import os
 import numpy as np
 
+from domain.managers.railway import adjacent_railway_segments
+
 
 def write_railways_txt(
     output_dir: str,
@@ -82,35 +84,10 @@ def _build_railway_lines(
     Algorithm: Scan province_map to find adjacent province pairs,
     If both provinces have railway levels, generate a railway with level=min.
     Output after deduplication."""
-    # Find all adjacent province pairs (vectorized, no pixel-by-pixel loop)
-    pm = province_map
-    pairs: set[tuple[int, int]] = set()
-
-    # vertically adjacent
-    diff_v = pm[:-1, :] != pm[1:, :]
-    ys, xs = np.where(diff_v)
-    for i in range(len(ys)):
-        a, b = int(pm[ys[i], xs[i]]), int(pm[ys[i] + 1, xs[i]])
-        if a > 0 and b > 0 and a in levels and b in levels:
-            pair = (min(a, b), max(a, b))
-            pairs.add(pair)
-
-    # horizontally adjacent
-    diff_h = pm[:, :-1] != pm[:, 1:]
-    ys, xs = np.where(diff_h)
-    for i in range(len(ys)):
-        a, b = int(pm[ys[i], xs[i]]), int(pm[ys[i], xs[i] + 1])
-        if a > 0 and b > 0 and a in levels and b in levels:
-            pair = (min(a, b), max(a, b))
-            pairs.add(pair)
-
-    # Generate railway lines: one for each pair of adjacent provinces, level = min (both levels)
-    lines: list[str] = []
-    for a, b in sorted(pairs):
-        lvl = min(levels[a], levels[b])
-        lines.append(f"{lvl} 2 {a} {b}")
-
-    return lines
+    return [
+        f"{level} 2 {first} {second}"
+        for level, first, second in adjacent_railway_segments(levels, province_map)
+    ]
 
 
 def _build_manager_railway_lines(railway_mgr, province_map: np.ndarray) -> list[str]:
@@ -132,6 +109,7 @@ def _build_manager_railway_lines(railway_mgr, province_map: np.ndarray) -> list[
     placeholders = {
         entry.province_ids[0] for entry in entries
         if entry.province_ids and len(set(entry.province_ids)) == 1
+        and bool(getattr(entry, "brush_placeholder", False))
     }
     if placeholders:
         for line in _build_railway_lines(railway_mgr.province_levels(), province_map):

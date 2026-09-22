@@ -22,7 +22,12 @@ import numpy as np
 
 from domain.managers.adjacency import AdjacencyManager, AdjacencyEntry
 from domain.managers.adjacency_rule import AdjacencyRuleManager
-from commands.map.logistics_edit import apply_manager_edit
+from commands.map.logistics_edit import AdjacencyReviewCommand, apply_manager_edit
+from domain.adjacency_review import (
+    adjacency_layer_count,
+    adjacency_layer_hash,
+    normalize_review_state,
+)
 from services.adjacency_io import adjacency_geometry
 from ui.i18n import tr
 
@@ -121,6 +126,17 @@ class AdjacencyDialog(QDialog):
         tip.setWordWrap(True)
         tip.setStyleSheet("color: #888; font-size: 11px;")
         root.addWidget(tip)
+
+        review_box = QGroupBox(tr("adj_dlg_review_group"))
+        review_layout = QVBoxLayout(review_box)
+        self._review_status = QLabel()
+        self._review_status.setWordWrap(True)
+        self._review_status.setStyleSheet("color: #9aa0ab; font-size: 11px;")
+        review_layout.addWidget(self._review_status)
+        self._review_button = QPushButton()
+        self._review_button.clicked.connect(self._on_adjacency_review_clicked)
+        review_layout.addWidget(self._review_button)
+        root.addWidget(review_box)
 
         # list
         self._list = QListWidget()
@@ -250,6 +266,70 @@ class AdjacencyDialog(QDialog):
                 label += "  ⚠ invalid " + ",".join(str(pid) for pid in invalid)
             item = QListWidgetItem(label)
             self._list.addItem(item)
+        self._refresh_review_controls()
+
+    def _refresh_review_controls(self) -> None:
+        """Show the explicit empty-layer review choice next to the editor."""
+        meta = getattr(self._project, "project_meta", None)
+        if meta is None:
+            self._review_status.setText(tr("adj_dlg_review_unavailable"))
+            self._review_button.setEnabled(False)
+            return
+
+        state = normalize_review_state(getattr(meta, "adjacency_review", "unreviewed"))
+        count = adjacency_layer_count(self._mgr, self._rule_mgr)
+        if state == "none_intended":
+            self._review_status.setText(tr("adj_dlg_none_status"))
+            self._review_button.setText(tr("adj_dlg_reopen_review"))
+        else:
+            self._review_status.setText(
+                tr("adj_dlg_review_status_fmt").format(state=state, count=count)
+            )
+            self._review_button.setText(tr("adj_dlg_mark_none"))
+        self._review_button.setEnabled(True)
+
+    def _on_adjacency_review_clicked(self) -> None:
+        """Mark an empty adjacency layer as intentional, or reopen review."""
+        meta = getattr(self._project, "project_meta", None)
+        if meta is None:
+            return
+        current = normalize_review_state(getattr(meta, "adjacency_review", "unreviewed"))
+        if current == "none_intended":
+            after = ("unreviewed", "", None)
+        else:
+            count = adjacency_layer_count(self._mgr, self._rule_mgr)
+            if count:
+                QMessageBox.warning(
+                    self,
+                    tr("dlg_error"),
+                    tr("adj_dlg_none_requires_empty").format(count=count),
+                )
+                return
+            after = (
+                "none_intended",
+                tr("adj_dlg_none_note"),
+                adjacency_layer_hash(self._mgr, self._rule_mgr),
+            )
+
+        before = (
+            str(getattr(meta, "adjacency_review", "unreviewed")),
+            str(getattr(meta, "adjacency_review_note", "") or ""),
+            getattr(meta, "adjacency_review_hash", None),
+        )
+        if before == after:
+            return
+        command = AdjacencyReviewCommand(self._project, before, after)
+        if self._history is not None:
+            self._history.execute(command)
+        else:
+            command.execute()
+        self._refresh_review_controls()
+        self.changed.emit()
+        self._status.setText(
+            tr("adj_dlg_none_selected")
+            if after[0] == "none_intended"
+            else tr("adj_dlg_review_reopened")
+        )
 
     def _on_item_clicked(self, item: QListWidgetItem) -> None:
         """Click on the list item → backfill it into the editing area for easy modification."""

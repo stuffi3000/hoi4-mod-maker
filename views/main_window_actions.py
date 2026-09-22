@@ -1795,6 +1795,7 @@ class MainWindowActionsMixin(MainWindowFileOpsMixin):
             graph = analyze_logistics_graph(
                 self._project.railway_mgr,
                 self._project.supply_mgr,
+                province_map=province_map,
                 known_provinces=known_provinces,
             )
             colors = build_logistics_component_colors(

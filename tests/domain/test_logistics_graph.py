@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import numpy as np
 import pytest
 
 from domain.logistics_graph import (
@@ -259,3 +260,19 @@ def test_inputs_are_not_mutated():
     assert rail.to_dict() == rail_snapshot
     assert [list(entry.province_ids) for entry in rail.get_all()] == rail_ids
     assert supply.to_dict() == supply_snapshot
+
+
+def test_map_aware_graph_expands_marked_brush_links():
+    rail = RailwayManager()
+    rail.set_province_level(1, 4)
+    rail.set_province_level(2, 3)
+
+    graph = analyze_logistics_graph(
+        rail,
+        province_map=np.array([[1, 2]], dtype=np.int32),
+        known_provinces={1, 2},
+    )
+
+    assert graph.edge_pairs == ((1, 2),)
+    assert graph.component_count == 1
+    assert graph.self_loops == ()

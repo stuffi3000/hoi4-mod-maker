@@ -22,6 +22,7 @@ from domain.export_contract import (
 )
 from domain.managers.continent import ContinentManager
 from domain.managers.country import CountryManager
+from domain.managers.railway import RailwayEntry, RailwayManager
 from domain.managers.state import StateManager
 from domain.managers.strategic_region import StrategicRegionManager
 from services.export_manifest import compare_with_lock
@@ -115,6 +116,29 @@ def test_successful_river_validation_is_not_recorded_as_a_warning():
         profile_name="foundation",
     )
     assert not any(finding.code == "river.legality" for finding in plan.findings)
+
+
+def test_plan_collects_logistics_findings_with_affected_provinces():
+    tile, prov, terrain = _fixture_maps()
+    states, countries, continents = _fixture_managers()
+    railways = RailwayManager()
+    railways._entries = [RailwayEntry(level=1, province_ids=[1, 99])]
+
+    plan = plan_export(
+        tile,
+        prov,
+        terrain,
+        dimensions=(64, 64),
+        state_mgr=states,
+        country_mgr=countries,
+        continent_mgr=continents,
+        railway_mgr=railways,
+        profile_name="foundation",
+    )
+
+    finding = next(item for item in plan.findings if item.code == "logistics.railway_route")
+    assert tuple(finding.affected_ids) == (1, 99)
+    assert any("railway routes are invalid" in blocker for blocker in plan.blockers)
 
 
 def test_plan_does_not_mutate_live_project(m2_tmp):

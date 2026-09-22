@@ -71,6 +71,33 @@ class ManagerStateCommand(Command):
         _restore_review(self._project, self._before_review)
 
 
+class AdjacencyReviewCommand(Command):
+    """Undoable change to the project's special-adjacency review state."""
+
+    label = "Set adjacency review"
+
+    def __init__(
+        self,
+        project: Any,
+        before: tuple[str, str, str | None],
+        after: tuple[str, str, str | None],
+    ) -> None:
+        self._project = project
+        self._before = tuple(before)
+        self._after = tuple(after)
+
+    def _apply(self, snapshot: tuple[str, str, str | None]) -> None:
+        _restore_review(self._project, snapshot)
+        if self._project is not None:
+            self._project.mark_dirty()
+
+    def execute(self) -> None:
+        self._apply(self._after)
+
+    def undo(self) -> None:
+        self._apply(self._before)
+
+
 def apply_manager_edit(
     manager: Any,
     label: str,
@@ -105,4 +132,4 @@ def apply_manager_edit(
     return True
 
 
-__all__ = ["ManagerStateCommand", "apply_manager_edit"]
+__all__ = ["AdjacencyReviewCommand", "ManagerStateCommand", "apply_manager_edit"]

@@ -942,39 +942,30 @@ def collect_findings(
         except (ImportError, TypeError, ValueError):
             # Metadata is an optional compatibility input for direct callers.
             pass
-    # M4.5: disconnected logistics cases need a current, reasoned exception
-    # before a frozen project can be exported. Keep direct legacy snapshots
-    # without an exception manager unchanged.
-    if snapshot.logistics_exception_mgr is not None:
-        try:
-            from domain.logistics_exceptions import evaluate_exception_coverage
-            from domain.logistics_graph import analyze_logistics_graph
+    # M4.3/M4.5: run the complete logistics validator during planning, before
+    # staging starts.  This keeps railway, supply, adjacency, graph, and
+    # exception findings in the same pre-export plan that the final verifier
+    # consumes, including affected province IDs on typed findings.
+    try:
+        from domain.validators.logistics import validate_logistics_references
 
-            known_provinces = {
-                int(value) for value in np.unique(province_map)
-                if int(value) > 0
-            }
-            graph = analyze_logistics_graph(
-                snapshot.railway_mgr,
-                snapshot.supply_mgr,
-                known_provinces=known_provinces,
-            )
-            coverage = evaluate_exception_coverage(
-                snapshot.logistics_exception_mgr,
-                graph,
-            )
-            if coverage.missing_keys or coverage.stale_keys:
-                severity = "blocker" if active_lifecycle in ("frozen", "accepted") else "warning"
-                findings.append(ValidationNote(
-                    "logistics.exception_coverage",
-                    severity,
-                    "%d logistics exception cases require review"
-                    % (len(coverage.missing_keys) + len(coverage.stale_keys)),
-                    layer="logistics",
-                ))
-        except ImportError:
-            # Keep the planner compatible with snapshots created before M4.5.
-            pass
+        findings.extend(validate_logistics_references(
+            province_map,
+            snapshot.tile_map,
+            adjacency_mgr=snapshot.adjacency_mgr,
+            railway_mgr=snapshot.railway_mgr,
+            supply_mgr=snapshot.supply_mgr,
+            adjacency_rule_mgr=snapshot.adjacency_rule_mgr,
+            logistics_exception_mgr=snapshot.logistics_exception_mgr,
+            country_mgr=snapshot.country_mgr,
+            profile=game_profile,
+            lifecycle=active_lifecycle,
+        ))
+    except (ImportError, TypeError, ValueError):
+        # Older direct callers may provide incomplete snapshots.  Preserve
+        # their compatibility behavior while normal project snapshots receive
+        # the full logistics check above.
+        pass
     # M5: a foundation freeze may not silently omit incomplete or unreviewed
     # manager placements. Draft plans receive warnings so the editor can keep
     # working; the validator promotes them to blockers for frozen/accepted

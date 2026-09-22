@@ -36,6 +36,8 @@ _READINESS_TOOLTIP_KEYS = {
     "readiness.assets": "export_tip_readiness_assets",
     "readiness.placements": "export_tip_readiness_placements",
     "readiness.province_surfaces": "export_tip_readiness_surface",
+    "readiness.logistics": "export_tip_readiness_logistics",
+    "readiness.adjacency_review": "export_tip_readiness_adjacency",
 }
 
 _SCOPE_TOOLTIP_KEYS = {
@@ -671,9 +673,10 @@ class ExportDialog(QDialog):
         self._btn_export_direct.setEnabled(False)
 
     def _readiness_tooltip(self, item) -> str:
-        suggestion_key = _READINESS_TOOLTIP_KEYS.get(
-            str(getattr(item, "code", "") or "")
-        )
+        item_code = str(getattr(item, "code", "") or "")
+        suggestion_key = _READINESS_TOOLTIP_KEYS.get(item_code)
+        if suggestion_key is None and item_code.startswith("readiness.logistics."):
+            suggestion_key = "export_tip_readiness_logistics"
         suggestion = tr(suggestion_key) if suggestion_key else tr(
             "export_tip_readiness_default"
         )

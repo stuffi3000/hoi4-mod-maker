@@ -43,6 +43,8 @@ from dataclasses import dataclass
 from numbers import Integral, Real
 from typing import Any
 
+from domain.managers.railway import adjacent_railway_segments
+
 __all__ = [
     "ConnectionCandidate",
     "DuplicateRoute",
@@ -244,6 +246,60 @@ def _parse_id_list(raw: Any) -> list[int] | None:
             return None
         parsed.append(pid)
     return parsed
+
+
+def _is_brush_placeholder(entry: Any, ids: list[int] | None = None) -> bool:
+    """Identify the marked single-province railway brush state."""
+    if not bool(_field(entry, "brush_placeholder", False)):
+        return False
+    values = ids
+    if values is None:
+        values = _parse_id_list(_field(entry, "province_ids", []))
+    return values is not None and len(values) == 2 and values[0] == values[1]
+
+
+def _expand_brush_placeholders(
+    entries: list[Any],
+    province_map: Any,
+) -> list[Any]:
+    """Use map adjacency to turn marked brush selections into graph links."""
+    placeholders: set[int] = set()
+    levels: dict[int, int] = {}
+    explicit: list[Any] = []
+    explicit_pairs: set[tuple[int, int]] = set()
+
+    for raw in entries:
+        parsed = _parse_id_list(_field(raw, "province_ids", []))
+        if _is_brush_placeholder(raw, parsed):
+            assert parsed is not None
+            placeholders.add(parsed[0])
+        else:
+            explicit.append(raw)
+            if parsed is not None:
+                for first, second in zip(parsed, parsed[1:]):
+                    if first != second:
+                        explicit_pairs.add((min(first, second), max(first, second)))
+        level = _as_int(_field(raw, "level", None))
+        if parsed is not None and level is not None:
+            for pid in set(parsed):
+                levels[pid] = max(levels.get(pid, 0), level)
+
+    if not placeholders:
+        return list(entries)
+    if not levels:
+        return explicit
+
+    try:
+        segments = adjacent_railway_segments(levels, province_map)
+    except Exception:
+        segments = []
+    generated = [
+        {"level": level, "province_ids": [first, second]}
+        for level, first, second in segments
+        if (first, second) not in explicit_pairs
+        and (first in placeholders or second in placeholders)
+    ]
+    return explicit + generated
 
 
 def _make_known_checker(known: Any) -> Callable[[int], bool]:
@@ -464,6 +520,7 @@ def build_logistics_graph(
     railway_mgr: Any = None,
     supply_mgr: Any = None,
     *,
+    province_map: Any | None = None,
     known_provinces: Iterable[int] | Mapping[int, Any] | Callable[[int], bool] | None = None,
     province_to_state: Mapping[int, int] | Callable[[int], Any] | None = None,
     province_to_continent: Mapping[int, int] | Callable[[int], Any] | None = None,
@@ -485,6 +542,9 @@ def build_logistics_graph(
     and the province passes the same filter. Structural reports for
     self-loops and duplicate routes ignore the ``known_provinces`` filter so
     repeated or mirrored sequences stay visible even for unknown provinces.
+    When ``province_map`` is supplied, marked province-brush placeholders are
+    expanded into touching links before graph analysis; authored self-loops
+    remain structural findings.
 
     Optional region sources may be mappings or callbacks from province ID to
     region ID. Port and convoy sources may be explicit ID sets, mappings of
@@ -496,6 +556,8 @@ def build_logistics_graph(
     Managers and mappings are only read and never mutated.
     """
     railway_entries = _entries(railway_mgr)
+    if province_map is not None:
+        railway_entries = _expand_brush_placeholders(railway_entries, province_map)
     supply_entries = _entries(supply_mgr)
     known_ok = _make_known_checker(known_provinces)
 
@@ -747,6 +809,7 @@ def analyze_logistics_graph(
     railway_mgr: Any = None,
     supply_mgr: Any = None,
     *,
+    province_map: Any | None = None,
     known_provinces: Iterable[int] | Mapping[int, Any] | Callable[[int], bool] | None = None,
     province_to_state: Mapping[int, int] | Callable[[int], Any] | None = None,
     province_to_continent: Mapping[int, int] | Callable[[int], Any] | None = None,
@@ -767,6 +830,7 @@ def analyze_logistics_graph(
     return build_logistics_graph(
         railway_mgr,
         supply_mgr,
+        province_map=province_map,
         known_provinces=known_provinces,
         province_to_state=province_to_state,
         province_to_continent=province_to_continent,

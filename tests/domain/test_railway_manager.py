@@ -1,8 +1,9 @@
 """RailwayManager unit tests."""
 
 import pytest
+import numpy as np
 
-from domain.managers.railway import RailwayManager, RailwayEntry
+from domain.managers.railway import RailwayManager, RailwayEntry, adjacent_railway_segments
 
 
 def test_add_and_line_format():
@@ -91,3 +92,19 @@ def test_serialize_roundtrip():
     assert m2.count() == 2
     assert m2.get_all()[0].level == 3
     assert m2.get_all()[1].province_ids == [1, 2]
+
+
+def test_brush_placeholders_roundtrip_and_infer_adjacent_links():
+    m = RailwayManager()
+    m.set_province_level(1, 4)
+    m.set_province_level(2, 3)
+
+    assert m.get_all()[0].brush_placeholder is True
+    assert adjacent_railway_segments(
+        m.province_levels(), np.array([[1, 2]], dtype=np.int32)
+    ) == [(3, 1, 2)]
+
+    restored = RailwayManager()
+    restored.from_dict(m.to_dict())
+    assert restored.get_all()[0].brush_placeholder is True
+    assert restored.get_all()[1].brush_placeholder is True

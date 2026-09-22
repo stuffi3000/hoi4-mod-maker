@@ -1,6 +1,10 @@
 from types import SimpleNamespace
 
 from PyQt5.QtCore import Qt
+from commands.history import CommandHistory
+from domain.managers.adjacency import AdjacencyManager
+from domain.managers.adjacency_rule import AdjacencyRuleManager
+from domain.project_meta import default_meta
 from domain.managers.strategic_region import StrategicRegionManager
 from features.map.strategic_region.page import StrategicRegionPage
 from features.map.logistics.page import LogisticsPage
@@ -97,3 +101,29 @@ def test_logistics_group_status_dots_reflect_feature_readiness(qtbot):
 
     bar.set_feature_ready("logistics", False)
     assert bar._buttons[1].text().startswith("🟠")
+
+
+def test_adjacency_dialog_marks_empty_layer_as_none_intended(qtbot):
+    from features.map.logistics.adjacency_dialog import AdjacencyDialog
+
+    project = SimpleNamespace(project_meta=default_meta(), dirty=False)
+    project.mark_dirty = lambda: setattr(project, "dirty", True)
+    history = CommandHistory()
+    dialog = AdjacencyDialog(
+        AdjacencyManager(),
+        history=history,
+        project=project,
+        rule_mgr=AdjacencyRuleManager(),
+    )
+    qtbot.addWidget(dialog)
+    changed = []
+    dialog.changed.connect(lambda: changed.append(True))
+
+    dialog._review_button.click()
+
+    assert project.project_meta.adjacency_review == "none_intended"
+    assert project.project_meta.adjacency_review_note
+    assert project.project_meta.adjacency_review_hash
+    assert changed == [True]
+    assert history.undo()
+    assert project.project_meta.adjacency_review == "unreviewed"

@@ -12,6 +12,11 @@ from domain.managers.state import StateManager, StateData
 from domain.managers.country import CountryManager
 from domain.managers.continent import ContinentManager
 from domain.managers.strategic_region import StrategicRegionManager
+from domain.managers.adjacency import AdjacencyManager
+from domain.managers.adjacency_rule import AdjacencyRuleManager
+from domain.managers.railway import RailwayEntry, RailwayManager
+from domain.managers.supply_node import SupplyNodeManager
+from domain.project_meta import default_meta
 from data.constants import TILE_LAND, TILE_SEA, TILE_LAKE
 
 
@@ -126,6 +131,57 @@ def test_accepts_mapdata_as_source():
         assert _by_status(items).get("missing", 0) == 0
     finally:
         set_map_size(*old)
+
+
+def test_readiness_reports_logistics_provinces_before_export():
+    project = _project()
+    project.adjacency_mgr = AdjacencyManager()
+    project.adjacency_rule_mgr = AdjacencyRuleManager()
+    project.railway_mgr = RailwayManager()
+    project.railway_mgr._entries = [RailwayEntry(level=1, province_ids=[1, 99])]
+    project.supply_mgr = SupplyNodeManager()
+
+    items = check_project_readiness(project, _map_source())
+    railway = [item for item in items if item.code == "readiness.logistics.railway_route"]
+
+    assert len(railway) == 1
+    assert railway[0].status == "missing"
+    assert "Affected provinces: 1, 99" in railway[0].detail
+
+
+def test_readiness_exposes_unreviewed_empty_adjacency_layer():
+    project = _project()
+    project.adjacency_mgr = AdjacencyManager()
+    project.adjacency_rule_mgr = AdjacencyRuleManager()
+    project.railway_mgr = RailwayManager()
+    project.supply_mgr = SupplyNodeManager()
+    project.project_meta = default_meta()
+
+    items = check_project_readiness(project, _map_source())
+    review = [item for item in items if item.code == "readiness.adjacency_review"]
+
+    assert len(review) == 1
+    assert review[0].status == "warning"
+    assert "mark none_intended" in review[0].detail
+
+
+def test_marked_brush_placeholders_are_not_reported_as_authored_self_loops():
+    from domain.validators.logistics import validate_logistics_references
+
+    project = _project()
+    project.railway_mgr = RailwayManager()
+    project.railway_mgr.set_province_level(1, 3)
+    project.railway_mgr.set_province_level(2, 3)
+    source = _map_source()
+    source.tile_map[:] = TILE_LAND
+
+    findings = validate_logistics_references(
+        source.province_map,
+        source.tile_map,
+        railway_mgr=project.railway_mgr,
+    )
+
+    assert not any(item.code == "logistics.railway_route" for item in findings)
 
 def _manager_complete_reviewed():
     from domain.managers.map_placement import MapPlacementManager

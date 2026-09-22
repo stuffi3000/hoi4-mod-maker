@@ -150,6 +150,20 @@ def _field(entry: Any, name: str, default: Any = None) -> Any:
         return default
 
 
+def _is_brush_placeholder(entry: Any, ids: list[int] | None = None) -> bool:
+    """Return whether an entry is the marked province-brush placeholder."""
+    if not bool(_field(entry, "brush_placeholder", False)):
+        return False
+    values = ids
+    if values is None:
+        raw = _field(entry, "province_ids", [])
+        try:
+            values = list(raw) if not isinstance(raw, (str, bytes)) else []
+        except TypeError:
+            values = []
+    return len(values) == 2 and values[0] == values[1]
+
+
 def _safe_get_all(manager: Any) -> list[Any]:
     """Return ``manager.get_all()`` as a list, or [] when unavailable."""
     if manager is None:
@@ -604,6 +618,19 @@ def validate_logistics_references(
                 parsed.append(pid)
                 if known_ids is not None and pid not in known_ids:
                     _note_railway(index, "references unknown province %d" % pid, [pid])
+        if _is_brush_placeholder(raw, parsed):
+            # A province-brush placeholder is expanded into touching links by
+            # the writer.  It is valid editor state, but the selected province
+            # still must be a known land province when surface data is usable.
+            if surfaces is not None:
+                surface = surfaces.get(parsed[0], "?")
+                if surface in _WATER_SURFACES or surface == "mixed":
+                    _note_railway(
+                        index,
+                        "province %d is not land (surface=%s)" % (parsed[0], surface),
+                        [parsed[0]],
+                    )
+            continue
         seen: set[int] = set()
         for pid in parsed:
             if pid in seen:
@@ -718,6 +745,7 @@ def validate_logistics_references(
     graph = analyze_logistics_graph(
         railway_entries,
         supply_nodes,
+        province_map=province_map,
         known_provinces=known_ids,
     )
     exception_coverage = None
@@ -814,6 +842,8 @@ def validate_logistics_references(
         try:
             ids_list = list(raw_ids)
         except TypeError:
+            continue
+        if _is_brush_placeholder(raw, ids_list):
             continue
         if len(ids_list) < 2:
             continue

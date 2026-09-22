@@ -118,6 +118,128 @@ def _append_placement_readiness(items, project, map_source, profile_name=None):
     return items
 
 
+def _logistics_finding_detail(finding) -> str:
+    """Render a logistics finding with the province IDs it affects."""
+    detail = str(getattr(finding, "message", "Logistics data requires attention"))
+    affected = tuple(getattr(finding, "affected_ids", ()) or ())
+    if affected:
+        shown = ", ".join(str(value) for value in affected[:40])
+        if len(affected) > 40:
+            shown += ", ... (+%d more)" % (len(affected) - 40)
+        detail += " " + tr("export_check_affected_provinces").format(provinces=shown)
+    evidence = str(getattr(finding, "evidence", "") or "").strip()
+    if evidence:
+        detail += "\n" + tr("export_check_logistics_details").format(evidence=evidence)
+    return detail
+
+
+def _append_logistics_readiness(items, project, map_source, profile=None):
+    """Add the same logistics/reference checks used by the export planner."""
+    manager_names = (
+        "adjacency_mgr", "railway_mgr", "supply_mgr", "adjacency_rule_mgr",
+        "logistics_exception_mgr",
+    )
+    if not any(getattr(project, name, None) is not None for name in manager_names):
+        # Keep compatibility with lightweight legacy readiness fixtures that
+        # do not model logistics managers at all.
+        return items
+
+    validation_failed = False
+    try:
+        from domain.validators.logistics import validate_logistics_references
+
+        findings = validate_logistics_references(
+            map_source.province_map,
+            map_source.tile_map,
+            adjacency_mgr=getattr(project, "adjacency_mgr", None),
+            railway_mgr=getattr(project, "railway_mgr", None),
+            supply_mgr=getattr(project, "supply_mgr", None),
+            adjacency_rule_mgr=getattr(project, "adjacency_rule_mgr", None),
+            logistics_exception_mgr=getattr(project, "logistics_exception_mgr", None),
+            country_mgr=getattr(project, "country_mgr", None),
+            profile=profile,
+            lifecycle=_project_lifecycle_name(project),
+        )
+    except (ImportError, TypeError, ValueError):
+        findings = []
+        validation_failed = True
+
+    name_by_code = {
+        "logistics.railway_route": tr("export_check_railways"),
+        "logistics.graph": tr("export_check_logistics"),
+        "logistics.exception_coverage": tr("export_check_logistics"),
+        "logistics.adjacency_endpoint": tr("export_check_adjacencies"),
+        "logistics.adjacency_rule": tr("export_check_adjacencies"),
+        "logistics.port": tr("export_check_logistics"),
+        "logistics.supply_node": tr("export_check_logistics"),
+        "logistics.duplicate_route": tr("export_check_railways"),
+    }
+
+    def append_finding(finding, *, code: str | None = None) -> None:
+        raw_code = str(getattr(finding, "code", "logistics") or "logistics")
+        severity = str(getattr(finding, "severity", "warning") or "warning").lower()
+        status = "missing" if severity in ("error", "blocker") else "warning"
+        affected = tuple(getattr(finding, "affected_ids", ()) or ())
+        if raw_code.startswith("adjacency.review"):
+            name = tr("export_check_adjacency_review")
+        else:
+            name = name_by_code.get(raw_code, tr("export_check_logistics"))
+        items.append(CheckItem(
+            name=name,
+            status=status,
+            detail=_logistics_finding_detail(finding),
+            can_auto=False,
+            count=len(affected) or 1,
+            code=code or "readiness." + raw_code,
+        ))
+
+    for finding in findings:
+        append_finding(finding)
+
+    # Keep the adjacency review decision visible before export.  The planner
+    # uses the same lifecycle-sensitive policy, so the two screens cannot
+    # disagree about whether an empty layer was reviewed.
+    meta = getattr(project, "project_meta", None)
+    if meta is not None:
+        try:
+            from domain.adjacency_review import evaluate_adjacency_review
+
+            lifecycle = _project_lifecycle_name(project)
+            context = "freeze" if lifecycle in ("frozen", "accepted") else "foundation_candidate"
+            decision = evaluate_adjacency_review(
+                getattr(project, "adjacency_mgr", None),
+                getattr(project, "adjacency_rule_mgr", None),
+                state=getattr(meta, "adjacency_review", "unreviewed"),
+                note=getattr(meta, "adjacency_review_note", ""),
+                review_hash=getattr(meta, "adjacency_review_hash", None),
+                context=context,
+            )
+            if decision.finding is not None:
+                append_finding(decision.finding, code="readiness.adjacency_review")
+        except (ImportError, TypeError, ValueError):
+            pass
+
+    if validation_failed:
+        items.append(CheckItem(
+            tr("export_check_logistics"),
+            "warning",
+            tr("export_check_logistics_unavailable"),
+            False,
+            0,
+            code="readiness.logistics",
+        ))
+    elif not findings:
+        items.append(CheckItem(
+            tr("export_check_logistics"),
+            "ok",
+            tr("export_check_logistics_ok"),
+            False,
+            0,
+            code="readiness.logistics",
+        ))
+    return items
+
+
 def check_project_readiness(project, map_source, profile=None, dimensions: tuple[int, int] | None = None, profile_name: str | None = None) -> list[CheckItem]:
     """Check whether the item can be exported and return the list of checked items.
 
@@ -334,6 +456,7 @@ def check_project_readiness(project, map_source, profile=None, dimensions: tuple
                     total=asset_total, clean=clean_count, dirty=dirty_count),
                 False, asset_total, code="readiness.assets"))
 
+    _append_logistics_readiness(items, project, map_source, profile=profile)
     _append_placement_readiness(items, project, map_source, profile_name)
     return items
 
